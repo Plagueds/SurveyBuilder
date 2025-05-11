@@ -21,15 +21,16 @@ import AdminSurveyDetailPage from './pages/AdminSurveyDetailPage';
 import SurveyBuildPage from './pages/SurveyBuildPage';
 import SurveyResultsPage from './pages/SurveyResultsPage';
 import SurveyTakingPage from './pages/SurveyTakingPage';
+import SurveyPreviewPage from './pages/SurveyPreviewPage'; // <<<--- ADD THIS IMPORT
 import ThankYouPage from './pages/ThankYouPage';
 import NotFoundPage from './pages/NotFoundPage';
-import PublicSurveyHandler from './pages/PublicSurveyHandler'; // <<<--- NEW: Import for /s/ links
+import PublicSurveyHandler from './pages/PublicSurveyHandler';
 
 function App() {
     const location = useLocation();
     const { isLoading: authIsLoading } = useAuth();
 
-    const showNavbar = true;
+    const showNavbar = true; // You might want to make this conditional based on location.pathname
 
     if (authIsLoading) {
         return (
@@ -50,13 +51,15 @@ function App() {
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/register" element={<RegisterPage />} />
 
-                    {/* MODIFIED Route for SurveyTakingPage to include collectorId */}
-                    {/* This is the route that SurveyTakingPage will use directly */}
+                    {/* Route for public survey access via /s/identifier */}
+                    <Route path="/s/:accessIdentifier" element={<PublicSurveyHandler />} />
+                    
+                    {/* Route for actually taking a survey (navigated to from PublicSurveyHandler) */}
                     <Route path="/surveys/:surveyId/c/:collectorId" element={<SurveyTakingPage />} />
 
-                    {/* NEW Route to handle public /s/:accessIdentifier links */}
-                    {/* This will fetch survey/collector details and then navigate or render SurveyTakingPage */}
-                    <Route path="/s/:accessIdentifier" element={<PublicSurveyHandler />} />
+                    {/* NEW Route for previewing a survey (no collector, no submission saving) */}
+                    {/* This can be accessed by anyone who knows the surveyId, or protected if needed */}
+                    <Route path="/surveys/:surveyId/preview" element={<SurveyPreviewPage />} />
                     
                     <Route path="/thank-you" element={<ThankYouPage />} />
 
@@ -66,6 +69,9 @@ function App() {
                         <Route path="/admin/surveys/:surveyId" element={<AdminSurveyDetailPage />} />
                         <Route path="/admin/surveys/:surveyId/build" element={<SurveyBuildPage />} />
                         <Route path="/admin/surveys/:surveyId/results" element={<SurveyResultsPage />} />
+                        {/* You could also place a protected preview route here if needed:
+                        <Route path="/admin/surveys/:surveyId/preview" element={<SurveyPreviewPage />} />
+                        But a general preview page is often more flexible. */}
                     </Route>
 
                     <Route path="*" element={<NotFoundPage />} />

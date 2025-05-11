@@ -1,7 +1,7 @@
 // frontend/src/pages/SurveyBuildPage.js
-// ----- START OF COMPLETE REVERTED/CORRECTED FILE -----
+// ----- START OF COMPLETE MODIFIED FILE -----
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom'; // Added Link
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ToastContainer, toast } from 'react-toastify';
@@ -12,7 +12,7 @@ import SurveyLogicPanel from '../components/SurveyLogicPanel';
 import SurveySettingsPanel from '../components/SurveySettingsPanel';
 import QuestionListItem from '../components/QuestionListItem';
 import styles from './SurveyBuildPage.module.css';
-import surveyApi from '../api/surveyApi';
+import surveyApi from '../api/surveyApi'; // Assuming this is surveyApiFunctions
 import CollectorsPanel from '../components/CollectorsPanel';
 
 const SurveyBuildPage = () => {
@@ -35,18 +35,16 @@ const SurveyBuildPage = () => {
 
     const fetchSurveyData = useCallback(async (options = {}) => {
         if (!routeSurveyId) {
-            setPageError("No survey ID found in the URL. Please select a survey to build.");
+            setPageError("No survey ID found. Please select a survey.");
             setLoading(false); setIsLoadingCollectors(false); setSurvey(null);
             return;
         }
         setLoading(true); setPageError(''); setIsLoadingCollectors(true); setSurvey(null);
         try {
-            // surveyApi.getSurveyById is assumed to return { success: true, data: surveyObject }
             const surveyResponse = await surveyApi.getSurveyById(routeSurveyId);
             if (surveyResponse && surveyResponse.success && surveyResponse.data && surveyResponse.data._id) {
                 setSurvey(surveyResponse.data);
                 try {
-                    // surveyApi.getCollectorsForSurvey is assumed to return { success: true, data: [collectors] }
                     const collectorsResponse = await surveyApi.getCollectorsForSurvey(routeSurveyId);
                     if (collectorsResponse && collectorsResponse.success) {
                         setCollectors(collectorsResponse.data || []);
@@ -55,7 +53,6 @@ const SurveyBuildPage = () => {
                         setCollectors([]);
                     }
                 } catch (collectorError) {
-                    console.error("[SurveyBuildPage] Error fetching collectors:", collectorError);
                     toast.error(`Failed to load collectors: ${collectorError.response?.data?.message || collectorError.message || 'Unknown error'}`);
                     setCollectors([]);
                 }
@@ -66,7 +63,7 @@ const SurveyBuildPage = () => {
                     setSelectedQuestionId(null);
                 }
             } else {
-                const errorMsg = `Failed to load survey: ${surveyResponse?.message || 'Invalid data structure or survey not found.'}`;
+                const errorMsg = `Failed to load survey: ${surveyResponse?.message || 'Invalid data or survey not found.'}`;
                 setPageError(errorMsg); toast.error(errorMsg); setSurvey(null); setCollectors([]);
             }
         } catch (err) {
@@ -75,23 +72,19 @@ const SurveyBuildPage = () => {
         } finally {
             setLoading(false); setIsLoadingCollectors(false);
         }
-    }, [routeSurveyId]);
+    }, [routeSurveyId, showAddQuestionPanel]); // Added showAddQuestionPanel dependency
 
     useEffect(() => { fetchSurveyData(); }, [fetchSurveyData]);
 
     const truncateText = (text, maxLength = 30) => text && text.length > maxLength ? `${text.substring(0, maxLength)}...` : text;
 
     const handleCreateQuestionFromPanel = useCallback(async (newQuestionDataFromPanel) => {
-        if (!survey?._id) { toast.error("Survey not loaded. Cannot add question."); return; }
+        if (!survey?._id) { toast.error("Survey not loaded."); return; }
         setSaving(true);
         const payload = { ...newQuestionDataFromPanel, survey: survey._id };
         delete payload._id;
-        // console.log('[SurveyBuildPage] Creating question with payload:', payload);
         try {
-            // Expecting backend to return { success: true, data: newQuestionObject }
             const response = await surveyApi.createQuestion(payload);
-            // console.log('[SurveyBuildPage] Create question response from API:', response);
-
             if (response && response.success && response.data && response.data._id) {
                 const savedQuestion = response.data;
                 setSurvey(prevSurvey => ({
@@ -102,12 +95,10 @@ const SurveyBuildPage = () => {
                 setSelectedQuestionId(savedQuestion._id);
                 toast.success(`Question "${truncateText(savedQuestion.text, 20)}" created!`);
             } else {
-                const errorMsg = `Failed to create question: ${response?.message || 'Invalid response from server.'}`;
-                console.error('[SurveyBuildPage] Create question error - unsuccessful response:', response);
+                const errorMsg = `Failed to create question: ${response?.message || 'Invalid response.'}`;
                 toast.error(errorMsg + (response?.field ? ` (Field: ${response.field})` : ''));
             }
         } catch (err) {
-            console.error("[SurveyBuildPage] Catch block error creating question:", err);
             const errorMsg = `Failed to create question: ${err.response?.data?.message || err.message}`;
             toast.error(errorMsg + (err.response?.data?.field ? ` (Field: ${err.response.data.field})` : ''));
         } finally {
@@ -116,11 +107,10 @@ const SurveyBuildPage = () => {
     }, [survey]);
 
     const updateQuestion = useCallback(async (questionId, updates) => {
-        if (!survey?._id) { toast.error("Survey not loaded. Cannot update question."); return; }
+        if (!survey?._id) { toast.error("Survey not loaded."); return; }
         setSaving(true);
         const payload = { ...updates }; delete payload._id; delete payload.survey;
         try {
-            // Expecting backend to return { success: true, data: updatedQuestionObject }
             const response = await surveyApi.updateQuestionContent(questionId, payload);
             if (response && response.success && response.data && response.data._id) {
                 const updatedQuestionFromApi = response.data;
@@ -133,7 +123,7 @@ const SurveyBuildPage = () => {
                 toast.success(`Question "${truncateText(updatedQuestionFromApi.text, 20)}" updated!`);
                 setSelectedQuestionId(null); setShowAddQuestionPanel(false);
             } else {
-                const errorMsg = `Failed to update question: ${response?.message || 'Invalid response from server.'}`;
+                const errorMsg = `Failed to update question: ${response?.message || 'Invalid response.'}`;
                 toast.error(errorMsg + (response?.field ? ` (Field: ${response.field})` : ''));
             }
         } catch (err) {
@@ -144,18 +134,12 @@ const SurveyBuildPage = () => {
     }, [survey]);
 
     const deleteQuestion = useCallback(async (questionIdToDelete) => {
-        if (!survey?._id) { toast.error("Survey not loaded. Cannot delete question."); return; }
+        if (!survey?._id) { toast.error("Survey not loaded."); return; }
         const questionToDeleteText = survey.questions?.find(q => q._id === questionIdToDelete)?.text || "this question";
-        if (!window.confirm(`Are you sure you want to delete "${truncateText(questionToDeleteText, 30)}"? This action cannot be undone.`)) {
-            return;
-        }
+        if (!window.confirm(`Delete "${truncateText(questionToDeleteText, 30)}"?`)) return;
         setSaving(true);
-        // console.log(`[SurveyBuildPage] Deleting question ${questionIdToDelete}`);
         try {
-            // Expecting backend to return { success: true, message: "..." }
             const response = await surveyApi.deleteQuestionById(questionIdToDelete);
-            // console.log('[SurveyBuildPage] Delete question response from API:', response);
-
             if (response && response.success) {
                 setSurvey(prevSurvey => ({
                     ...prevSurvey,
@@ -166,12 +150,10 @@ const SurveyBuildPage = () => {
                 }
                 toast.success(response.message || `Question "${truncateText(questionToDeleteText, 20)}" deleted.`);
             } else {
-                const errorMsg = `Failed to delete question: ${response?.message || 'Invalid response from server.'}`;
-                console.error('[SurveyBuildPage] Delete question error - unsuccessful response:', response);
+                const errorMsg = `Failed to delete question: ${response?.message || 'Invalid response.'}`;
                 toast.error(errorMsg);
             }
         } catch (err) {
-            console.error(`[SurveyBuildPage] Catch block error deleting question ${questionIdToDelete}:`, err);
             toast.error(`Failed to delete question: ${err.response?.data?.message || err.message}`);
         } finally {
             setSaving(false);
@@ -184,18 +166,18 @@ const SurveyBuildPage = () => {
             const reordered = Array.from(prevSurvey.questions);
             const [removed] = reordered.splice(dragIndex, 1);
             reordered.splice(hoverIndex, 0, removed);
-            toast.info("Question order changed. Click 'Save Survey Structure' to persist.");
+            toast.info("Order changed. Click 'Save Survey Structure'.");
             return { ...prevSurvey, questions: reordered };
         });
     }, []);
 
-    const handleSaveSurvey = async () => { // Assumes updateSurveyStructure also returns {success, data}
+    const handleSaveSurvey = async () => {
         if (!survey?._id) { toast.error("Survey data not available."); return; }
         if (!survey.title?.trim()) { toast.error("Survey title cannot be empty."); return; }
         setSaving(true);
         const payload = {
             title: survey.title.trim(), description: survey.description || '', status: survey.status || 'draft',
-            questions: survey.questions?.map(q => q._id) || [],
+            questions: survey.questions?.map(q => q._id) || [], // Send only question IDs
             logicRules: survey.logicRules || survey.globalSkipLogic || [], settings: survey.settings || {},
             randomizationLogic: survey.randomizationLogic || {},
         };
@@ -203,9 +185,15 @@ const SurveyBuildPage = () => {
             const response = await surveyApi.updateSurveyStructure(survey._id, payload);
             if (response && response.success && response.data) {
                 const updatedApiSurvey = response.data;
+                // Important: If backend returns populated questions, use them. Otherwise, keep frontend's full question objects.
+                // This assumes backend might return just IDs or full objects for questions array.
+                const questionsToSet = (updatedApiSurvey.questions && updatedApiSurvey.questions.length > 0 && typeof updatedApiSurvey.questions[0] === 'object')
+                                     ? updatedApiSurvey.questions
+                                     : survey.questions; // Fallback to existing full question objects
+
                 setSurvey(prev => ({
                     ...prev, ...updatedApiSurvey,
-                    questions: (updatedApiSurvey.questions && updatedApiSurvey.questions.every(q => typeof q === 'object' && q._id)) ? updatedApiSurvey.questions : prev.questions,
+                    questions: questionsToSet, // Use potentially repopulated questions
                     logicRules: updatedApiSurvey.logicRules || updatedApiSurvey.globalSkipLogic || [],
                 }));
                 toast.success('Survey structure saved successfully!');
@@ -215,7 +203,7 @@ const SurveyBuildPage = () => {
         } catch (err) {
             let errorMsg = `Error saving survey: ${err.response?.data?.message || err.message || 'Unknown error'}.`;
             if (err.response?.data?.errors) {
-                 errorMsg = `Error saving survey: ${Object.values(err.response.data.errors).map(e => e.message || e).join(', ')}`;
+                 errorMsg = `Error saving: ${Object.values(err.response.data.errors).map(e => e.message || e).join(', ')}`;
             }
             toast.error(errorMsg);
         } finally {
@@ -226,12 +214,12 @@ const SurveyBuildPage = () => {
     const handleSaveLogic = (updatedLogicRules) => {
         setSurvey(prev => ({ ...prev, logicRules: updatedLogicRules, globalSkipLogic: updatedLogicRules }));
         setIsLogicPanelOpen(false);
-        toast.info("Survey logic rules updated locally. Click 'Save Survey Structure' to persist changes.");
+        toast.info("Logic updated. Click 'Save Survey Structure'.");
     };
     const handleSaveSettings = (updatedSettings) => {
         setSurvey(prev => ({ ...prev, settings: updatedSettings }));
         setIsSettingsPanelOpen(false);
-        toast.info("Survey settings updated locally. Click 'Save Survey Structure' to persist changes.");
+        toast.info("Settings updated. Click 'Save Survey Structure'.");
     };
 
     const handleOpenAddQuestionPanel = () => { setSelectedQuestionId(null); setShowAddQuestionPanel(true); };
@@ -242,12 +230,12 @@ const SurveyBuildPage = () => {
     const shouldMakeSpaceForPanel = showAddQuestionPanel || !!selectedQData;
 
     if (loading && !pageError) return <div className={styles.pageLoading}>Loading survey builder...</div>;
-    if (pageError) return (<div className={styles.pageErrorContainer}><h2>Error Loading Survey Data</h2><p>{pageError}</p>{routeSurveyId && <button onClick={() => fetchSurveyData()} disabled={loading}>Retry Fetch</button>}<button onClick={() => navigate('/admin')}>Go to Admin Dashboard</button></div>);
-    if (!survey) return (<div className={styles.pageErrorContainer}><h2>Survey Not Found</h2><p>The survey data could not be loaded or the survey does not exist.</p><button onClick={() => navigate('/admin')}>Go to Admin Dashboard</button></div>);
+    if (pageError) return (<div className={styles.pageErrorContainer}><h2>Error Loading Survey</h2><p>{pageError}</p>{routeSurveyId && <button onClick={() => fetchSurveyData()} disabled={loading}>Retry</button>}<button onClick={() => navigate('/admin')}>Admin Dashboard</button></div>);
+    if (!survey) return (<div className={styles.pageErrorContainer}><h2>Survey Not Found</h2><p>Could not load survey data.</p><button onClick={() => navigate('/admin')}>Admin Dashboard</button></div>);
 
     return (
         <DndProvider backend={HTML5Backend}>
-            <ToastContainer position="top-right" autoClose={4000} newestOnTop theme="colored" />
+            <ToastContainer position="top-right" autoClose={3000} newestOnTop theme="colored" />
             <div className={styles.surveyBuildPage}>
                 <div className={styles.surveyBuildPageInner}>
                     <header className={styles.surveyHeader}>
@@ -255,9 +243,18 @@ const SurveyBuildPage = () => {
                         <div className={styles.headerActions}>
                             <button onClick={() => setIsCollectorsPanelOpen(true)} className="button button-secondary" disabled={saving || loading || !survey._id || isLoadingCollectors}>{isLoadingCollectors ? 'Loading...' : 'Collectors'} ({collectors.length})</button>
                             <button onClick={() => setIsSettingsPanelOpen(true)} className="button button-secondary" disabled={saving || loading || !survey._id}>Settings</button>
-                            <button onClick={() => setIsLogicPanelOpen(true)} className="button button-secondary" disabled={saving || loading || !survey._id}>Survey Logic</button>
+                            <button onClick={() => setIsLogicPanelOpen(true)} className="button button-secondary" disabled={saving || loading || !survey._id}>Logic</button>
                             <button onClick={handleSaveSurvey} className="button button-primary" disabled={saving || loading || !survey._id}>{saving ? 'Saving...' : 'Save Survey Structure'}</button>
-                            <button onClick={() => navigate(`/surveys/${survey._id}`)} className="button" disabled={!survey._id || saving || loading}>Preview</button>
+                            {/* MODIFIED: Changed to Link for Preview */}
+                            <Link
+                                to={`/surveys/${survey._id}/preview`}
+                                className="button" // Add "button-info" or similar if you have it
+                                target="_blank" // Optional: open preview in a new tab
+                                rel="noopener noreferrer" // If using target="_blank"
+                                style={{pointerEvents: (!survey._id || saving || loading) ? 'none' : 'auto', opacity: (!survey._id || saving || loading) ? 0.6 : 1}}
+                            >
+                                Preview
+                            </Link>
                         </div>
                     </header>
                     <div className={styles.mainContentWrapper}>
@@ -266,7 +263,7 @@ const SurveyBuildPage = () => {
                             <div className={styles.questionsContainer}>
                                 {(survey.questions && survey.questions.length > 0) ? survey.questions.map((q, index) => (
                                     <QuestionListItem key={q._id} index={index} question={q} isSelected={q._id === selectedQuestionId && !showAddQuestionPanel} onClick={() => handleQuestionClick(q._id)} onMove={moveQuestion} onDelete={() => deleteQuestion(q._id)} disabled={saving || loading} />
-                                )) : (<p className={styles.noQuestionsMessage}>{loading ? 'Loading questions...' : (survey._id ? 'No questions yet. Click "+ Add New Question" to begin.' : 'Survey not fully loaded.')}</p>)}
+                                )) : (<p className={styles.noQuestionsMessage}>{loading ? 'Loading...' : (survey._id ? 'No questions yet. Click "+ Add New Question".' : 'Survey not loaded.')}</p>)}
                             </div>
                         </div>
                         {shouldMakeSpaceForPanel && (<div className={styles.rightColumnSizer}></div>)}
@@ -277,16 +274,16 @@ const SurveyBuildPage = () => {
                 {isSettingsPanelOpen && survey?._id && (<SurveySettingsPanel isOpen={isSettingsPanelOpen} onClose={() => setIsSettingsPanelOpen(false)} settings={survey.settings || {}} onSave={handleSaveSettings} surveyId={survey._id} />)}
                 {isLogicPanelOpen && survey?._id && (<div className={styles.surveyLogicPanelOverlay}><SurveyLogicPanel key={`logic-modal-${survey._id}`} initialRules={survey.logicRules || survey.globalSkipLogic || []} allQuestions={survey.questions || []} onSaveRules={handleSaveLogic} onClose={() => setIsLogicPanelOpen(false)} isLoading={saving} surveyId={survey._id} /></div>)}
                 {isCollectorsPanelOpen && survey?._id && (<CollectorsPanel isOpen={isCollectorsPanelOpen} onClose={() => setIsCollectorsPanelOpen(false)} surveyId={survey._id} collectors={collectors} onCollectorsUpdate={() => {
-                    toast.info("Refreshing collector list..."); setIsLoadingCollectors(true);
-                    surveyApi.getCollectorsForSurvey(survey._id) // Assuming this also returns {success, data}
+                    toast.info("Refreshing collectors..."); setIsLoadingCollectors(true);
+                    surveyApi.getCollectorsForSurvey(survey._id)
                         .then(collectorsResponse => {
                             if (collectorsResponse && collectorsResponse.success) {
                                 setCollectors(collectorsResponse.data || []);
                             } else {
-                                toast.error(`Could not refresh collector list: ${collectorsResponse?.message}`);
+                                toast.error(`Could not refresh collectors: ${collectorsResponse?.message}`);
                             }
                         })
-                        .catch(err => { console.error("[SurveyBuildPage] Error re-fetching collectors:", err); toast.error("Could not refresh collector list."); })
+                        .catch(err => { toast.error("Could not refresh collectors."); })
                         .finally(() => setIsLoadingCollectors(false));
                 }} isLoading={isLoadingCollectors} />)}
             </div>
@@ -294,4 +291,4 @@ const SurveyBuildPage = () => {
     );
 };
 export default SurveyBuildPage;
-// ----- END OF COMPLETE REVERTED/CORRECTED FILE -----
+// ----- END OF COMPLETE MODIFIED FILE -----

@@ -2,12 +2,31 @@
 // ----- START OF COMPLETE MODIFIED FILE -----
 import axios from 'axios';
 
-// API_BASE_URL is for routes under /api. For public /s routes, we'll construct differently.
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api'; 
-const ROOT_URL = ''; // Assuming backend and frontend are served from the same origin, or this needs to be configured.
-                     // If your backend is on a different port during development (e.g., localhost:3001)
-                     // and frontend on localhost:3000, you'd use the full backend URL here or rely on proxy.
-                     // For simplicity, assuming same origin or proxy setup.
+// Helper to get the backend root URL (e.g., https://surveybuilderapi.onrender.com)
+const getBackendRootUrl = () => {
+    if (process.env.REACT_APP_API_BASE_URL) {
+        // Assuming REACT_APP_API_BASE_URL is like 'https://domain.com/api'
+        // We want 'https://domain.com'
+        try {
+            const url = new URL(process.env.REACT_APP_API_BASE_URL);
+            return `${url.protocol}//${url.host}`;
+        } catch (e) {
+            console.error("Error parsing REACT_APP_API_BASE_URL for root. Falling back.", e);
+            // Fallback if parsing fails, though REACT_APP_API_BASE_URL should be a valid URL
+            return 'https://surveybuilderapi.onrender.com'; // Hardcoded fallback, adjust if necessary
+        }
+    }
+    // Fallback for local development if REACT_APP_API_BASE_URL is not set
+    // Ensure this matches your local backend's root address and port
+    console.warn("REACT_APP_API_BASE_URL is not set. Falling back to default backend root for public survey access. This is usually for local development.");
+    return 'http://localhost:3001'; // Adjust if your local backend runs on a different port
+};
+
+const BACKEND_ROOT_URL = getBackendRootUrl();
+
+// API_BASE_URL is for routes under /api (e.g., https://surveybuilderapi.onrender.com/api)
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || (BACKEND_ROOT_URL ? `${BACKEND_ROOT_URL}/api` : '/api');
+
 
 const apiClient = axios.create({
     baseURL: API_BASE_URL, // For /api prefixed routes
@@ -35,9 +54,14 @@ apiClient.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response && error.response.status === 401) {
-            console.warn('[surveyApi] Unauthorized (401) response. Token might be invalid or expired.');
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
+            // More specific check to avoid logging out on /auth/login 401s
+            if (!error.config.url.endsWith('/auth/login') && !error.config.url.endsWith('/auth/register')) {
+                console.warn('[surveyApi] Unauthorized (401) response. Token might be invalid or expired. Logging out.');
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                // Optionally redirect to login page
+                // window.location.href = '/login';
+            }
         }
         return Promise.reject(error);
     }
@@ -208,12 +232,14 @@ export const registerUser = async (userData) => {
 export const logoutUser = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    // Consider redirecting to home or login page after logout
+    // window.location.href = '/';
 };
 
 export const getMe = async () => {
     try {
         const response = await apiClient.get('/auth/me');
-        return response.data; 
+        return response.data;
     } catch (error) {
         console.error('[surveyApi] Error fetching user profile (/auth/me):', error.response?.data || error.message);
         throw error.response ? error : new Error('Failed to fetch user profile');
@@ -266,24 +292,26 @@ export const accessPublicSurvey = async (accessIdentifier, password = null) => {
     try {
         const payload = password ? { password } : {};
         // Create a new axios instance specifically for this non-/api prefixed route
-        // It will use the ROOT_URL (empty string for same origin, or your backend's full base URL)
-        const publicAccessClient = axios.create({ baseURL: ROOT_URL }); 
-        console.log(`[surveyApi] Calling POST ${ROOT_URL}/s/${accessIdentifier}`);
-        const response = await publicAccessClient.post(`/s/${accessIdentifier}`, payload); // <<< MODIFIED: This will now be POST /s/:accessIdentifier
+        // It will use the BACKEND_ROOT_URL (e.g., https://surveybuilderapi.onrender.com)
+        const publicAccessClient = axios.create({ baseURL: BACKEND_ROOT_URL });
+        console.log(`[surveyApi] Calling POST ${BACKEND_ROOT_URL}/s/${accessIdentifier}`);
+        // The path here is relative to the baseURL, so '/s/...' is correct.
+        const response = await publicAccessClient.post(`/s/${accessIdentifier}`, payload);
         return response.data;
     } catch (error) {
         console.error(`[surveyApi] Error accessing public survey ${accessIdentifier}:`, error.response?.data || error.message);
         if (error.response) {
-            // Log the full error response for better debugging
             console.error(`[surveyApi] Full error response for accessPublicSurvey ${accessIdentifier}: Status ${error.response.status}`, error.response.data);
-            throw error.response.data; // Throw the data part of the error response
+            // Throw the whole error object so the component can inspect error.response.data
+            throw error;
         }
-        throw new Error(`Failed to access survey ${accessIdentifier}`); // Fallback error
+        // Fallback error if error.response is not available
+        throw new Error(error.message || `Failed to access survey ${accessIdentifier}`);
     }
 };
 
 
-const surveyApiFunctions = { // Renamed to avoid conflict with the filename if imported as default
+const surveyApiFunctions = {
     getAllSurveys, createSurvey, getSurveyById, updateSurveyStructure, deleteSurvey,
     createQuestion, updateQuestionContent, deleteQuestionById,
     submitSurveyAnswers, getSurveyResults, exportSurveyResults,
@@ -292,5 +320,5 @@ const surveyApiFunctions = { // Renamed to avoid conflict with the filename if i
     accessPublicSurvey,
 };
 
-export default surveyApiFunctions; // Export the object
+export default surveyApiFunctions;
 // ----- END OF COMPLETE MODIFIED FILE -----

@@ -1,0 +1,121 @@
+/* frontend/src/pages/PublicSurveyHandler.css */
+.public-survey-handler-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 120px); /* Adjust based on your navbar/footer height */
+    padding: 20px;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.password-prompt-container {
+    background-color: #f9f9f9;
+    padding: 25px 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    max-width: 450px;
+    width: 100%;
+}
+
+.password-prompt-container h2 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #333;
+    font-size: 1.5em;
+}
+.survey-title-prompt {
+    font-size: 1.1em;
+    color: #555;
+    margin-bottom: 15px;
+}
+
+
+.password-form .form-group {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.password-form label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #454545;
+}
+
+.password-form input[type="password"] {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-size: 1em;
+}
+
+.password-form input[type="password"].input-error {
+    border-color: #e74c3c; /* Red for error */
+    box-shadow: 0 0 0 0.2rem rgba(231, 76, 60, 0.25);
+}
+
+.password-form .error-message {
+    color: #e74c3c; /* Bootstrap danger color */
+    font-size: 0.9em;
+    margin-top: 6px;
+}
+.password-form .general-error {
+    margin-top: 15px;
+    font-weight: 500;
+}
+
+
+.error-container h2 {
+    color: #e74c3c;
+    margin-bottom: 10px;
+}
+.error-container p {
+    margin-bottom: 20px;
+    font-size: 1.1em;
+}
+
+.spinner {
+    border: 5px solid rgba(0, 0, 0, 0.1);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border-left-color: #3498db; /* Your primary color */
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.button-primary {
+    background-color: #3498db; /* Example primary color */
+    color: white;
+    padding: 12px 18px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 500;
+    transition: background-color 0.2s ease-in-out;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.button-primary:hover {
+    background-color: #2980b9;
+}
+
+.button-primary:disabled {
+    background-color: #bdc3c7;
+    cursor: not-allowed;
+}
