@@ -1,0 +1,212 @@
+/* frontend/src/components/CollectorFormModal.module.css */
+/* ----- START OF NEW FILE ----- */
+.modalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6); /* Darker overlay for modal */
+    z-index: 1050; /* Higher than CollectorsPanel overlay */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px; /* Padding for smaller screens */
+}
+
+.modal {
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    width: 100%;
+    max-width: 600px; /* Max width of the modal */
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh; /* Max height of the modal */
+    animation: fadeInScale 0.3s ease-out;
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.modalHeader {
+    padding: 15px 20px;
+    border-bottom: 1px solid #e9ecef;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modalHeader h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.closeButton {
+    background: none;
+    border: none;
+    font-size: 1.75rem;
+    font-weight: bold;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0.25rem 0.75rem;
+    line-height: 1;
+}
+.closeButton:hover {
+    color: #343a40;
+}
+
+.modalBody {
+    padding: 20px;
+    overflow-y: auto; /* Allows scrolling for long forms */
+    flex-grow: 1;
+}
+
+.formGroup {
+    margin-bottom: 1.25rem;
+}
+
+.formGroup label,
+.settingsFieldset legend {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #333;
+}
+
+.settingsFieldset legend {
+    font-size: 1.1em;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+    width: 100%;
+}
+
+
+.formGroup input[type="text"],
+.formGroup input[type="number"],
+.formGroup input[type="datetime-local"],
+.formGroup select {
+    width: 100%;
+    padding: 0.65rem 0.75rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #495057;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.formGroup input:focus,
+.formGroup select:focus {
+    border-color: #80bdff;
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.formGroupCheckbox {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.formGroupCheckbox input[type="checkbox"] {
+    margin-right: 0.75rem;
+    width: auto; /* Override default width for checkboxes */
+    height: 1.1em;
+    width: 1.1em;
+    cursor: pointer;
+}
+.formGroupCheckbox label {
+    margin-bottom: 0; /* Reset label margin for checkbox group */
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.fieldDescription {
+    font-size: 0.8em;
+    color: #6c757d;
+    display: block;
+    margin-left: calc(1.1em + 0.75rem); /* Align with text after checkbox */
+    margin-top: 0.25rem;
+}
+
+
+.settingsFieldset {
+    border: 1px solid #dee2e6;
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+    border-radius: 0.3rem;
+    background-color: #fcfcfc;
+}
+
+.modalFooter {
+    padding: 1rem 1.25rem;
+    border-top: 1px solid #e9ecef;
+    display: flex;
+    justify-content: flex-end;
+    background-color: #f7f7f7;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.modalFooter .button {
+    margin-left: 0.5rem;
+}
+
+.errorMessage {
+    color: #dc3545;
+    font-size: 0.875em;
+    margin-top: 0.25rem;
+}
+
+.inputError {
+    border-color: #dc3545 !important; /* Important to override focus styles if needed */
+}
+.inputError:focus {
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+}
+
+/* Use global button styles if available, or define here */
+/* You might have these in App.css or index.css */
+/*
+.button {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    text-decoration: none;
+    border: 1px solid transparent;
+}
+.button-primary {
+    color: #fff;
+    background-color: #007bff;
+    border-color: #007bff;
+}
+.button-primary:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+}
+.button-secondary {
+    color: #fff;
+    background-color: #6c757d;
+    border-color: #6c757d;
+}
+.button-secondary:hover {
+    background-color: #545b62;
+    border-color: #545b62;
+}
+*/
+/* ----- END OF NEW FILE ----- */

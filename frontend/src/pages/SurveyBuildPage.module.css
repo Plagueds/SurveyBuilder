@@ -1,0 +1,196 @@
+/* frontend/src/pages/SurveyBuildPage.module.css */
+/* ----- START OF COMPLETE MODIFIED FILE (v3.3 - Panel Rendering Location Change) ----- */
+
+.surveyBuildPage {
+    display: flex;
+    flex-direction: column;
+    max-width: 100%;
+    margin: 0 auto;
+    position: relative; /* Good for containing absolutely positioned children if any, though QEP is fixed */
+    background-color: var(--page-background, #e9ecef);
+}
+
+.surveyBuildPageInner {
+    padding: 20px;
+    padding-top: 80px; /* mainNavbarHeight (e.g. 60px) + 20px top space */
+}
+
+
+.surveyHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    margin-bottom: 25px;
+    position: sticky;
+    top: 60px; /* Height of your main application navbar */
+    background-color: var(--background-color, #ffffff);
+    z-index: 1000; /* This is for the survey header itself */
+    border-radius: var(--border-radius-lg, 8px);
+    box-shadow: var(--shadow-md, 0 4px 10px rgba(0,0,0,0.07));
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.surveyTitleInput {
+    font-size: 1.6em;
+    font-weight: 600;
+    border: 1px solid var(--input-border-subtle, #ced4da);
+    padding: 10px 15px;
+    border-radius: var(--border-radius-md);
+    background-color: var(--input-bg, #fff);
+    color: var(--text-color-strong);
+    flex-grow: 1;
+    margin-right: 25px;
+}
+.surveyTitleInput:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.2rem var(--primary-color-alpha);
+    background-color: var(--background-color-light);
+}
+
+.headerActions {
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.mainContentWrapper {
+  display: flex;
+  flex-direction: row;
+  gap: 25px;
+}
+
+/* Renamed from leftColumnWithPanel to reflect its purpose */
+.leftColumnWithPanelSpace {
+  flex: 2; /* Adjust flex basis if needed, e.g., if sizer is flex: 1 */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.leftColumnFullWidth {
+  flex: 1; /* Takes full width when no sizer */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+/* This is now just a sizer to push the left column when the panel is 'open' */
+.rightColumnSizer {
+  flex: 1; /* This should match the desired proportion for the panel area */
+  min-width: 400px; /* Minimum width of the panel area */
+  max-width: 650px; /* Maximum width of the panel area - should match QEP max width */
+  /* NO position: sticky, NO z-index */
+}
+
+
+/* .panelSection is NO LONGER USED to wrap QuestionPropertiesPanel in SurveyBuildPage.js */
+/* It might still be used by other panels like SurveySettingsPanel if they are not position:fixed */
+.panelSection {
+  background-color: var(--background-color-light, #ffffff);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: var(--border-radius-lg, 8px);
+  padding: 25px;
+  box-shadow: var(--shadow-md, 0 4px 10px rgba(0,0,0,0.08));
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1; /* If it's inside a flex container like the old rightColumn */
+}
+
+
+.questionListHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0;
+  padding: 20px 25px;
+  background-color: var(--background-accent, #f8f9fa);
+  border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+}
+.questionListHeader h2 {
+    margin: 0;
+    font-size: 1.5em;
+    color: var(--text-color-strong);
+}
+
+.questionsContainer {
+  background-color: var(--background-color, #fff);
+  padding: 25px;
+  border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg); /* Only bottom corners if header is separate */
+  box-shadow: var(--shadow-md, 0 4px 10px rgba(0,0,0,0.07));
+  flex-grow: 1;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-top: none; /* Since header has bottom border */
+}
+
+.noQuestionsMessage {
+    font-style: italic;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 40px 20px;
+    background-color: transparent;
+    border-radius: var(--border-radius);
+    margin-top: 0;
+}
+
+
+
+@media (max-width: 1024px) {
+  .mainContentWrapper {
+    flex-direction: column;
+  }
+  .rightColumnSizer {
+    min-width: 100%; /* Sizer takes full width on smaller screens if panel is open */
+    max-width: 100%;
+    flex-basis: auto; /* Let content determine height or set explicitly */
+    /* You might not even need the sizer on mobile if QEP is full screen fixed */
+  }
+  .leftColumnWithPanelSpace {
+    flex-basis: auto; /* Or 100% width */
+  }
+}
+
+@media (max-width: 768px) {
+  .surveyBuildPageInner {
+    padding: 15px;
+    padding-top: 70px; /* mainNavbarHeight (e.g., 50px) + 20px space */
+  }
+  .surveyHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+    padding: 15px;
+    top: 50px; /* Adjust if main navbar height is different on mobile */
+    border-radius: var(--border-radius-md);
+  }
+  .surveyTitleInput {
+    width: 100%;
+    margin-right: 0;
+    font-size: 1.4em;
+    padding: 10px;
+  }
+  .headerActions {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .headerActions .button {
+    flex-grow: 1;
+    min-width: 110px;
+    font-size: 0.85em;
+    margin-bottom: 8px;
+  }
+  /* .panelSection might need adjustments if used by other panels on mobile */
+  .questionListHeader {
+    padding: 15px 20px;
+  }
+  .questionsContainer {
+    padding: 20px;
+  }
+}
+/* ----- END OF COMPLETE MODIFIED FILE (v3.3) ----- */

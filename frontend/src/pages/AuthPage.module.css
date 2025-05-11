@@ -1,0 +1,124 @@
+/* frontend/src/pages/AuthPage.module.css */
+/* ----- START OF MODIFIED FILE ----- */
+.authPageContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: calc(100vh - 120px); /* Adjust based on Navbar/Footer height */
+    padding: 20px;
+    /* Use global theme variable */
+    background-color: var(--background-primary); 
+}
+
+.authFormCard {
+    /* Use global theme variables */
+    background-color: var(--background-secondary); 
+    padding: 30px 40px;
+    border-radius: var(--border-radius-lg); /* Use global, ensure it's defined (e.g., 0.5rem or 8px) */
+    box-shadow: var(--shadow-md);
+    width: 100%;
+    max-width: 450px;
+    border: 1px solid var(--border-color);
+}
+
+.authTitle {
+    text-align: center;
+    margin-bottom: 25px;
+    font-size: 1.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.authForm {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.formGroup {
+    display: flex;
+    flex-direction: column;
+}
+
+.formGroup label {
+    margin-bottom: 8px;
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+}
+
+.formInput {
+    padding: 12px 15px;
+    border: 1px solid var(--border-color); /* Use global border-color */
+    border-radius: var(--border-radius-md);
+    font-size: 1rem;
+    background-color: var(--background-secondary); /* Use global for input background, often same as card */
+    color: var(--text-primary); /* Use global for input text */
+    transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.formInput:focus {
+    border-color: var(--primary-color);
+    /* You might need a specific variable for focus shadow if the global one isn't suitable */
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25); /* Or var(--focus-ring-color, rgba(0,123,255,.25)) */
+    outline: none;
+}
+
+.formInput:disabled {
+    background-color: var(--background-accent); /* Use global for disabled bg */
+    cursor: not-allowed;
+}
+
+.authButton {
+    padding: 12px 15px;
+    font-size: 1.05rem;
+    font-weight: 500;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    /* Relies on global .button and .button-primary for actual button colors */
+}
+
+.authButton:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.errorMessageServer {
+    /* Use global error variables */
+    background-color: var(--error-bg); 
+    color: var(--error-text);
+    border: 1px solid var(--error-border);
+    padding: 10px 15px;
+    border-radius: var(--border-radius-md);
+    margin-bottom: 15px;
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.authRedirectText {
+    margin-top: 25px;
+    text-align: center;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+}
+
+.authLink {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.authLink:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 500px) {
+    .authFormCard {
+        padding: 25px 20px;
+    }
+    .authTitle {
+        font-size: 1.6rem;
+    }
+}
+/* ----- END OF MODIFIED FILE ----- */

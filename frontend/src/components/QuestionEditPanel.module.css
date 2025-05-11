@@ -1,0 +1,708 @@
+/* frontend/src/components/QuestionEditPanel.module.css */
+/* ----- START OF COMPLETE UPDATED FILE (v10.4 - Cleaned Empty Rules & Confirmed z-index) ----- */
+
+/* Specific style for CHECKED CHECKBOX: Blue background AND checkmark SVG */
+.formCheckInput[type="checkbox"]:checked {
+  background-color: var(--primary-color, #0d6efd);
+  border-color: var(--primary-color, #0d6efd);
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e");
+  background-size: 65%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Checked Radio */
+.formCheckInput[type="radio"]:checked {
+  background-color: var(--primary-color, #0d6efd);
+  border-color: var(--primary-color, #0d6efd);
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23fff'/%3e%3c/svg%3e");
+}
+
+/* Label styling when input is checked */
+.formCheckInput:checked + .formCheckLabel {
+  font-weight: bold;
+  color: var(--text-primary);
+}
+
+.questionEditPanel {
+    position: fixed; /* This element should be fixed */
+    top: 0;
+    right: 0;
+    width: 450px;
+    max-width: 90vw;
+    height: 100vh;
+    background-color: var(--background-elevated, #fff);
+    border-left: 1px solid var(--border-color, #ccc);
+    box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    z-index: 1060; /* CRITICAL: This value must be higher than surveyHeader's z-index (1000) */
+    transition: transform 0.3s ease-in-out;
+    transform: translateX(0);
+    box-sizing: border-box;
+  }
+
+  @media (min-width: 768px) {
+      .questionEditPanel {
+          width: 550px;
+      }
+  }
+  @media (min-width: 992px) {
+      .questionEditPanel {
+          width: 650px;
+      }
+  }
+
+  .questionEditPanel.hidden {
+    transform: translateX(100%);
+  }
+
+  .panelHeader {
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-color, #ccc);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    background-color: var(--background-secondary, #f8f9fa);
+    box-sizing: border-box;
+    position: relative; /* Added to ensure it establishes a context for potential children z-indices if needed */
+    z-index: 1; /* Ensures header is above panelContent if they were to visually fight */
+  }
+
+  .panelHeader h3 {
+    margin: 0;
+    font-size: 1.2em;
+    color: var(--text-primary);
+  }
+
+  .closeButton {
+    background: none;
+    border: none;
+    font-size: 1.8em;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 5px;
+    color: var(--text-muted);
+  }
+  .closeButton:hover {
+      color: var(--text-primary);
+  }
+
+  .panelContent {
+    padding: 20px;
+    flex-grow: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+
+  .panelFooter {
+    padding: 15px 20px;
+    border-top: 1px solid var(--border-color, #ccc);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-shrink: 0;
+    background-color: var(--background-secondary, #f8f9fa);
+    box-sizing: border-box;
+    position: relative; /* Similar to panelHeader, for internal stacking robustness */
+    z-index: 1;
+  }
+
+  .formGroup {
+    margin-bottom: 1.5rem;
+  }
+
+  .formGroup.formCheck {
+      margin-bottom: 1rem;
+  }
+
+  .formLabel,
+  .formCheckLabel {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+    color: var(--text-primary);
+    font-size: 0.95em;
+  }
+
+  .formControl {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--input-text, #212529);
+    background-color: var(--input-bg, #fff);
+    background-clip: padding-box;
+    border: 1px solid var(--input-border, #ced4da);
+    appearance: none;
+    border-radius: var(--border-radius-sm, 0.25rem);
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    box-sizing: border-box;
+  }
+
+  .formControl:focus {
+    color: var(--input-text);
+    background-color: var(--input-bg);
+    border-color: var(--primary-color-light, #86b7fe);
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem var(--primary-color-alpha, rgba(13, 110, 253, 0.25));
+  }
+
+  textarea.formControl {
+      min-height: calc(1.5em * 3 + 20px + 2px);
+      resize: vertical;
+  }
+
+  .formCheck {
+    display: flex;
+    align-items: center;
+    padding-left: 0;
+    margin-bottom: 0.75rem;
+  }
+
+  .formCheckInput {
+    flex-shrink: 0;
+    width: 1em;
+    height: 1em;
+    margin-top: 0;
+    margin-right: 0.5em;
+    vertical-align: top;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    appearance: none;
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, background-image 0.15s ease-in-out;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+  }
+
+  .formCheckInput[type="checkbox"] {
+    border-radius: 0.25em;
+  }
+
+  .formCheckInput[type="radio"] {
+    border-radius: 50%;
+  }
+
+  .formCheckLabel {
+    margin-bottom: 0;
+    font-weight: normal;
+    cursor: pointer;
+    transition: font-weight 0.15s ease-in-out, color 0.15s ease-in-out;
+    color: var(--text-secondary);
+  }
+
+  .formControl.isInvalid {
+    border-color: var(--error-border, #dc3545);
+    padding-right: calc(1.5em + 0.75rem);
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' width='12' height='12' fill='none' stroke='%23dc3545'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%23dc3545' stroke='none'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right calc(0.375em + 0.1875rem) center;
+    background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+  }
+
+  .formControl.isInvalid:focus {
+    border-color: var(--error-border, #dc3545);
+    box-shadow: 0 0 0 0.2rem var(--error-border-alpha, rgba(220, 53, 69, 0.25));
+  }
+
+  .invalidFeedback {
+    display: none;
+    width: 100%;
+    margin-top: 0.25rem;
+    font-size: 0.8em;
+    color: var(--error-text, #dc3545);
+  }
+
+  .isInvalid ~ .invalidFeedback,
+  .formControl.isInvalid ~ .invalidFeedback,
+  .invalidFeedback.d-block {
+    display: block;
+  }
+
+  small,
+  .textMuted {
+      display: block;
+      margin-top: 0.3rem;
+      font-size: 0.8em;
+      color: var(--text-muted, #6c757d) !important;
+  }
+
+  .sliderControls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+  }
+  .sliderLabels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+  }
+
+  .heatmapPreviewImage {
+      max-width: 100%;
+      height: auto;
+      margin-top: 10px;
+      border: 1px solid var(--border-color);
+  }
+
+  .conjointAttributesSection { margin-bottom: 1.5rem; }
+  .conjointAttributeList {
+      margin-bottom: 15px;
+      border: 1px solid var(--border-color-light);
+      border-radius: var(--border-radius-sm);
+      max-height: 200px;
+      overflow-y: auto;
+  }
+  .conjointAttributeItem {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-color-light);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9em;
+  }
+  .conjointAttributeItem:last-child { border-bottom: none; }
+  .conjointAttributeItem span {
+      margin-right: 10px;
+      word-break: break-word;
+  }
+  .conjointAttributeControls {
+      flex-shrink: 0;
+      display: flex;
+      gap: 5px;
+  }
+  .conjointAttributeModal {
+      border: 1px dashed var(--primary-color);
+      padding: 15px;
+      margin-top: 15px;
+      border-radius: var(--border-radius-sm);
+      background-color: var(--background-secondary);
+  }
+  .conjointAttributeModal h5 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      font-size: 1em;
+  }
+  .conjointAttributeModalFooter {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 15px;
+  }
+
+  .mt1 { margin-top: 0.5rem !important; }
+  .mr1 { margin-right: 0.5rem !important; }
+  .mt2 { margin-top: 1rem !important; }
+  .mb-2 { margin-bottom: 0.5rem !important; }
+  .d-block { display: block !important; }
+
+.dynamicListContainer { margin-bottom: 1.5rem; }
+.dynamicListItem {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dynamicListInput {
+  flex-grow: 1;
+  margin-bottom: 0;
+  vertical-align: baseline;
+}
+.dynamicListRemoveButton {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--button-danger-border-color, #dc3545);
+  background-color: var(--button-danger-bg-color, #dc3545);
+  color: var(--button-danger-text-color, #fff);
+  border-radius: var(--border-radius-sm, 0.25rem);
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+  height: 40px;
+  width: 40px;
+  box-sizing: border-box;
+  line-height: 1;
+  font-size: 1.4em;
+  vertical-align: middle;
+}
+.dynamicListRemoveButton:hover {
+   background-color: var(--button-danger-hover-bg-color, #bb2d3b);
+   border-color: var(--button-danger-hover-border-color, #b02a37);
+}
+.dynamicListAddButton { margin-top: 5px; }
+
+.panelTabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 15px;
+  background-color: var(--background-muted);
+  flex-wrap: wrap;
+  position: relative; /* Ensure it's a positioned ancestor for its children if needed */
+  z-index: 2; /* Ensures tabs are above panelContent if there's any weird overlap within the panel */
+}
+.panelTabButton {
+  padding: 8px 12px;
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+}
+.panelTabButton:hover:not(.active):not(.disabled) {
+  background-color: var(--background-hover);
+  color: var(--text-primary);
+}
+.panelTabButton.active {
+  color: var(--primary-color);
+  font-weight: bold;
+  border-bottom-color: var(--primary-color);
+}
+.panelTabButton.disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+  background-color: transparent;
+}
+
+.panelTabContent { display: none; }
+.panelTabContent.active { display: block; }
+
+.logicSection,
+.pipingSection,
+.validationSection {
+  margin-bottom: 25px;
+  padding: 15px;
+  border: 1px solid var(--border-color-light, #e9ecef);
+  border-radius: var(--border-radius-sm, 0.25rem);
+  background-color: var(--background-secondary, #f8f9fa);
+}
+.panelTabContent > *:last-child { margin-bottom: 0; }
+
+.logicSection h4,
+.pipingSection h4,
+.validationSection h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-color-light, #e9ecef);
+  padding-bottom: 5px;
+  font-size: 1.1em;
+}
+.logicSection h4 small,
+.pipingSection h4 small,
+.validationSection h4 small {
+  font-weight: normal;
+  font-size: 0.8em;
+}
+.logicSection .formCheck,
+.pipingSection .formCheck,
+.validationSection .formCheck { margin-bottom: 8px; }
+
+.logicSection .formCheckLabel,
+.pipingSection .formCheckLabel,
+.validationSection .formCheckLabel { font-weight: normal; }
+
+.logicSection .formCheckLabel small,
+.pipingSection .formCheckLabel small,
+.validationSection .formCheckLabel small { margin-left: 5px; }
+
+.formCheckInline {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 15px;
+  margin-bottom: 8px;
+}
+.formCheckInline + div > small { margin-top: 5px; }
+
+.logicDivider,
+.pipingDivider {
+  border: none;
+  border-top: 1px dashed var(--border-color, #dee2e6);
+  margin: 25px 0;
+}
+.pipingCodeDisplay {
+  background-color: var(--background-muted);
+  padding: 3px 6px;
+  border-radius: var(--border-radius-sm);
+  font-family: monospace;
+  font-size: 0.9em;
+  border: 1px solid var(--border-color-light);
+  display: inline-block;
+  margin: 5px 0;
+}
+.mergeCodeList {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 10px;
+}
+.mergeCodeList li {
+  margin-bottom: 10px;
+  background-color: var(--background-muted);
+  padding: 8px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid var(--border-color-light);
+}
+.mergeCodeList code {
+  font-weight: bold;
+  margin-right: 5px;
+  background-color: var(--background-hover);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 0.9em;
+  border: 1px solid var(--border-color);
+}
+.mergeCodeList small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+}
+.validationSection .formCheck .fa-exclamation-triangle {
+  margin-right: 5px;
+  color: var(--warning-text);
+}
+.answerRequirementsGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.answerRequirementRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.answerRequirementRow .formLabel {
+    flex-basis: 100px;
+    flex-shrink: 0;
+    text-align: right;
+    margin-bottom: 0;
+    font-weight: normal;
+}
+.answerRequirementRow .formControl {
+    flex: 0 1 100px;
+    width: 100px;
+}
+.answerRequirementRow .formCheck {
+    margin-bottom: 0;
+    margin-left: 10px;
+}
+.logicSection.hasError,
+.pipingSection.hasError,
+.validationSection.hasError {
+  border-color: var(--error-border, #dc3545);
+  background-color: var(--error-bg-light, rgba(220, 53, 69, 0.05));
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+.logicSummary {
+  padding: 10px 15px;
+  background-color: var(--background-muted, #f1f3f5);
+  border: 1px solid var(--border-color-light, #e9ecef);
+  border-radius: var(--border-radius-sm, 0.25rem);
+  margin-bottom: 20px;
+  font-size: 0.9em;
+}
+.logicSummary h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 1em;
+  color: var(--text-secondary, #6c757d);
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.logicSummary p,
+.logicSummary ul {
+  margin-bottom: 5px;
+  color: var(--text-primary, #212529);
+}
+.logicSummary ul {
+  padding-left: 20px;
+  margin-top: 5px;
+}
+.logicSummary li { margin-bottom: 3px; }
+
+.logicControls {
+  margin-bottom: 20px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.logicRuleEditor {
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: var(--border-radius, 5px);
+  padding: 15px;
+  margin-bottom: 20px;
+  background-color: var(--background-elevated-secondary, #f9f9f9);
+}
+.logicRuleHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color-light, #eee);
+  gap: 15px;
+}
+.logicRuleNameInput {
+  flex-grow: 1;
+  font-weight: bold;
+}
+.logicRuleConditionSection { margin-top: 15px; }
+.logicOverallOperator {
+  text-align: center;
+  margin: 15px 0;
+  font-weight: bold;
+  color: var(--text-muted, #555);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.logicOverallOperator select.formControlSmall { margin: 0 10px; }
+.logicGroupEditor {
+  border: 1px dashed var(--border-color-light, #ddd);
+  border-radius: var(--border-radius-sm, 4px);
+  padding: 15px;
+  margin-bottom: 15px;
+  background-color: var(--background-elevated, #fff);
+}
+.logicGroupHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  font-size: 0.9em;
+  color: var(--text-secondary, #333);
+  gap: 10px;
+}
+.logicGroupLabel { font-weight: bold; }
+.logicConditionsContainer {
+    padding-left: 0;
+    border-left: none;
+    margin-top: 10px;
+}
+.logicGroupOperatorLabel {
+    display: block;
+    text-align: center;
+    margin: 10px 0;
+    font-weight: bold;
+    font-size: 0.85em;
+    color: var(--text-muted, #777);
+    text-transform: uppercase;
+}
+.logicConditionItem {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1.5fr auto;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 10px;
+  padding: 8px;
+  background-color: var(--background-secondary, #f8f9fa);
+  border-radius: var(--border-radius-sm, 3px);
+}
+@media (max-width: 600px) {
+    .logicConditionItem { grid-template-columns: 1fr auto; }
+    .logicConditionItem select,
+    .logicConditionItem input { grid-column: 1 / 2; }
+    .logicConditionItem button {
+        grid-column: 2 / 3;
+        grid-row: 1 / 4;
+        align-self: center;
+    }
+}
+.logicActionEditor {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border-color-light, #eee);
+}
+.logicActionEditor h4 {
+    margin-bottom: 15px;
+    font-size: 1.05em;
+}
+.logicActionControls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+.logicActionControls select,
+.logicActionControls input { flex: 1 1 200px; }
+.logicActionEditor textarea { margin-top: 10px; }
+
+.logicRemoveButton {
+  padding: 2px 6px;
+  font-size: 1em;
+  line-height: 1;
+  flex-shrink: 0;
+  height: auto;
+  width: auto;
+  min-width: 30px;
+}
+.logicConditionItem .logicRemoveButton {
+    height: 40px;
+    width: 40px;
+    font-size: 1.4em;
+}
+.logicAddButton {
+  margin-top: 15px;
+  font-size: 0.9em;
+}
+.addGroupButton {
+    display: block;
+    margin: 20px auto 10px auto;
+}
+.formControlSmall {
+    display: inline-block;
+    width: auto;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    border-radius: 0.2rem;
+    height: auto;
+    vertical-align: middle;
+}
+
+@media (max-width: 768px) {
+  .logicRuleHeader {
+      flex-direction: column;
+      align-items: stretch;
+  }
+  .logicRuleHeader .button-danger { margin-top: 10px; }
+  .logicActionControls { flex-direction: column; }
+  .answerRequirementRow {
+      flex-direction: column;
+      align-items: flex-start;
+  }
+  .answerRequirementRow .formLabel {
+      flex-basis: auto;
+      text-align: left;
+      margin-bottom: 0.25rem;
+  }
+  .answerRequirementRow .formControl {
+      width: 100%;
+      flex: 1 1 auto;
+  }
+}
+
+/* ----- END OF COMPLETE UPDATED FILE (v10.4 - Cleaned Empty Rules & Confirmed z-index) ----- */

@@ -1,0 +1,182 @@
+/* frontend/src/components/Navbar.css */
+/* ----- START OF CORRECTED AND REVIEWED FILE ----- */
+.main-navbar {
+  background-color: var(--navbar-bg, #2c3e50); /* Darker, more modern blue/grey */
+  padding: 0 25px; /* Increased padding */
+  border-bottom: 1px solid var(--navbar-border, #34495e); /* Slightly lighter border for depth */
+  position: sticky; 
+  top: 0;           
+  left: 0;          
+  width: 100%;      
+  z-index: 1050;    
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 65px; /* Slightly taller navbar */
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Subtle shadow for elevation */
+}
+
+.navbar-brand {
+  font-size: 1.6rem; /* Larger brand */
+  font-weight: 700; /* Bolder brand */
+  color: var(--navbar-brand-text, #ecf0f1); /* Light text for contrast */
+  text-decoration: none;
+  padding: 10px 0;
+}
+.navbar-brand:hover {
+  color: var(--navbar-brand-hover-text, #ffffff);
+}
+
+.navbar-links-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center; 
+  gap: 5px; 
+}
+
+.nav-link {
+  display: block;
+  padding: 12px 18px; 
+  text-decoration: none;
+  color: var(--navbar-link-text, #bdc3c7); 
+  font-weight: 500;
+  border-bottom: 3px solid transparent; 
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+  border-radius: var(--border-radius-md, 4px); 
+  margin: 0 2px; 
+}
+
+.nav-link:hover {
+  color: var(--navbar-link-hover-text, #ffffff); 
+  background-color: var(--navbar-link-hover-bg, #34495e); 
+}
+
+.nav-link.active {
+  color: var(--navbar-link-active-text, #ffffff); 
+  font-weight: 600; 
+  background-color: var(--navbar-link-active-bg, #007bff); 
+  border-bottom-color: transparent; 
+}
+
+.navbar-actions-container {
+  display: flex;
+  align-items: center;
+  gap: 12px; 
+}
+
+.navbar-user-greeting {
+  color: var(--navbar-text, #ecf0f1);
+  font-size: 0.95rem;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+
+
+.nav-button,
+.logout-button {
+  background-color: var(--button-secondary-bg, #4a6fa5); 
+  color: var(--button-secondary-text, #ffffff);
+  border: none;
+  padding: 9px 15px; 
+  border-radius: var(--border-radius-md, 4px);
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+}
+.nav-button:hover,
+.logout-button:hover {
+  background-color: var(--button-secondary-hover-bg, #3b5a8a);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+
+
+.theme-toggle-button {
+  background: transparent;
+  border: 1px solid var(--navbar-link-text, #bdc3c7);
+  color: var(--navbar-link-text, #bdc3c7);
+  padding: 8px 12px; 
+  border-radius: var(--border-radius-md, 4px);
+  cursor: pointer;
+  font-size: 1.1rem; 
+  line-height: 1;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.theme-toggle-button:hover {
+  background-color: var(--navbar-link-text, #bdc3c7);
+  color: var(--navbar-bg, #2c3e50);
+}
+
+.navbar-loading-text {
+    color: var(--navbar-text, #ecf0f1);
+    font-style: italic;
+    font-size: 0.9rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .main-navbar {
+    flex-direction: column;
+    align-items: stretch; 
+    padding: 10px 15px;
+    min-height: auto; 
+  }
+
+  .navbar-brand {
+    text-align: center; 
+    margin-bottom: 10px;
+    width: 100%; /* Ensure brand takes full width for centering */
+  }
+
+  .navbar-links-list {
+    flex-direction: column;
+    width: 100%;
+    align-items: stretch; 
+    gap: 0; 
+  }
+
+  .nav-link {
+    text-align: center; 
+    border-bottom: 1px solid var(--navbar-border, #34495e); 
+    margin: 0;
+    border-radius: 0; 
+  }
+  .nav-link:last-child {
+    border-bottom: none;
+  }
+  /* .nav-link.active styling remains as defined above */
+  
+  .navbar-actions-container {
+    flex-direction: column; 
+    width: 100%;
+    margin-top: 10px;
+    align-items: stretch; 
+    gap: 8px;
+  }
+  .navbar-user-greeting {
+    text-align: center;
+    margin-bottom: 5px;
+    margin-right: 0; /* Reset margin for stacked layout */
+  }
+  .auth-link, 
+  .logout-button, 
+  .nav-button { /* Ensure all button-like elements in actions are full width */
+    width: 100%;
+    text-align: center;
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+  }
+  .navbar-theme-toggle-container {
+    margin-top: 5px;
+    display: flex; 
+    justify-content: center;
+  }
+  
+}
+/* ----- END OF CORRECTED AND REVIEWED FILE ----- */

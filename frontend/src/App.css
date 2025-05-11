@@ -1,0 +1,546 @@
+/* frontend/src/App.css */
+/* ----- START OF COMPLETE MERGED FILE (incorporating Navbar.css concepts) ----- */
+
+/* Basic Reset & Body Styles */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Define color variables for light and dark themes */
+:root {
+  /* Light Theme (Default) */
+  --background-primary: #f0f2f5;
+  --background-secondary: #ffffff;
+  --background-accent: #eef1f0;
+  --text-primary: #2c3e50;
+  --text-secondary: #555555;
+  --text-muted: #7f8c8d;
+  --border-color: #e0e0e0;
+  --border-color-heavy: #dcdcdc;
+  --link-color: #3498db; /* Primary blue for links and active states */
+  --navbar-bg: #2c3e50; /* Dark background for navbar */
+  --navbar-text: #ecf0f1; /* Light text for navbar */
+  --navbar-hover-bg: #34495e; /* Slightly different dark for hover */
+  --navbar-active-border: var(--link-color); /* Active link border color */
+  --button-primary-bg: #3498db;
+  --button-primary-text: #ffffff;
+  --button-secondary-bg: #bdc3c7;
+  --button-secondary-text: #333;
+  --button-danger-bg: #e74c3c;
+  --button-danger-text: #ffffff;
+  --button-warning-bg: #f1c40f;
+  --button-warning-text: #333;
+  --input-bg: #ffffff;
+  --input-border: #ccc;
+  --input-text: #333;
+  --table-header-bg: #f8f9fa;
+  --table-header-text: #495057;
+  --table-row-even-bg: #fdfdfd;
+  --table-row-hover-bg: #f1f1f1;
+  --success-bg: #d4edda;
+  --success-border: #c3e6cb;
+  --success-text: #155724;
+  --error-bg: #f8d7da;
+  --error-border: #f5c6cb;
+  --error-text: #721c24;
+  --warning-bg: #fff3cd;
+  --warning-border: #ffeeba;
+  --warning-text: #856404;
+  --info-bg: #d1ecf1;
+  --info-border: #bee5eb;
+  --info-text: #0c5460;
+
+  --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-medium: 0 2px 5px rgba(0, 0, 0, 0.15);
+  --shadow-heavy: 0 4px 8px rgba(0, 0, 0, 0.08);
+
+  --border-radius-sm: 4px;
+  --border-radius: 8px;
+
+  --primary-color: var(--button-primary-bg);
+  --primary-color-light: color-mix(in srgb, var(--primary-color) 80%, white);
+  --primary-color-alpha: color-mix(in srgb, var(--primary-color) 25%, transparent);
+}
+
+.dark-mode {
+  /* Dark Theme Overrides */
+  --background-primary: #1a1a1a;
+  --background-secondary: #2c2c2c;
+  --background-accent: #3a3a3a;
+  --text-primary: #e0e0e0;
+  --text-secondary: #b0b0b0;
+  --text-muted: #888888;
+  --border-color: #444444;
+  --border-color-heavy: #555555;
+  --link-color: #5dade2; /* Lighter blue for dark mode links */
+  --navbar-bg: #1f2b38;
+  --navbar-text: #bdc3c7;
+  --navbar-hover-bg: #2c3e50;
+  --navbar-active-border: var(--link-color);
+  --button-primary-bg: #5dade2;
+  --button-primary-text: #111111;
+  --button-secondary-bg: #444444;
+  --button-secondary-text: #e0e0e0;
+  --button-danger-bg: #c0392b;
+  --button-danger-text: #ffffff;
+  --button-warning-bg: #b8860b;
+  --button-warning-text: #ffffff;
+  --input-bg: #333333;
+  --input-border: #555555;
+  --input-text: #e0e0e0;
+  --table-header-bg: #3a3a3a;
+  --table-header-text: #c0c0c0;
+  --table-row-even-bg: #2f2f2f;
+  --table-row-hover-bg: #404040;
+  --success-bg: #1a3a24;
+  --success-border: #2a5a3a;
+  --success-text: #c3e6cb;
+  --error-bg: #4a1c20;
+  --error-border: #6a2c30;
+  --error-text: #f5c6cb;
+  --warning-bg: #503c0a;
+  --warning-border: #705c2a;
+  --warning-text: #ffeeba;
+  --info-bg: #0c303a;
+  --info-border: #1c505a;
+  --info-text: #bee5eb;
+
+  --shadow-light: 0 1px 4px rgba(0, 0, 0, 0.3);
+  --shadow-medium: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-heavy: 0 4px 12px rgba(0, 0, 0, 0.3);
+
+  --primary-color: var(--button-primary-bg);
+  --primary-color-light: color-mix(in srgb, var(--primary-color) 80%, #2c2c2c);
+  --primary-color-alpha: color-mix(in srgb, var(--primary-color) 30%, transparent);
+}
+
+/* Apply base styles using variables */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: var(--background-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+  background-color: var(--background-accent);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  color: var(--text-secondary);
+}
+
+/* Main App Container */
+.App {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ========== NAVBAR STYLES (Consolidated) ========== */
+.main-navbar {
+  background-color: var(--navbar-bg);
+  padding: 0 25px; /* Using 25px from previous App.css, adjust if 20px from Navbar.css is preferred */
+  box-shadow: var(--shadow-medium);
+  border-bottom: 1px solid var(--border-color); /* From Navbar.css, using theme variable */
+  display: flex;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  width: 100%;
+  box-sizing: border-box;
+  /* margin-bottom: 20px; /* From Navbar.css - adds space below navbar. Uncomment if desired. */
+                          /* I'll keep it commented for now to let main-content handle top margin */
+}
+
+.navbar-brand {
+  color: var(--navbar-text);
+  font-weight: bold;
+  font-size: 1.3rem;
+  text-decoration: none;
+  margin-right: 25px;
+  padding: 12px 0; /* Give brand vertical padding similar to links if navbar padding is 0 top/bottom */
+  white-space: nowrap;
+}
+.navbar-brand:hover {
+  color: var(--link-color); 
+}
+
+.navbar-links-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px; /* Reduced gap slightly, adjust as needed */
+}
+
+.nav-link {
+  color: var(--navbar-text);
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 15px 20px; /* Using padding from your Navbar.css for larger tabs */
+  border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0; /* Rounded top corners if desired */
+  border-bottom: 3px solid transparent; /* From Navbar.css for active indicator placeholder */
+  transition: color 0.2s ease-in-out, background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+  display: block;
+  white-space: nowrap;
+}
+
+.nav-link:hover,
+.nav-link:focus {
+  background-color: var(--navbar-hover-bg);
+  color: #ffffff; 
+  border-bottom-color: transparent; /* Keep border transparent on hover unless it's active */
+  outline: none;
+}
+
+.nav-link.active {
+  background-color: var(--navbar-hover-bg); /* Or a different color for active, e.g., var(--background-secondary) */
+  color: var(--link-color); /* Use theme's link color for active text */
+  font-weight: 600;
+  border-bottom-color: var(--navbar-active-border); /* Blue underline for active tab from Navbar.css concept */
+}
+
+.navbar-theme-toggle-container {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.theme-toggle-button {
+  background-color: var(--button-secondary-bg);
+  color: var(--button-secondary-text);
+  border: 1px solid var(--border-color);
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.theme-toggle-button:hover {
+  background-color: var(--navbar-hover-bg);
+  color: #ffffff;
+  border-color: var(--navbar-hover-bg);
+}
+/* ========== END: NAVBAR STYLES ========== */
+
+
+/* Main Content Area */
+.main-content {
+  flex-grow: 1;
+  max-width: 1100px;
+  width: 100%;
+  margin: 30px auto; /* This margin-top provides space below navbar if navbar itself doesn't have margin-bottom */
+  padding: 25px 30px;
+  background-color: var(--background-secondary);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-heavy);
+}
+
+/* Footer Styles */
+.app-footer {
+  margin-top: auto;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9em;
+  padding: 20px;
+  background-color: var(--background-accent);
+  border-top: 1px solid var(--border-color);
+}
+
+/* --- General Element Styling --- */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-primary);
+  margin-top: 1em;
+  margin-bottom: 0.6em;
+}
+h1 { font-size: 2em; }
+h2 { font-size: 1.6em; }
+h3 { font-size: 1.3em; }
+
+p {
+  margin-bottom: 1em;
+  color: var(--text-secondary);
+}
+
+a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.main-navbar a.nav-link:hover,
+.main-navbar a.navbar-brand:hover {
+  text-decoration: none;
+}
+
+
+hr {
+  border: 0;
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 25px 0;
+}
+
+/* --- General Button Styling --- */
+button, .button {
+  display: inline-block;
+  padding: 10px 18px;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin: 5px;
+  text-align: center;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease, color 0.2s ease, opacity 0.2s ease;
+  box-shadow: var(--shadow-light);
+  line-height: 1.4;
+}
+
+button:hover:not(:disabled), .button:hover:not(:disabled) {
+  box-shadow: var(--shadow-medium);
+  transform: translateY(-1px);
+  opacity: 0.85;
+}
+
+button:active:not(:disabled), .button:active:not(:disabled) {
+    transform: translateY(0px);
+    box-shadow: var(--shadow-light);
+    opacity: 1;
+}
+
+button:disabled, .button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+
+/* Specific Button Colors using Variables */
+.button-primary {
+  background-color: var(--button-primary-bg);
+  color: var(--button-primary-text);
+}
+.button-primary:hover:not(:disabled) { background-color: var(--button-primary-bg); }
+
+.button-danger {
+  background-color: var(--button-danger-bg);
+  color: var(--button-danger-text);
+}
+.button-danger:hover:not(:disabled) { background-color: var(--button-danger-bg); }
+
+.button-warning {
+  background-color: var(--button-warning-bg);
+  color: var(--button-warning-text);
+}
+.button-warning:hover:not(:disabled) { background-color: var(--button-warning-bg); }
+
+.button-secondary {
+  background-color: var(--button-secondary-bg);
+  color: var(--button-secondary-text);
+  border: 1px solid var(--border-color);
+}
+.button-secondary:hover:not(:disabled) { background-color: var(--button-secondary-bg); }
+
+/* Button Size Modifiers */
+.button-small {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  margin: 2px 4px;
+}
+.button-large {
+  padding: 12px 24px;
+  font-size: 1.05rem;
+}
+
+/* --- Global Form Styles --- */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  font-size: 1em;
+  box-sizing: border-box;
+}
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--link-color);
+  box-shadow: 0 0 0 0.2rem var(--primary-color-alpha);
+}
+textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+:not(.option-item) > label {
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: var(--text-secondary);
+}
+
+label {
+  cursor: pointer;
+}
+
+
+/* --- Component Specific Styles --- */
+
+/* Table Styles using Variables */
+
+/* ... (Keep all your existing table styles) ... */
+.question-list-container {
+  margin-top: 20px;
+  overflow-x: auto;
+}
+
+.question-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+  box-shadow: var(--shadow-light);
+  background-color: var(--background-secondary);
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+}
+
+.question-table th,
+.question-table td {
+  border: 1px solid var(--border-color);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: middle;
+  color: var(--text-secondary);
+  border-left: none;
+  border-right: none;
+}
+.question-table th:first-child,
+.question-table td:first-child {
+    border-left: 1px solid var(--border-color);
+}
+.question-table th:last-child,
+.question-table td:last-child {
+    border-right: 1px solid var(--border-color);
+}
+
+
+.question-table th {
+  background-color: var(--table-header-bg);
+  font-weight: 600;
+  color: var(--table-header-text);
+  border-top: none;
+  border-bottom-width: 2px;
+}
+
+.question-table tr:nth-child(even) {
+  background-color: var(--table-row-even-bg);
+}
+
+.question-table tr:hover {
+  background-color: var(--table-row-hover-bg);
+}
+
+.question-table td:last-child {
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* --- Toastify Dark Mode Compatibility --- */
+
+/* ... (Keep all your existing Toastify styles) ... */
+.Toastify__toast-theme--colored.Toastify__toast--default {
+  background: var(--background-secondary); color: var(--text-primary);
+}
+.Toastify__toast-theme--colored.Toastify__toast--info {
+  background: var(--info-bg); color: var(--info-text);
+}
+.Toastify__toast-theme--colored.Toastify__toast--success {
+  background: var(--success-bg); color: var(--success-text);
+}
+.Toastify__toast-theme--colored.Toastify__toast--warning {
+  background: var(--warning-bg); color: var(--warning-text);
+}
+.Toastify__toast-theme--colored.Toastify__toast--error {
+  background: var(--error-bg); color: var(--error-text);
+}
+.Toastify__close-button {
+  color: var(--text-primary); opacity: 0.7;
+}
+.Toastify__progress-bar {
+  background: var(--link-color);
+}
+
+/* Utility Classes (Optional) */
+.text-center { text-align: center; }
+/* ... (Keep all your existing utility classes) ... */
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+.mr-1 { margin-right: 0.5rem; }
+.ml-1 { margin-left: 0.5rem; }
+.app-loading-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: var(--background-primary, #f8f9fa); /* Use theme variable */
+  color: var(--text-primary, #212529); /* Use theme variable */
+}
+
+.spinner {
+  border: 4px solid rgba(0, 0, 0, 0.1); /* Light border for the spinner track */
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border-left-color: var(--primary-color, #007bff); /* Use theme's primary color for spinner */
+  animation: spin 1s ease infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Adjust main content padding based on Navbar presence */
+.main-content.with-navbar {
+  padding-top: 70px; /* Adjust based on your Navbar's height */
+}
+
+.main-content.without-navbar {
+  padding-top: 20px; /* Or whatever default padding you want */
+}
+/* ----- END OF COMPLETE MERGED FILE ----- */

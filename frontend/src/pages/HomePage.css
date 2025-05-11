@@ -1,0 +1,42 @@
+/* frontend/src/pages/HomePage.css */
+
+/* Remove or comment out these styles: */
+/*
+.button-cancel-survey {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background-color: #6c757d;
+    color: white;
+    padding: 8px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    z-index: 10;
+}
+
+.button-cancel-survey:hover {
+    background-color: #5a6268;
+}
+*/
+
+/* Keep any other styles relevant to HomePage.js elements */
+/* Example: Styles for the main start button or overall page layout */
+.button {
+    /* Your general button styles */
+     padding: 10px 20px;
+     border: none;
+     border-radius: 5px;
+     cursor: pointer;
+     font-size: 1em;
+     font-weight: bold;
+     transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+.button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.button-primary { background-color: #007bff; color: white; }
+.button-primary:hover:not(:disabled) { background-color: #0056b3; }
+.button-secondary { background-color: #6c757d; color: white; }
+.button-secondary:hover:not(:disabled) { background-color: #5a6268; }

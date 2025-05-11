@@ -1,0 +1,90 @@
+/* frontend/src/components/survey_question_renders/SurveyQuestionStyles.module.css */
+.questionContainer {
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 1px solid #eee;
+    border-radius: 5px;
+    background-color: #fff; /* Added for better visibility */
+}
+.questionContainer.disabled {
+    background-color: #f8f8f8;
+    opacity: 0.7;
+}
+.questionText {
+    font-size: 1.1em;
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: #333; /* Added for better visibility */
+}
+.questionDescription {
+    font-size: 0.9em;
+    color: #555;
+    margin-bottom: 15px;
+}
+.optionsContainer {
+    display: flex;
+    flex-direction: column;
+}
+.option {
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+}
+.radioInput, .checkboxInput {
+    margin-right: 8px;
+    accent-color: #007bff; /* Example accent color */
+}
+.optionLabel {
+    cursor: pointer;
+    color: #444; /* Added for better visibility */
+}
+.textInput, .textareaInput, .otherTextInput { /* Combined text inputs */
+    width: 100%;
+    padding: 10px; /* Increased padding */
+    margin-top: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-size: 1em; /* Added for better visibility */
+}
+.textareaInput {
+    min-height: 80px; /* Default height for textarea */
+}
+.otherTextInput {
+    margin-left: 20px;
+    width: calc(100% - 30px); /* Adjusted width */
+}
+.errorMessage {
+    color: red;
+    font-style: italic;
+    margin-top: 5px;
+}
+.dropdownSelect {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    background-color: white;
+    font-size: 1em;
+}
+.ratingContainer button, .npsContainer button {
+    background: none;
+    border: 1px solid #ccc;
+    padding: 8px 12px;
+    margin: 2px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.ratingContainer button.selected, .npsContainer button.selected {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+.npsLabels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8em;
+    color: #777;
+    margin-top: 5px;
+}

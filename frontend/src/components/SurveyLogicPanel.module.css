@@ -1,0 +1,176 @@
+/* frontend/src/components/SurveyLogicPanel.module.css */
+/* ----- START OF COMPLETE UPDATED FILE (v1.9 - Modal Appearance Emphasis) ----- */
+.surveyLogicPanel {
+    background-color: var(--background-secondary, #ffffff); /* Ensure a fallback opaque background */
+    color: var(--text-primary, #212529); /* Ensure text color is set */
+    padding: 20px 25px; /* Adjusted padding */
+    border-radius: var(--border-radius-lg, 8px); /* Use larger radius for modals */
+    box-shadow: var(--shadow-xl, 0 8px 25px rgba(0,0,0,0.15)); /* More pronounced shadow for modal */
+    
+    max-height: 85vh; /* Keep this */
+    display: flex;
+    flex-direction: column;
+    
+    width: 750px; /* Explicit width, adjust as needed */
+    max-width: 90vw; /* Ensure it's responsive */
+    
+    overflow-x: hidden; /* Prevent horizontal scroll */
+    overflow-y: hidden; /* Delegate scrolling to panelContent */
+
+    border: 1px solid var(--border-color-heavy, #adb5bd); /* Optional: subtle border */
+}
+
+.panelHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color, #dee2e6);
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+    flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+.panelHeader h2 { 
+    margin: 0; 
+    font-size: 1.5em; /* Adjusted size */
+    color: var(--text-primary); 
+    font-weight: 600; /* Make title a bit bolder */
+}
+
+.closeButton { 
+    background: none; 
+    border: none; 
+    font-size: 1.8rem; 
+    font-weight: bold; 
+    color: var(--text-muted, #6c757d); 
+    cursor: pointer; 
+    padding: 0 5px; 
+    line-height: 1; 
+}
+.closeButton:hover { color: var(--text-primary); }
+
+.panelContent { 
+    overflow-y: auto; /* Allow content within the modal to scroll */
+    flex-grow: 1; 
+    padding-right: 15px; /* Space for scrollbar */
+    margin-right: -15px; /* Offset padding for scrollbar to align content */
+    min-height: 200px; /* Ensure content area has some minimum height */
+}
+.panelFooter { 
+    border-top: 1px solid var(--border-color, #dee2e6); 
+    padding-top: 15px; 
+    margin-top: 20px; 
+    display: flex; 
+    justify-content: flex-end; 
+    gap: 10px; 
+    flex-shrink: 0; /* Prevent footer from shrinking */
+}
+
+/* Keep other styles for .logicControls, .logicRuleEditor, etc., as they were in v1.7/v1.8 */
+/* These styles define the internal layout of the logic panel's content */
+.logicControls { margin-bottom: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.logicRuleEditor { border: 1px solid var(--border-color); padding: 15px; margin-bottom: 15px; border-radius: var(--border-radius-sm); background-color: var(--background-primary); }
+.logicRuleHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px; }
+.logicRuleNameInput { flex-grow: 1; min-width: 200px; }
+.logicRuleConditionSection, .logicActionEditor { margin-top: 10px; }
+.logicGroupEditor { border: 1px dashed var(--border-color-light); padding: 10px; margin-top: 10px; margin-bottom: 10px; border-radius: var(--border-radius-sm); background-color: var(--background-accent); }
+.logicGroupHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.logicGroupLabel { font-weight: bold; color: var(--text-secondary); }
+.logicOverallOperator { display: flex; justify-content: center; align-items: center; margin: 15px 0 10px 0; font-weight: bold; }
+.logicOverallOperator select { margin: 0 10px; }
+.logicIntraGroupOperatorContainer { display: flex; justify-content: center; align-items: center; margin: 10px 0 8px 0; }
+
+.logicConditionItem {
+    display: flex;
+    flex-direction: column; 
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 10px; 
+    background-color: var(--background-primary); 
+    border: 1px solid var(--border-color-light); 
+    border-radius: var(--border-radius-xs);
+}
+
+.logicConditionTopRow {
+    display: flex;
+    align-items: center; 
+    gap: 8px;
+    width: 100%;
+    flex-wrap: wrap; 
+}
+
+.logicConditionTopRow > .formControl:nth-child(1) { flex: 2 1 180px; }
+.logicConditionTopRow > .formControl:nth-child(2) { flex: 1.5 1 150px; }
+.logicConditionTopRow > .formControl:nth-child(3),
+.logicConditionTopRow > .compositeInputContainer { flex: 1.5 1 150px; }
+
+.manageAreasButton { flex: 0 0 auto; white-space: nowrap; margin-left: 5px; }
+
+.logicRemoveButton {
+    flex: 0 0 auto; 
+    display: inline-flex !important; align-items: center !important; justify-content: center !important;
+    width: 28px !important; height: 28px !important; padding: 0 !important;
+    font-size: 1.1rem !important; line-height: 1 !important;
+    border-radius: var(--border-radius-xs, 4px) !important;
+}
+
+.logicConditionItemHeatmapLayout { flex-direction: column; }
+.logicConditionHeatmapValueRow { display: flex; align-items: flex-end; gap: 10px; width: 100%; margin-top: 10px; }
+.heatmapAreaInputContainer { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; max-width: 230px; }
+.heatmapAreaField { display: flex; align-items: center; gap: 4px; flex-basis: calc(50% - 5px); min-width: 90px; }
+.heatmapAreaField label { font-size: 0.85em; margin-right: 2px; white-space: nowrap; color: var(--text-secondary); flex-shrink: 0; }
+.heatmapAreaField .formControlSmall { width: 65px; padding: 6px; text-align: right; flex-grow: 1; min-width: 50px; }
+.visualSelectButtonBesideHeatmapInputs { white-space: nowrap; flex-shrink: 0; }
+
+.logicActionControls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 5px; }
+.logicActionControls > .formControl { width: auto; flex-grow: 1; min-width: 150px; }
+.logicActionEditor textarea.formControl { margin-top: 8px; width: 100%; }
+.logicAddButton { white-space: nowrap; } 
+.addGroupButton { margin-top: 10px; }
+.logicGroupHeader .logicRemoveButton { margin-left: auto; }
+.logicDivider { margin-top: 20px; margin-bottom: 15px; border-color: var(--border-color-light); }
+
+.formControl, .formControlSmall {
+  display: block; padding: 0.375rem 0.75rem; font-size: 1rem; font-weight: 400; line-height: 1.5;
+  color: var(--input-text); background-color: var(--input-bg); background-clip: padding-box;
+  border: 1px solid var(--input-border); appearance: none; border-radius: var(--border-radius-sm);
+  transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+  box-sizing: border-box;
+}
+.logicRuleNameInput.formControl { width: 100%; }
+textarea.formControl { width: 100%; }
+.formControl:focus, .formControlSmall:focus { border-color: var(--link-color); outline: 0; box-shadow: 0 0 0 0.2rem var(--primary-color-alpha); }
+.formControlSmall { padding: 0.25rem 0.5rem; font-size: 0.875rem; width: auto; }
+
+.compositeInputContainer { display: flex; align-items: center; gap: 5px; }
+.compositeInputContainer .formControlSmall { flex-grow: 1; }
+.compositeInputContainer span { white-space: nowrap; }
+
+.heatmapImageContainer { position: relative; cursor: crosshair; border: 1px solid var(--border-color-light, #ccc); display: inline-block; overflow: hidden; margin-bottom: 15px; }
+.heatmapSelectableImage { display: block; max-width: 100%; max-height: 55vh; user-select: none; -webkit-user-drag: none; -moz-user-select: none; -ms-user-select: none; }
+.heatmapCoordsDisplay { margin-top: 5px; margin-bottom: 10px; font-size: 0.85em; color: var(--text-secondary); text-align: center; min-height: 1.2em; width: 100%; }
+.button-extra-small { padding: 0.2rem 0.4rem !important; font-size: 0.75rem !important; line-height: 1.2 !important; }
+
+.invalidFeedback { width: 100%; margin-top: 0.25rem; font-size: .875em; color: var(--error-text, #dc3545); }
+.isInvalid { border-color: var(--error-border) !important; }
+.isInvalid:focus { box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--error-border) 40%, transparent) !important; }
+.text-muted { color: var(--text-muted) !important; }
+.d-block { display: block !important; } 
+.mb-2 { margin-bottom: 0.5rem !important; } 
+
+.heatmapAreaModalContent { max-width: 900px; width: 95%; }
+.heatmapAreaModalBody { display: flex; flex-direction: row; align-items: stretch; gap: 15px; min-height: 400px; padding: 0; }
+.heatmapAreaListPanel { flex: 0 0 220px; display: flex; flex-direction: column; border-right: 1px solid var(--border-color-light, #ddd); padding: 10px; box-sizing: border-box; max-height: 60vh; }
+.heatmapAreaListPanel h4 { margin-top: 0; margin-bottom: 10px; color: var(--text-primary); font-size: 1.1em; }
+.heatmapDefinedAreasList { list-style: none; padding: 0; margin: 0; flex-grow: 1; overflow-y: auto; }
+.heatmapDefinedAreasList li { padding: 8px 10px; border: 1px solid var(--border-color-light, #eee); border-radius: var(--border-radius-xs, 4px); margin-bottom: 5px; cursor: pointer; font-size: 0.9em; transition: background-color 0.2s, border-color 0.2s; word-break: break-word; }
+.heatmapDefinedAreasList li:hover { background-color: var(--background-accent-hover, #f0f0f0); border-color: var(--border-color, #ccc); }
+.heatmapDefinedAreasList li.selectedAreaItem { background-color: var(--primary-color-alpha, rgba(0, 123, 255, 0.1)); border-color: var(--primary-color, #007bff); font-weight: bold; }
+.heatmapAreaDrawingPanel { flex-grow: 1; display: flex; flex-direction: column; align-items: center; padding: 10px; box-sizing: border-box; min-width: 0; }
+.heatmapAreaDrawingPanel .modalInstructions { font-size: 0.85em; margin-bottom: 10px; text-align: left; width: 100%; }
+.heatmapAreaDrawingPanel .heatmapImageContainer { margin-bottom: 15px; }
+.heatmapAreaControls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; margin-bottom: 10px; width: 100%; justify-content: center; }
+.heatmapAreaControls .formControl { flex: 1 1 180px; }
+.heatmapAreaControls > button { flex-shrink: 0; }
+.heatmapAreaLabelOnImage { position: absolute; top: 2px; left: 2px; background-color: rgba(255, 255, 255, 0.8); color: var(--primary-color, blue); padding: 1px 4px; font-size: 0.7rem; border-radius: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 8px); z-index: 3; border: 1px solid rgba(0,0,0,0.1); }
+/* ----- END OF COMPLETE UPDATED FILE (v1.9) ----- */

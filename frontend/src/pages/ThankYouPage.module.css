@@ -1,0 +1,47 @@
+/* frontend/src/pages/ThankYouPage.module.css */
+
+.thankYouContainer {
+    display: flex; /* Enable flexbox */
+    flex-direction: column; /* Stack items vertically */
+    justify-content: center; /* Center vertically */
+    align-items: center; /* Center horizontally */
+    min-height: 60vh; /* Take up significant vertical space */
+    text-align: center; /* Ensure text inside is centered */
+    padding: 40px 20px; /* Add some padding */
+    background-color: #f8f9fa; /* Light grey background */
+    border-radius: 8px; /* Slightly rounded corners */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+    max-width: 600px; /* Limit maximum width */
+    margin: 40px auto; /* Center the container itself on the page */
+  }
+  
+  .thankYouHeading {
+    color: #28a745; /* Success green color */
+    font-size: 2.5rem; /* Larger heading */
+    margin-bottom: 15px; /* Space below heading */
+    font-weight: 600;
+  }
+  
+  .thankYouMessage {
+    color: #343a40; /* Darker text color for readability */
+    font-size: 1.1rem; /* Slightly larger paragraph text */
+    margin-bottom: 30px; /* Space below message */
+  }
+  
+  /* Style the button to match others potentially */
+  /* If you have global button styles, you might not need this */
+  .homeButton {
+    padding: 12px 25px;
+    font-size: 1rem;
+    color: #fff;
+    background-color: #007bff; /* Standard blue button */
+    border: none;
+    border-radius: 5px;
+    text-decoration: none; /* Remove underline from Link */
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+  
+  .homeButton:hover {
+    background-color: #0056b3; /* Darker blue on hover */
+  }

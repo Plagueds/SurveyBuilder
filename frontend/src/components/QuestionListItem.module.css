@@ -1,0 +1,126 @@
+/* frontend/src/components/QuestionListItem.module.css */
+/* ----- START OF COMPLETE MODIFIED FILE (v1.1 - Enhanced Display) ----- */
+.questionListItem {
+    display: flex;
+    align-items: flex-start; /* Align items to the top for multi-line meta */
+    padding: 12px 15px;
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: var(--border-radius, 4px);
+    margin-bottom: 10px;
+    background-color: var(--background-color, #fff);
+    cursor: grab;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.questionListItem:hover {
+    background-color: var(--background-accent-hover, #f7f7f7);
+    border-color: var(--primary-color-light, #a0c4ff);
+}
+
+.questionListItem.selected {
+    background-color: var(--primary-color-x-light, #e6f0ff);
+    border-color: var(--primary-color, #007bff);
+    box-shadow: 0 0 0 2px var(--primary-color-light, #a0c4ff);
+    cursor: default;
+}
+
+.questionListItem.dragging {
+    opacity: 0.4;
+    border-style: dashed;
+    background-color: var(--background-accent, #f0f0f0);
+}
+
+.questionOrderHandle {
+    font-weight: bold;
+    margin-right: 15px;
+    color: var(--text-muted, #555);
+    font-size: 1.1em;
+    min-width: 20px;
+    text-align: right;
+    padding: 5px;
+    padding-top: 0; /* Align with text top */
+}
+
+.questionMainContent { /* New wrapper for text and meta */
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.questionTextPreview {
+    font-weight: 500;
+    color: var(--text-color, #333);
+    margin-bottom: 6px; /* Increased space for meta */
+    /* Removed white-space: nowrap and text-overflow: ellipsis to allow wrapping */
+    /* Consider adding max-height and overflow:hidden if text can be very long */
+    line-height: 1.3;
+}
+
+.questionMeta {
+    display: flex;
+    flex-wrap: wrap; /* Allow meta items to wrap */
+    gap: 8px; /* Space between meta items */
+    font-size: 0.8em;
+    color: var(--text-muted, #666);
+}
+
+.metaItem {
+    background-color: var(--background-accent, #f0f0f0);
+    padding: 2px 6px;
+    border-radius: var(--border-radius-sm, 3px);
+    white-space: nowrap;
+}
+
+.questionTypeBadge {
+    text-transform: capitalize;
+    background-color: var(--info-bg-light, #e0e7ef); /* Different color for type */
+    color: var(--info-text, #31708f);
+}
+
+.questionId {
+    font-family: monospace;
+    background-color: var(--background-accent-dark, #e2e2e2);
+}
+
+.requiredIndicator {
+    color: var(--warning-text, #8a6d3b);
+    background-color: var(--warning-bg-light, #fcf8e3);
+    font-weight: 500;
+}
+
+.logicIndicator {
+    color: var(--success-text, #3c763d);
+    background-color: var(--success-bg-light, #dff0d8);
+    font-weight: 500;
+}
+
+.questionActions {
+    margin-left: auto;
+    padding-left: 10px;
+    display: flex;
+    align-items: center; /* Vertically center action button if needed */
+    align-self: flex-start; /* Align with top of content */
+}
+
+.actionButton {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 8px;
+    font-size: 1.2em;
+    color: var(--text-muted, #777);
+    transition: color 0.2s ease;
+    border-radius: var(--border-radius-sm);
+}
+.actionButton:hover {
+    color: var(--primary-color, #007bff);
+    background-color: var(--background-accent-hover, #e9ecef);
+}
+
+.deleteButton:hover {
+    color: var(--danger-color, #dc3545);
+    background-color: var(--danger-bg-light, #f8d7da);
+}
+/* ----- END OF COMPLETE MODIFIED FILE (v1.1) ----- */
