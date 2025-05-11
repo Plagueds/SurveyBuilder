@@ -2,34 +2,49 @@
 // ----- START OF COMPLETE MODIFIED FILE -----
 import axios from 'axios';
 
-// Helper to get the backend root URL (e.g., https://surveybuilderapi.onrender.com)
-const getBackendRootUrl = () => {
-    if (process.env.REACT_APP_API_BASE_URL) {
-        // Assuming REACT_APP_API_BASE_URL is like 'https://domain.com/api'
-        // We want 'https://domain.com'
-        try {
-            const url = new URL(process.env.REACT_APP_API_BASE_URL);
-            return `${url.protocol}//${url.host}`;
-        } catch (e) {
-            console.error("Error parsing REACT_APP_API_BASE_URL for root. Falling back.", e);
-            // Fallback if parsing fails, though REACT_APP_API_BASE_URL should be a valid URL
-            return 'https://surveybuilderapi.onrender.com'; // Hardcoded fallback, adjust if necessary
-        }
+// This is expected to be the FULL BASE URL for your /api routes.
+// In development (e.g., from .env): REACT_APP_API_BASE_URL=http://localhost:3001/api
+// In production (e.g., in Netlify): REACT_APP_API_BASE_URL=https://surveybuilderapi.onrender.com/api
+const envApiBaseUrl = process.env.REACT_APP_API_BASE_URL;
+
+let effectiveApiRoutesBaseUrl; // For /api routes, e.g., http://localhost:3001/api
+let effectivePublicAccessRootUrl; // For /s routes, e.g., http://localhost:3001
+
+if (envApiBaseUrl) {
+    effectiveApiRoutesBaseUrl = envApiBaseUrl;
+    console.log(`[surveyApi] Using API base URL from environment: ${effectiveApiRoutesBaseUrl}`);
+    // Derive the root URL (e.g., https://surveybuilderapi.onrender.com) from the base URL
+    try {
+        const url = new URL(effectiveApiRoutesBaseUrl);
+        effectivePublicAccessRootUrl = `${url.protocol}//${url.host}`;
+    } catch (e) {
+        console.error(
+            "[surveyApi] Could not parse REACT_APP_API_BASE_URL to derive root URL. " +
+            "Ensure it's a valid URL (e.g., https://domain.com/api). " +
+            "Falling back for public access root URL.", e
+        );
+        // Fallback if parsing fails - this indicates a misconfiguration of REACT_APP_API_BASE_URL
+        effectivePublicAccessRootUrl = 'https://surveybuilderapi.onrender.com'; // Hardcoded production fallback
     }
-    // Fallback for local development if REACT_APP_API_BASE_URL is not set
-    // Ensure this matches your local backend's root address and port
-    console.warn("REACT_APP_API_BASE_URL is not set. Falling back to default backend root for public survey access. This is usually for local development.");
-    return 'http://localhost:3001'; // Adjust if your local backend runs on a different port
-};
+} else {
+    // This fallback is primarily for local development if .env is missing or misconfigured.
+    // For production builds on Netlify, REACT_APP_API_BASE_URL MUST be set.
+    console.warn(
+        "[surveyApi] REACT_APP_API_BASE_URL is not defined. " +
+        "Falling back to 'http://localhost:3001/api' for API routes and 'http://localhost:3001' for public access. " +
+        "Ensure REACT_APP_API_BASE_URL is set in your .env file for local development " +
+        "and in Netlify environment variables for production."
+    );
+    effectiveApiRoutesBaseUrl = 'http://localhost:3001/api'; // Fallback for local dev API routes
+    effectivePublicAccessRootUrl = 'http://localhost:3001'; // Fallback for local dev public access
+}
 
-const BACKEND_ROOT_URL = getBackendRootUrl();
-
-// API_BASE_URL is for routes under /api (e.g., https://surveybuilderapi.onrender.com/api)
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || (BACKEND_ROOT_URL ? `${BACKEND_ROOT_URL}/api` : '/api');
+console.log(`[surveyApi] Effective API Routes Base URL: ${effectiveApiRoutesBaseUrl}`);
+console.log(`[surveyApi] Effective Public Access Root URL: ${effectivePublicAccessRootUrl}`);
 
 
 const apiClient = axios.create({
-    baseURL: API_BASE_URL, // For /api prefixed routes
+    baseURL: effectiveApiRoutesBaseUrl, // e.g., http://localhost:3001/api or https://surveybuilderapi.onrender.com/api
     headers: {
         'Content-Type': 'application/json',
     },
@@ -55,12 +70,14 @@ apiClient.interceptors.response.use(
     (error) => {
         if (error.response && error.response.status === 401) {
             // More specific check to avoid logging out on /auth/login 401s
-            if (!error.config.url.endsWith('/auth/login') && !error.config.url.endsWith('/auth/register')) {
+            if (error.config.url && !error.config.url.endsWith('/auth/login') && !error.config.url.endsWith('/auth/register')) {
                 console.warn('[surveyApi] Unauthorized (401) response. Token might be invalid or expired. Logging out.');
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
                 // Optionally redirect to login page
-                // window.location.href = '/login';
+                // if (window.location.pathname !== '/login') {
+                //     window.location.href = '/login';
+                // }
             }
         }
         return Promise.reject(error);
@@ -69,6 +86,7 @@ apiClient.interceptors.response.use(
 
 
 // --- Survey Endpoints ---
+// All paths here are relative to effectiveApiRoutesBaseUrl (e.g., /surveys will become https://domain.com/api/surveys)
 export const getAllSurveys = async (status = null) => {
     try {
         const params = status ? { status } : {};
@@ -157,7 +175,6 @@ export const deleteQuestionById = async (questionId) => {
 // --- Survey Submission and Results Endpoints ---
 export const submitSurveyAnswers = async (surveyId, submissionData) => {
     try {
-        // This uses apiClient, so it will be POST /api/surveys/:surveyId/submit
         const response = await apiClient.post(`/surveys/${surveyId}/submit`, submissionData);
         return response.data;
     } catch (error) {
@@ -251,7 +268,7 @@ export const getCollectorsForSurvey = async (surveyId) => {
     try {
         const response = await apiClient.get(`/surveys/${surveyId}/collectors`);
         return response.data;
-    } catch (error) {
+    } catch (error) { // <<< SYNTAX ERROR WAS HERE: _PAGE_CONTENT_ removed
         console.error(`[surveyApi] Error fetching collectors for survey ${surveyId}:`, error.response?.data || error.message);
         throw error.response?.data || new Error(`Failed to fetch collectors for survey ${surveyId}`);
     }
@@ -288,13 +305,14 @@ export const deleteCollector = async (surveyId, collectorId) => {
 };
 
 // --- Public Survey Access Endpoint ---
+// This function now uses effectivePublicAccessRootUrl
 export const accessPublicSurvey = async (accessIdentifier, password = null) => {
     try {
         const payload = password ? { password } : {};
         // Create a new axios instance specifically for this non-/api prefixed route
-        // It will use the BACKEND_ROOT_URL (e.g., https://surveybuilderapi.onrender.com)
-        const publicAccessClient = axios.create({ baseURL: BACKEND_ROOT_URL });
-        console.log(`[surveyApi] Calling POST ${BACKEND_ROOT_URL}/s/${accessIdentifier}`);
+        // It will use the effectivePublicAccessRootUrl (e.g., https://surveybuilderapi.onrender.com or http://localhost:3001)
+        const publicAccessClient = axios.create({ baseURL: effectivePublicAccessRootUrl });
+        console.log(`[surveyApi] Calling POST ${effectivePublicAccessRootUrl}/s/${accessIdentifier}`);
         // The path here is relative to the baseURL, so '/s/...' is correct.
         const response = await publicAccessClient.post(`/s/${accessIdentifier}`, payload);
         return response.data;
@@ -302,10 +320,8 @@ export const accessPublicSurvey = async (accessIdentifier, password = null) => {
         console.error(`[surveyApi] Error accessing public survey ${accessIdentifier}:`, error.response?.data || error.message);
         if (error.response) {
             console.error(`[surveyApi] Full error response for accessPublicSurvey ${accessIdentifier}: Status ${error.response.status}`, error.response.data);
-            // Throw the whole error object so the component can inspect error.response.data
-            throw error;
+            throw error; // Throw the whole error object so the component can inspect error.response.data
         }
-        // Fallback error if error.response is not available
         throw new Error(error.message || `Failed to access survey ${accessIdentifier}`);
     }
 };
