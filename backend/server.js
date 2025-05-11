@@ -1,16 +1,12 @@
 // backend/server.js
-// ----- START OF COMPLETE UPDATED CODE (vX.X+1 - Added Public Survey Access Routes) -----
+// ----- START OF COMPLETE MODIFIED FILE (CORS Update) -----
 const express = require('express');
-const cors = require('cors');
+const cors = require('cors'); // Make sure cors is installed: npm install cors
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 
 // --- Load Environment Variables ---
 dotenv.config(); // Loads variables from .env file for local development
-
-// Models are typically required in controllers
-// const Question = require('./models/Question');
-// const Answer = require('./models/Answer');
 
 const app = express();
 const port = process.env.PORT || 3001; // Render will set PORT
@@ -20,14 +16,37 @@ mongoose.connect(mongoURI)
   .then(() => console.log('MongoDB connected successfully.'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// Middleware setup
-// This CORS setup allows requests from the URL specified in the FRONTEND_URL environment variable.
-// In production (e.g., on Render), set FRONTEND_URL to your deployed Netlify frontend's URL.
-// For local development, it defaults to 'http://localhost:3000' if FRONTEND_URL is not set.
-app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    credentials: true // Important if your frontend needs to send cookies (e.g., for sessions)
-}));
+// --- Middleware setup ---
+
+// --- START CORS CONFIGURATION ---
+const allowedOrigins = [
+    process.env.FRONTEND_URL, // Your deployed Netlify frontend (e.g., https://iridescent-pasca-e53e01.netlify.app)
+    'http://localhost:3000'   // Your local frontend for development
+    // Add any other origins you need to support (e.g., specific preview URLs if different)
+].filter(Boolean); // .filter(Boolean) removes any undefined/null values if FRONTEND_URL isn't set
+
+console.log('[CORS] Allowed Origins:', allowedOrigins);
+
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps, Postman, curl)
+        // or if the origin is in our whitelist
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.warn(`[CORS Blocked] Origin: ${origin}`);
+            callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+    },
+    credentials: true, // Important if your frontend needs to send cookies or Authorization headers
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // Allowed HTTP methods
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-recaptcha-token'], // Allowed headers
+    optionsSuccessStatus: 200 // For compatibility with older browsers/clients
+};
+
+app.use(cors(corsOptions));
+// --- END CORS CONFIGURATION ---
+
 app.use(express.json()); // Body parser for JSON requests
 
 // Simple root route
@@ -52,7 +71,7 @@ app.use('/api/surveys', surveyRoutes);
 app.use('/s', publicSurveyAccessRoutes);
 
 
-// --- Example: Keeping the /api/results route inline (Consider moving to its own router) ---
+// --- Example: /api/results/:questionId route (Consider moving to its own router) ---
 // This route should ideally be part of a dedicated results or survey analysis router.
 // Also, it should be protected and authorized.
 const Question = require('./models/Question'); // Assuming Question model is needed here
@@ -60,13 +79,14 @@ const Answer = require('./models/Answer');     // Assuming Answer model is neede
 
 app.get('/api/results/:questionId', async (req, res) => {
     const { questionId } = req.params;
-    console.log(`GET /api/results/${questionId}`);
+    console.log(`[Results Route] GET /api/results/${questionId}`);
     if (!mongoose.Types.ObjectId.isValid(questionId)) {
-        return res.status(400).json({ message: 'Invalid question ID.' });
+        return res.status(400).json({ success: false, message: 'Invalid question ID.' });
     }
     try {
         // TODO: Add authentication and authorization here.
-        // Only authorized users (e.g., survey owner/admin) should access results.
+        // For now, assuming it's an open endpoint for testing, but this is a security risk.
+        // Example: if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
 
         const [question, answers] = await Promise.all([
             Question.findById(questionId).select('text type options addOtherOption requireOtherIfSelected addNAOption').lean(),
@@ -74,15 +94,15 @@ app.get('/api/results/:questionId', async (req, res) => {
         ]);
 
         if (!question) {
-            return res.status(404).json({ message: 'Question not found.' });
+            return res.status(404).json({ success: false, message: 'Question not found.' });
         }
 
-        console.log(`GET /api/results/${questionId} - Found question and ${answers.length} answers.`);
-        res.status(200).json({ question: question, answers: answers });
+        console.log(`[Results Route] GET /api/results/${questionId} - Found question and ${answers.length} answers.`);
+        res.status(200).json({ success: true, question: question, answers: answers }); // Added success flag
 
     } catch (error) {
-        console.error(`GET /api/results/${questionId} - Error fetching results:`, error);
-        res.status(500).json({ message: 'Failed to fetch results due to a server error.' });
+        console.error(`[Results Route] GET /api/results/${questionId} - Error fetching results:`, error);
+        res.status(500).json({ success: false, message: 'Failed to fetch results due to a server error.' });
     }
 });
 // --- End of /api/results inline route example ---
@@ -91,10 +111,16 @@ app.get('/api/results/:questionId', async (req, res) => {
 // --- Error Handling Middleware (Place near the end, before app.listen) ---
 // This should be the last middleware added with app.use()
 app.use((err, req, res, next) => {
-    console.error("Unhandled Error:", err.stack || err); // Log the full error stack for debugging
-    // If the error is a known type (e.g., validation error, auth error),
-    // it might have a specific statusCode and message.
-    // Otherwise, default to 500.
+    console.error("Unhandled Error:", err.stack || err);
+
+    // If it's a CORS error from our custom origin function
+    if (err.message && err.message.includes('not allowed by CORS')) {
+        return res.status(403).json({ // 403 Forbidden is more appropriate for CORS denial
+            success: false,
+            message: err.message
+        });
+    }
+
     const statusCode = err.statusCode || 500;
     const message = err.message || 'An unexpected server error occurred.';
     
@@ -108,5 +134,5 @@ app.use((err, req, res, next) => {
 
 
 // --- Start Server ---
-app.listen(port, () => console.log(`Backend server listening at http://localhost:${port}`));
-// ----- END OF COMPLETE UPDATED CODE (vX.X+1 - Added Public Survey Access Routes) -----
+app.listen(port, () => console.log(`Backend server listening in ${process.env.NODE_ENV || 'development'} mode on port ${port}`));
+// ----- END OF COMPLETE MODIFIED FILE (CORS Update) -----
