@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyResultsPage.js
-// ----- START OF COMPLETE UPDATED FILE (v2.6 - Auth Headers & Corrected Data Parsing) -----
+// ----- START OF COMPLETE MODIFIED FILE (v2.7 - Corrected fetchData useCallback dependencies) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Bar, Pie } from 'react-chartjs-2';
@@ -79,9 +79,9 @@ function SurveyResultsPage() {
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
     const processAllAnswers = useCallback((surveyDefinition, allAnswers) => {
-        console.log("[ResultsPage v2.6] Processing raw answers...", { numAnswers: allAnswers.length });
+        console.log("[ResultsPage v2.7] Processing raw answers...", { numAnswers: allAnswers.length });
         if (!surveyDefinition || !surveyDefinition.questions || !allAnswers || !Array.isArray(allAnswers)) {
-            console.warn("[ResultsPage v2.6] Invalid input for processAllAnswers", { surveyDefinition, allAnswers });
+            console.warn("[ResultsPage v2.7] Invalid input for processAllAnswers", { surveyDefinition, allAnswers });
             return {};
         }
         const results = {};
@@ -237,21 +237,21 @@ function SurveyResultsPage() {
             results[questionId] = { stats };
         });
         results.overallTotalRespondents = totalRespondentsOverall;
-        console.log("[ResultsPage v2.6] Processed results:", results);
+        console.log("[ResultsPage v2.7] Processed results:", results);
         return results;
     }, []);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
-        setError(null); // Clear previous errors
+        setError(null); // Clear previous errors at the beginning of a fetch attempt
         setSurvey(null);
         setRawAnswers([]);
         setProcessedResults({});
-        console.log(`SurveyResultsPage (v2.6): Fetching data for survey ID: ${surveyId}`);
+        console.log(`SurveyResultsPage (v2.7): Fetching data for survey ID: ${surveyId}`);
 
         if (!surveyId || !/^[a-f\d]{24}$/i.test(surveyId)) {
             console.error("Invalid surveyId format:", surveyId);
-            setError(`Invalid Survey ID format: "${surveyId}"`);
+            setError(`Invalid Survey ID format: "${surveyId}"`); // Set error
             setLoading(false);
             return;
         }
@@ -259,9 +259,8 @@ function SurveyResultsPage() {
         const token = localStorage.getItem('token');
         if (!token) {
             console.error("Authentication token not found in localStorage.");
-            setError("Authentication required. Please log in again.");
+            setError("Authentication required. Please log in again."); // Set error
             setLoading(false);
-            // Optionally, redirect to login: history.push('/login');
             return;
         }
 
@@ -290,7 +289,7 @@ function SurveyResultsPage() {
                     const parsedError = JSON.parse(errorBody);
                     if (parsedError.message) errorMessage += ` Server: ${parsedError.message}`;
                 } catch (e) { /* Ignore if not JSON */ }
-                setError(errorMessage); // Set error state
+                // setError(errorMessage); // Error will be set in the catch block
                 throw new Error(errorMessage); // Stop further execution in try block
             }
 
@@ -299,14 +298,12 @@ function SurveyResultsPage() {
             if (!surveyJsonResponse.success || !surveyJsonResponse.data || !surveyJsonResponse.data.questions) {
                 const msg = surveyJsonResponse.message || "Survey data from server is invalid or missing questions.";
                 console.error("Invalid survey data structure:", surveyJsonResponse);
-                setError(msg);
+                // setError(msg); // Error will be set in the catch block
                 throw new Error(msg);
             }
-            setSurvey(surveyJsonResponse.data); // surveyController.getSurveyById returns { success: true, data: survey }
+            setSurvey(surveyJsonResponse.data);
 
             // --- 2. Fetch Survey Answers ---
-            // This relies on /api/answers/survey/:surveyId being protected and returning an array of answers
-            // or an object like { success: true, data: answersArray }
             console.log(`Fetching survey answers from: ${apiUrl}/api/answers/survey/${surveyId}`);
             const answersResponse = await fetch(`${apiUrl}/api/answers/survey/${surveyId}`, { headers });
 
@@ -323,7 +320,7 @@ function SurveyResultsPage() {
                     const parsedError = JSON.parse(errorBody);
                     if (parsedError.message) errorMessage += ` Server: ${parsedError.message}`;
                 } catch (e) { /* Ignore */ }
-                setError(errorMessage); // Set error state
+                // setError(errorMessage); // Error will be set in the catch block
                 throw new Error(errorMessage);
             }
 
@@ -331,39 +328,36 @@ function SurveyResultsPage() {
             console.log("Raw answers JSON response:", answersJsonResponse);
 
             let actualAnswersArray = [];
-            if (Array.isArray(answersJsonResponse)) { // Case 1: Backend returns array directly
+            if (Array.isArray(answersJsonResponse)) {
                 actualAnswersArray = answersJsonResponse;
-            } else if (answersJsonResponse && answersJsonResponse.success && Array.isArray(answersJsonResponse.data)) { // Case 2: Backend returns { success: true, data: [] }
+            } else if (answersJsonResponse && answersJsonResponse.success && Array.isArray(answersJsonResponse.data)) {
                 actualAnswersArray = answersJsonResponse.data;
-            } else if (answersJsonResponse && answersJsonResponse.success === false) { // Case 3: Backend returns { success: false, message: "..." }
+            } else if (answersJsonResponse && answersJsonResponse.success === false) {
                 const msg = answersJsonResponse.message || "Fetching answers failed as indicated by server.";
                 console.error(msg, answersJsonResponse);
-                setError(msg);
+                // setError(msg); // Error will be set in the catch block
                 throw new Error(msg);
             } else {
                 console.warn("Unexpected structure for answers data:", answersJsonResponse);
-                setError("Received unexpected data format for survey answers.");
-                // Keep actualAnswersArray as empty or throw error
+                // setError("Received unexpected data format for survey answers."); // Error will be set in the catch block
+                throw new Error("Received unexpected data format for survey answers.");
             }
             setRawAnswers(actualAnswersArray);
 
         } catch (err) {
             console.error("Overall error in fetchData (SurveyResultsPage):", err);
-            // If setError hasn't been called yet with a specific message, set a generic one.
-            if (!error) { // 'error' here refers to the state variable
-                setError(err.message || "An unexpected error occurred while loading results data.");
-            }
+            setError(err.message || "An unexpected error occurred while loading results data."); // Set error ONCE in the catch block
         } finally {
             setLoading(false);
         }
-    }, [surveyId, apiUrl, error]); // Added 'error' to dependency array to prevent re-setting if already set
+    }, [surveyId, apiUrl]); // MODIFIED: Removed 'error' from dependency array
 
     useEffect(() => {
         fetchData();
     }, [fetchData]); // fetchData is memoized with useCallback
 
     useEffect(() => {
-        if (survey && rawAnswers && !loading) { // rawAnswers should now be an array
+        if (survey && rawAnswers && !loading) {
             const processed = processAllAnswers(survey, rawAnswers);
             setProcessedResults(processed);
         }
@@ -530,4 +524,4 @@ function SurveyResultsPage() {
 }
 
 export default SurveyResultsPage;
-// ----- END OF COMPLETE UPDATED FILE (v2.6 - Auth Headers & Corrected Data Parsing) -----
+// ----- END OF COMPLETE MODIFIED FILE (v2.7 - Corrected fetchData useCallback dependencies) -----
