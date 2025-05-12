@@ -1,7 +1,7 @@
 // frontend/src/components/survey_question_renders/MultipleChoiceQuestion.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Align with QEP props for Other/NA) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.3 - Fixed Hooks order) -----
 import React, { useMemo } from 'react';
-import styles from './SurveyQuestionStyles.module.css'; // Assuming this is SurveyQuestionStyles.module.css
+import styles from './SurveyQuestionStyles.module.css';
 
 const NA_VALUE_INTERNAL = '__NA__';
 const OTHER_VALUE_INTERNAL = '__OTHER__';
@@ -15,6 +15,16 @@ const MultipleChoiceQuestion = ({
     disabled,
     optionsOrder
 }) => {
+    // --- HOOK MOVED TO THE TOP ---
+    const orderedOptions = useMemo(() => {
+        // Ensure question and question.options are accessed safely
+        const options = question?.options || [];
+        return optionsOrder
+            ? optionsOrder.map(index => options[index]).filter(opt => opt !== undefined)
+            : options;
+    }, [question?.options, optionsOrder]); // Added optional chaining for question.options
+
+    // --- VALIDATION CHECK AFTER HOOKS ---
     if (!question || !Array.isArray(question.options)) {
         console.error("[MultipleChoiceQuestion] Invalid question data:", question);
         return <p className={styles.errorMessage}>Question data or options are missing.</p>;
@@ -29,12 +39,6 @@ const MultipleChoiceQuestion = ({
             onOtherTextChange(question._id, event.target.value);
         }
     };
-
-    const orderedOptions = useMemo(() => {
-        return optionsOrder
-            ? optionsOrder.map(index => (question.options || [])[index]).filter(opt => opt !== undefined)
-            : (question.options || []);
-    }, [question.options, optionsOrder]);
 
     return (
         <div className={`${styles.questionContainer} ${disabled ? styles.disabled : ''}`}>
@@ -73,7 +77,6 @@ const MultipleChoiceQuestion = ({
                     );
                 })}
 
-                {/* Uses `question.addOtherOption` from QuestionEditPanel.js */}
                 {question.addOtherOption && (
                     <div className={styles.optionItem}>
                         <input
@@ -97,22 +100,18 @@ const MultipleChoiceQuestion = ({
                                 placeholder={question.otherPlaceholder || "Please specify"}
                                 className={styles.otherTextInput}
                                 disabled={disabled}
-                                // Uses `question.requireOtherIfSelected` from QuestionEditPanel.js
                                 required={question.requireOtherIfSelected && currentAnswer === OTHER_VALUE_INTERNAL}
                             />
                         )}
                     </div>
                 )}
 
-                {/* Uses `question.addNAOption` from QuestionEditPanel.js */}
                 {question.addNAOption && (
                     <div className={styles.optionItem}>
                         <input
                             type="radio"
                             id={`q_${question._id}_opt_na`}
                             name={`q_${question._id}`}
-                            // Use a consistent internal value for N/A.
-                            // If you add `naValue` to QuestionEditPanel, use `question.naValue || NA_VALUE_INTERNAL`
                             value={NA_VALUE_INTERNAL} 
                             checked={currentAnswer === NA_VALUE_INTERNAL}
                             onChange={handleChange}
@@ -120,7 +119,6 @@ const MultipleChoiceQuestion = ({
                             className={styles.radioInput}
                         />
                         <label htmlFor={`q_${question._id}_opt_na`} className={styles.optionLabel}>
-                            {/* If you add `naText` to QuestionEditPanel, use `question.naText || 'Not Applicable'` */}
                             Not Applicable 
                         </label>
                     </div>
@@ -131,4 +129,4 @@ const MultipleChoiceQuestion = ({
 };
 
 export default MultipleChoiceQuestion;
-// ----- END OF COMPLETE MODIFIED FILE (v1.2) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.3) -----
