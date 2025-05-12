@@ -1,5 +1,5 @@
 /* frontend/src/components/survey_question_renders/SurveyQuestionStyles.module.css */
-/* ----- START OF COMPLETE MODIFIED FILE (v1.4 - Card Sort Layout) ----- */
+/* ----- START OF COMPLETE MODIFIED FILE (v1.5 - Card Sort Styling Refinement) ----- */
 .questionContainer {
     margin-bottom: 20px;
     padding: 20px 25px; /* Slightly more padding */
@@ -219,14 +219,10 @@
 .cardSortCategoryColumn { flex: 1; min-width: 200px; max-width: 300px; padding: 10px; border: 1px dashed var(--border-color-medium, #ccc); border-radius: var(--border-radius-md, 6px); background-color: var(--background-accent-light, #fdfdfd); min-height: 120px; transition: background-color 0.2s ease; }
 .cardSortCategoryColumnOver { background-color: var(--primary-color-xlight, #e7f3ff); border-style: solid; border-color: var(--primary-color-light, #7bceff); }
 .cardSortCategoryTitle { font-weight: 600; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color-light, #eee); color: var(--text-primary); font-size: 1.05em; display: flex; justify-content: space-between; align-items: center; }
-.cardSortCardList {
-    min-height: 50px;
-    display: flex; /* ADDED for vertical stacking */
-    flex-direction: column; /* ADDED for vertical stacking */
-    gap: 8px; /* Optional: space between cards */
-}
-.cardSortCard { padding: 10px 12px; margin: 0; /* Margin is handled by gap in cardSortCardList now */ border: 1px solid var(--border-color-medium, #b0b0b0); border-radius: var(--border-radius-sm, 4px); background-color: var(--background-secondary, #fff); box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05)); text-align: center; font-size: 0.95em; color: var(--text-primary); cursor: grab; user-select: none; }
+.cardSortCardList { min-height: 50px; display: flex; flex-direction: column; gap: 8px; }
+.cardSortCard { padding: 10px 12px; margin: 0; border: 1px solid var(--border-color-medium, #b0b0b0); border-radius: var(--border-radius-sm, 4px); background-color: var(--background-secondary, #fff); box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05)); text-align: center; font-size: 0.95em; color: var(--text-primary); cursor: grab; user-select: none; touch-action: none; /* For better touch interaction */ }
 .cardSortCardOverlay { cursor: grabbing !important; box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)); z-index: 1000; }
+.cardSortCardIsDraggingSource { opacity: 0.4 !important; /* Make the original item more transparent when dragging overlay */ }
 .cardSortEmptyCategoryText { font-size: 0.85em; color: var(--text-muted, #888); text-align: center; padding: 10px 0; font-style: italic; }
 .cardSortUserCategorySection { margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color-light, #eee); }
 .cardSortUserCategoryInputContainer { display: flex; gap: 10px; align-items: center; margin-top: 5px; }
@@ -237,4 +233,4 @@
 .cardSortRemoveCategoryButton { font-size: 0.9em; color: var(--error-text, #dc3545); cursor: pointer; border: none; background: none; padding: 0 5px; font-weight: bold; }
 .cardSortRemoveCategoryButton:hover { color: var(--error-text-dark, #a71d2a); }
 
-/* ----- END OF COMPLETE MODIFIED FILE (v1.4) ----- */
+/* ----- END OF COMPLETE MODIFIED FILE (v1.5) ----- */

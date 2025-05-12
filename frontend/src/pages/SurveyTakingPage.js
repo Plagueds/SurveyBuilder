@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext - "Other" Validation Fix) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext2 - Refined Validation) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -28,19 +28,20 @@ const isAnswerEmpty = (value, questionType) => {
     if (typeof value === 'string' && value.trim() === '') return true;
     if (Array.isArray(value) && value.length === 0) return true;
     if (questionType === 'cardsort' && typeof value === 'object') {
-        if (!value.assignments || Object.keys(value.assignments).length === 0) return true; // No assignments at all
+        if (!value.assignments || Object.keys(value.assignments).length === 0) {
+             // If no user categories defined, and no assignments, it's empty.
+             // If user categories ARE defined, it might not be "empty" even with no assignments yet.
+             // This depends on how "answered" is defined for card sort.
+             // For now, let's say it's empty if no cards are assigned out of the unassigned pool.
+            return Object.values(value.assignments).every(catId => catId === '__UNASSIGNED__') || Object.keys(value.assignments).length === 0;
+        }
         // Check if any card is assigned to a category other than unassigned
-        // Or if there are user categories and no assignments yet (might be valid if user just created categories)
-        // This definition of empty might need refinement based on what "answered" means for card sort.
-        // For now, if there are assignments, it's not empty.
-        return Object.keys(value.assignments).length === 0 && (!value.userCategories || value.userCategories.length === 0);
+        return Object.values(value.assignments).every(catId => catId === '__UNASSIGNED__');
     }
     if (questionType === 'maxdiff' && typeof value === 'object') {
         return value.best === null || value.worst === null;
     }
     if (questionType === 'conjoint' && typeof value === 'object') {
-        // Conjoint is considered answered if there's at least one choice.
-        // A more robust check would be if all tasks are answered, handled by the component itself.
         return Object.keys(value).length === 0;
     }
     return false;
@@ -98,9 +99,9 @@ function SurveyTakingPage() {
 
     const isSubmitStateDerived = useMemo(() => {
         if (isLoading || !survey) return false;
-        if (visibleQuestionIndices.length === 0 && originalQuestions.length > 0) return true;
-        if (visibleQuestionIndices.length === 0 && originalQuestions.length === 0) return true;
-        if (currentVisibleIndex >= visibleQuestionIndices.length && originalQuestions.length > 0) return true;
+        if (visibleQuestionIndices.length === 0 && originalQuestions.length > 0 && !isLoading) return true; // No visible questions but survey has questions
+        if (visibleQuestionIndices.length === 0 && originalQuestions.length === 0 && !isLoading) return true; // No questions at all
+        if (currentVisibleIndex >= visibleQuestionIndices.length && originalQuestions.length > 0 && !isLoading) return true; // Past the last visible question
         return false;
     }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
 
@@ -143,8 +144,9 @@ function SurveyTakingPage() {
             const surveyData = responsePayload.data;
             if (!surveyData || !Array.isArray(surveyData.questions)) throw new Error("Survey data is malformed (missing or invalid 'questions' field).");
             setSurvey(surveyData);
-            setOriginalQuestions(surveyData.questions || []);
-            let initialOrderIndices = (surveyData.questions || []).map((_, index) => index);
+            const fetchedQuestions = surveyData.questions || [];
+            setOriginalQuestions(fetchedQuestions);
+            let initialOrderIndices = fetchedQuestions.map((_, index) => index);
             const { randomizationLogic } = surveyData;
             if (randomizationLogic?.type === 'all') initialOrderIndices = shuffleArray(initialOrderIndices);
             else if (randomizationLogic?.type === 'blocks' && ensureArray(randomizationLogic.blocks).length > 0) {
@@ -158,22 +160,22 @@ function SurveyTakingPage() {
             }
             setRandomizedQuestionOrder(initialOrderIndices);
             const initialOptionOrders = {}; 
-            (surveyData.questions || []).forEach(q => { 
+            fetchedQuestions.forEach(q => { 
                 if (q && q.randomizeOptions && Array.isArray(q.options)) {
                     initialOptionOrders[q._id] = shuffleArray(q.options.map((_, optIndex) => optIndex)); 
                 }
             });
             setRandomizedOptionOrders(initialOptionOrders);
             const initialAnswers = {}; 
-            (surveyData.questions || []).forEach(q => { 
+            fetchedQuestions.forEach(q => { 
                 if (q) { 
                     let defaultAnswer = ''; 
                     if (q.type === 'checkbox') defaultAnswer = [];
                     else if (q.type === 'slider') defaultAnswer = String(Math.round(((q.sliderMin ?? 0) + (q.sliderMax ?? 100)) / 2));
-                    else if (q.type === 'ranking') defaultAnswer = ensureArray(q.options?.map(opt => typeof opt === 'string' ? opt : opt.text || String(opt)));
+                    else if (q.type === 'ranking') defaultAnswer = ensureArray(q.options?.map(opt => typeof opt === 'string' ? opt : (opt.text || String(opt)))); // Handle object options
                     else if (q.type === 'cardsort') defaultAnswer = { assignments: {}, userCategories: [] }; 
                     else if (q.type === 'maxdiff') defaultAnswer = { best: null, worst: null };
-                    else if (q.type === 'conjoint') defaultAnswer = {}; // Initialize as empty object for conjoint
+                    else if (q.type === 'conjoint') defaultAnswer = {};
                     initialAnswers[q._id] = defaultAnswer; 
                 } 
             });
@@ -214,18 +216,15 @@ function SurveyTakingPage() {
             let newVal;
             if (isChecked) {
                 newVal = [...currentVal, optionValue];
-                if (optionValue === NA_VALUE_INTERNAL) newVal = [NA_VALUE_INTERNAL]; // NA is exclusive
-                else if (newVal.includes(NA_VALUE_INTERNAL)) newVal = newVal.filter(v => v !== NA_VALUE_INTERNAL); // Remove NA if other selected
+                if (optionValue === NA_VALUE_INTERNAL) newVal = [NA_VALUE_INTERNAL];
+                else if (newVal.includes(NA_VALUE_INTERNAL)) newVal = newVal.filter(v => v !== NA_VALUE_INTERNAL);
             } else {
                 newVal = currentVal.filter(v => v !== optionValue);
             }
             return { ...prevAnswers, [questionId]: newVal };
         });
         const question = questionsById[questionId];
-        if (question && question.addOtherOption && optionValue !== OTHER_VALUE_INTERNAL && !isChecked) { // If "Other" checkbox itself is unchecked
-             // No need to clear otherInputValues here, it's cleared if another option is selected or if "Other" text input is directly cleared.
-        } else if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) {
-            // If "Other" checkbox is unchecked, clear its text
+        if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) {
             setOtherInputValues(prev => ({ ...prev, [questionId]: '' }));
         }
     }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
@@ -235,48 +234,52 @@ function SurveyTakingPage() {
     }, []);
 
     const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabled = false) => {
-        if (!question) return true; // Should not happen if question is rendered
-        if (isDisabled) return true; // Disabled questions are always "valid" for progression
+        if (!question) return true; 
+        if (isDisabled) return true;
 
-        // Soft check is not currently used but could be for partial validation feedback
+        // Only validate if the question is required or if it's a soft check (not currently used for blocking)
         if (question.requiredSetting === 'not_required' && !isSoftCheck) return true;
 
-        // Check for general emptiness first
         if (isAnswerEmpty(answer, question.type)) {
-            // If required, it's invalid. If not_required, this check is skipped earlier.
-            return question.requiredSetting === 'not_required';
+            // If it's truly required and empty, it's invalid.
+            // For not_required, this path is already exited.
+            // For soft_required or conditional, being empty might be okay if not blocking.
+            return question.requiredSetting !== 'required';
         }
 
         // Check for "Other" option requirements
-        if (question.addOtherOption && question.requireOtherIfSelected) { // <<<< MODIFIED HERE
+        // This check is independent of requiredSetting, if "Other" is selected, its text might be mandatory
+        if (question.addOtherOption && question.requireOtherIfSelected) {
             const isOtherSelected = (question.type === 'multiple-choice' || question.type === 'dropdown')
                 ? answer === OTHER_VALUE_INTERNAL
                 : ensureArray(answer).includes(OTHER_VALUE_INTERNAL);
 
-            if (isOtherSelected && (!otherInputValues[question._id] || otherInputValues[question._id].trim() === '')) {
-                return false; // Validation fails if "Other" is selected, text is required, but text is empty
+            if (isOtherSelected) {
+                const otherTextValue = otherInputValues[question._id];
+                if (!otherTextValue || otherTextValue.trim() === '') {
+                    return false; // Validation fails: "Other" selected, text required, but text is empty
+                }
             }
         }
         
-        // Add specific validation for checkbox min/max selections if applicable
         if (question.type === 'checkbox') {
-            const selectedCount = ensureArray(answer).filter(val => val !== NA_VALUE_INTERNAL && val !== OTHER_VALUE_INTERNAL).length;
-            const otherIsSelected = ensureArray(answer).includes(OTHER_VALUE_INTERNAL);
-            const totalSelected = selectedCount + (otherIsSelected ? 1 : 0);
+            const naIsSelected = ensureArray(answer).includes(NA_VALUE_INTERNAL);
+            if (naIsSelected) return true; // If N/A is selected, other checkbox validations (min/max) might be skipped
 
-            if (question.minAnswersRequired && totalSelected < question.minAnswersRequired) {
-                // toast.error(`Please select at least ${question.minAnswersRequired} options for "${question.text}".`);
+            const selectedOptions = ensureArray(answer).filter(val => val !== NA_VALUE_INTERNAL);
+            const selectedCount = selectedOptions.length;
+            
+            if (question.minAnswersRequired && selectedCount < question.minAnswersRequired) {
+                toast.error(`Please select at least ${question.minAnswersRequired} options for "${question.text}".`);
                 return false;
             }
-            if (question.limitAnswers && question.limitAnswersMax && totalSelected > question.limitAnswersMax) {
-                // toast.error(`Please select no more than ${question.limitAnswersMax} options for "${question.text}".`);
+            if (question.limitAnswers && question.limitAnswersMax && selectedCount > question.limitAnswersMax) {
+                toast.error(`Please select no more than ${question.limitAnswersMax} options for "${question.text}".`);
                 return false;
             }
         }
-
-
-        return true; // If all checks pass
-    }, [otherInputValues, OTHER_VALUE_INTERNAL]);
+        return true;
+    }, [otherInputValues, OTHER_VALUE_INTERNAL, NA_VALUE_INTERNAL]);
 
     const renderQuestion = useCallback((questionToRenderArg) => {
         if (!questionToRenderArg) return <div className={styles.loading}>Loading question content...</div>;
@@ -289,7 +292,7 @@ function SurveyTakingPage() {
         switch (question.type) {
             case 'text': return <ShortTextQuestion {...commonProps} />;
             case 'textarea': return <TextAreaQuestion {...commonProps} />;
-            case 'multiple-choice': return <MultipleChoiceQuestion {...commonProps} isMultiSelect={false} />;
+            case 'multiple-choice': return <MultipleChoiceQuestion {...commonProps} />; // Removed isMultiSelect, it's implicit
             case 'checkbox': return <CheckboxQuestion {...commonProps} />;
             case 'dropdown': return <DropdownQuestion {...commonProps} />;
             case 'rating': return <RatingQuestion {...commonProps} />;
@@ -314,7 +317,11 @@ function SurveyTakingPage() {
         const isDisabledBySetting = evaluateDisabled(currentOriginalIndex);
 
         if (question && !validateQuestion(question, currentAnswers[question._id], false, isDisabledBySetting)) {
-            toast.error(`Please answer the current question correctly: "${question.text}"`);
+            // Toast is now inside validateQuestion for specific checkbox min/max errors
+            // For general "Other" or required errors, this toast will show.
+            if (!(question.type === 'checkbox' && (question.minAnswersRequired || question.limitAnswersMax))) {
+                 toast.error(`Please answer the current question correctly: "${question.text}"`);
+            }
             return;
         }
         setVisitedPath(prev => [...prev, currentOriginalIndex]);
@@ -325,7 +332,7 @@ function SurveyTakingPage() {
         if (currentVisibleIndex < visibleQuestionIndices.length - 1) {
             setCurrentVisibleIndex(prev => prev + 1);
         } else {
-            setCurrentVisibleIndex(visibleQuestionIndices.length); // Move to submit state
+            setCurrentVisibleIndex(visibleQuestionIndices.length);
         }
     }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, visitedPath, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap, setIsDisqualified, setDisqualificationMessage]);
 
@@ -343,14 +350,19 @@ function SurveyTakingPage() {
             const originalIdx = visibleQuestionIndices[visIdx];
             const q = originalQuestions[originalIdx];
             const isDisabled = evaluateDisabled(originalIdx);
-            if (q && !validateQuestion(q, currentAnswers[q._id], false, isDisabled)) { // Full validation check
+            if (q && !validateQuestion(q, currentAnswers[q._id], false, isDisabled)) {
                 firstInvalidVisibleIndex = visIdx;
                 break;
             }
         }
         if (firstInvalidVisibleIndex !== -1) {
             setCurrentVisibleIndex(firstInvalidVisibleIndex);
-            toast.error(`Please complete all required questions. Problem with: "${originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]].text}"`);
+            // Toast is now inside validateQuestion for specific checkbox min/max errors
+            // For general "Other" or required errors, this toast will show.
+             if (!(originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]].type === 'checkbox' && 
+                  (originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]].minAnswersRequired || originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]].limitAnswersMax))) {
+                toast.error(`Please complete all required questions. Problem with: "${originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]].text}"`);
+            }
             setIsSubmitting(false);
             return;
         }
@@ -358,7 +370,6 @@ function SurveyTakingPage() {
         const answersToSubmit = Object.entries(currentAnswers)
             .filter(([questionId, ]) => {
                 const question = questionsById[questionId];
-                // Only submit answers for questions that were actually visible/interactable
                 return question && visibleQuestionIndices.includes(questionIdToOriginalIndexMap[question._id]);
             })
             .map(([questionId, answerValue]) => {
@@ -367,7 +378,8 @@ function SurveyTakingPage() {
                 if (question.addOtherOption) {
                     if (((question.type === 'multiple-choice' || question.type === 'dropdown') && answerValue === OTHER_VALUE_INTERNAL) ||
                         (question.type === 'checkbox' && ensureArray(answerValue).includes(OTHER_VALUE_INTERNAL))) {
-                        textForOther = otherInputValues[questionId]?.trim() || ''; // Send empty string if not filled, backend can validate if required
+                        textForOther = otherInputValues[questionId]?.trim(); // Send trimmed or undefined
+                        if (textForOther === '') textForOther = null; // Send null if empty after trim for consistency
                     }
                 }
                 return {
@@ -375,11 +387,10 @@ function SurveyTakingPage() {
                     questionType: question.type,
                     answerValue,
                     otherText: textForOther,
-                    questionText: question.text || question.title // For context in results
+                    questionText: question.text || question.title
                 };
             });
 
-        // Check if all answers are effectively empty (e.g., user skipped everything non-required)
         if (answersToSubmit.every(ans => isAnswerEmpty(ans.answerValue, ans.questionType) && !ans.otherText) &&
             originalQuestions.length > 0 && visibleQuestionIndices.length > 0) {
             const anyRequiredVisibleAndUnanswered = visibleQuestionIndices.some(idx => {
@@ -399,7 +410,6 @@ function SurveyTakingPage() {
             collectorId: currentCollectorId,
             recaptchaToken: recaptchaEnabled && recaptchaSiteKey ? recaptchaToken : undefined,
             startedAt: surveyStartedAt,
-            // submittedAt: new Date().toISOString() // Backend should set this
         };
         console.log("[SurveyTakingPage] Submitting payload:", JSON.stringify(payload, null, 2));
 
@@ -418,7 +428,7 @@ function SurveyTakingPage() {
             }
         } catch (errCatch) {
             const errorMessage = errCatch.response?.data?.message || errCatch.message || "Submission error.";
-            console.error("[SurveyTakingPage] handleSubmit error:", errCatch);
+            console.error("[SurveyTakingPage] handleSubmit error:", errCatch.response || errCatch);
             setError(errorMessage);
             toast.error(`Failed: ${errorMessage}`);
             if (recaptchaEnabled && recaptchaRef.current && recaptchaSiteKey) {
@@ -443,4 +453,4 @@ function SurveyTakingPage() {
     return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>} {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>} {isLoading && survey ? <div className={styles.loading}>Loading question...</div> : <div className={`${styles.questionBox} ${isCurrentQuestionDisabled ? styles.disabled : ''}`}> {finalIsSubmitState ? ( <div className={styles.submitPrompt}> <p>End of survey.</p> <p>Click "Submit" to record responses.</p> </div> ) : finalCurrentQToRender ? ( renderQuestion(finalCurrentQToRender) ) : ( originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified ? <div className={styles.submitPrompt}><p>No questions visible. Submit if applicable.</p></div> : (isLoading ? <div className={styles.loading}>Preparing...</div> : <div className={styles.loading}>Survey empty or issue.</div>) )} </div> } {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && ( <div className={styles.recaptchaContainer}> <ReCAPTCHA ref={recaptchaRef} sitekey={recaptchaSiteKey} onChange={(token) => setRecaptchaToken(token)} onExpired={() => setRecaptchaToken(null)} onErrored={() => { toast.error("reCAPTCHA failed. Refresh."); setRecaptchaToken(null); }} /> </div> )} <div className={styles.surveyNavigationArea}> <button onClick={handlePrevious} className={styles.navButton} disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) }> Previous </button> {finalIsSubmitState || (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified && !isLoading) ? ( <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} > {isSubmitting ? 'Submitting...' : 'Submit'} </button> ) : ( <button onClick={handleNext} className={styles.navButton} disabled={isDisqualified || isSubmitting || isLoading || !finalCurrentQToRender } > Next </button> )} </div> <div className={styles.progressIndicator}> {!finalIsSubmitState && finalCurrentQToRender ? (visibleQuestionIndices.length > 0 ? `Question ${currentVisibleIndex + 1} of ${visibleQuestionIndices.length}` : 'Loading...') : (finalIsSubmitState ? `End (${visibleQuestionIndices.length} questions shown)`: 'Initializing...')} </div> </div> );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext - "Other" Validation Fix) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext2 - Refined Validation) -----
