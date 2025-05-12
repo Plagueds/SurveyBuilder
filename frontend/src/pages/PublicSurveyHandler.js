@@ -1,80 +1,82 @@
 // frontend/src/pages/PublicSurveyHandler.js
-// ----- START OF COMPLETE MODIFIED FILE -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext - Added console log for collectorSettings) -----
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import surveyApiFunctions from '../api/surveyApi';
-import './PublicSurveyHandler.css'; // We'll create/use this CSS file
+import './PublicSurveyHandler.css';
 
 const PublicSurveyHandler = () => {
     const { accessIdentifier } = useParams();
     const navigate = useNavigate();
 
     const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null); // For general errors or final access errors
+    const [error, setError] = useState(null);
     const [requiresPassword, setRequiresPassword] = useState(false);
     const [password, setPassword] = useState('');
-    const [passwordError, setPasswordError] = useState(''); // Specifically for password input errors
-    const [surveyTitle, setSurveyTitle] = useState(''); // To display survey title on password prompt
+    const [passwordError, setPasswordError] = useState('');
+    const [surveyTitle, setSurveyTitle] = useState('');
 
     const handleAccessAttempt = async (currentPassword = null) => {
         setIsLoading(true);
-        setError(null); // Clear general error
-        if (currentPassword) setPasswordError(''); // Clear password error if attempting with password
+        setError(null);
+        if (currentPassword) setPasswordError('');
 
         try {
             console.log(`[PublicSurveyHandler] Attempting access for: ${accessIdentifier}` + (currentPassword ? " with password." : " without password."));
             const response = await surveyApiFunctions.accessPublicSurvey(accessIdentifier, currentPassword);
-            console.log('[PublicSurveyHandler] Response from accessPublicSurvey:', response);
+            // console.log('[PublicSurveyHandler] Raw response from accessPublicSurvey:', response); // For deep debugging
 
             if (response && response.success && response.data && response.data.surveyId && response.data.collectorId) {
                 const { surveyId, collectorId, surveyTitle: title, collectorSettings } = response.data;
 
-                if (typeof surveyId !== 'string' || surveyId.includes('<anonymous') || surveyId.length < 5) {
-                    throw new Error(`Invalid surveyId ('${surveyId}') received from API.`);
+                // Basic validation of received IDs
+                if (typeof surveyId !== 'string' || surveyId.length < 5) { // Basic check
+                    console.error(`[PublicSurveyHandler] Invalid surveyId ('${surveyId}') received from API.`);
+                    throw new Error(`Invalid survey data received from API.`);
                 }
-                if (typeof collectorId !== 'string' || collectorId.includes('<anonymous') || collectorId.length < 5) {
-                    throw new Error(`Invalid collectorId ('${collectorId}') received from API.`);
+                if (typeof collectorId !== 'string' || collectorId.length < 5) { // Basic check
+                    console.error(`[PublicSurveyHandler] Invalid collectorId ('${collectorId}') received from API.`);
+                    throw new Error(`Invalid collector data received from API.`);
                 }
+                
+                // Log the collectorSettings that will be passed to SurveyTakingPage
+                console.log('[PublicSurveyHandler] Access granted. Collector Settings to be passed:', collectorSettings);
 
-                console.log(`[PublicSurveyHandler] Access granted. Navigating to: /surveys/${surveyId}/c/${collectorId}`);
                 navigate(`/surveys/${surveyId}/c/${collectorId}`, {
                     replace: true,
                     state: {
-                        surveyTitle: title, // Pass title for SurveyTakingPage if needed
-                        collectorSettings: collectorSettings || {}
+                        surveyTitle: title,
+                        collectorSettings: collectorSettings || {} // Ensure it's at least an empty object
                     }
                 });
             } else {
-                // This path might be hit if API returns success: false but with specific instructions
-                // However, accessPublicSurvey in surveyApi.js is designed to throw an error for non-2xx responses.
-                // This block is more of a safeguard.
                 const message = response?.message || 'API response lacked success flag or necessary data.';
                 console.error('[PublicSurveyHandler] API response issue or missing data:', response);
-                setError(message); // Set general error
-                if (response?.requiresPassword) { // Check if API explicitly states password requirement
+                setError(message);
+                if (response?.requiresPassword) {
                     setRequiresPassword(true);
-                    setSurveyTitle(response?.data?.surveyTitle || ''); // If title is available
+                    setSurveyTitle(response?.data?.surveyTitle || '');
                 }
                 setIsLoading(false);
             }
         } catch (err) {
-            // This is the more common path for errors due to how surveyApi.js throws on non-2xx
-            const errData = err.response?.data; // Axios error structure
+            const errData = err.response?.data;
             const errorMessage = errData?.message || err.message || 'An unexpected error occurred.';
-            console.error(`[PublicSurveyHandler] CATCH BLOCK: Error processing survey access for ${accessIdentifier}:`, err);
+            console.error(`[PublicSurveyHandler] CATCH BLOCK: Error processing survey access for ${accessIdentifier}:`, err.response || err);
 
             if (errData?.requiresPassword) {
                 setRequiresPassword(true);
-                setSurveyTitle(errData?.surveyTitle || surveyTitle || 'this survey'); // Keep existing title if already set
-                if (currentPassword) { // If this error occurred after a password attempt
-                    setPasswordError(errorMessage); // Show error next to password field
+                setSurveyTitle(errData?.surveyTitle || surveyTitle || 'this survey');
+                if (currentPassword) {
+                    setPasswordError(errorMessage);
                 } else {
-                    setError(null); // Don't show a general error message yet, just the password prompt
+                    setError(null);
                 }
             } else {
-                setError(errorMessage); // Set general error for other issues
-                toast.error(`Error: ${errorMessage}`);
+                setError(errorMessage);
+                // Avoid double toasting if surveyApi already toasted (depends on its implementation)
+                // toast.error(`Error: ${errorMessage}`); 
             }
             setIsLoading(false);
         }
@@ -87,10 +89,9 @@ const PublicSurveyHandler = () => {
             toast.error('Invalid survey link: Missing identifier.');
             return;
         }
-        // Initial attempt without password when component mounts
         handleAccessAttempt();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [accessIdentifier]); // Only re-run if accessIdentifier changes
+    }, [accessIdentifier]);
 
     const handlePasswordSubmit = (e) => {
         e.preventDefault();
@@ -101,7 +102,6 @@ const PublicSurveyHandler = () => {
         handleAccessAttempt(password.trim());
     };
 
-    // Initial Loading State (before knowing if password is required or any error)
     if (isLoading && !requiresPassword && !error) {
         return (
             <div className="public-survey-handler-container">
@@ -111,7 +111,6 @@ const PublicSurveyHandler = () => {
         );
     }
 
-    // General Error Display (if not a password prompt scenario)
     if (error && !requiresPassword) {
         return (
             <div className="public-survey-handler-container error-container">
@@ -127,7 +126,6 @@ const PublicSurveyHandler = () => {
         );
     }
 
-    // Password Prompt
     if (requiresPassword) {
         return (
             <div className="public-survey-handler-container password-prompt-container">
@@ -143,7 +141,7 @@ const PublicSurveyHandler = () => {
                             value={password}
                             onChange={(e) => {
                                 setPassword(e.target.value);
-                                if (passwordError) setPasswordError(''); // Clear error on new input
+                                if (passwordError) setPasswordError('');
                             }}
                             className={passwordError ? 'input-error' : ''}
                             aria-describedby="passwordErrorText"
@@ -154,20 +152,19 @@ const PublicSurveyHandler = () => {
                     <button type="submit" disabled={isLoading} className="button-primary">
                         {isLoading ? 'Verifying...' : 'Submit Password'}
                     </button>
-                    {/* Show general error here if it occurred during password phase and wasn't a password-specific error */}
                     {error && !passwordError && <p className="error-message general-error">{error}</p>}
                 </form>
             </div>
         );
     }
 
-    // Fallback or transient state, should ideally not be seen for long
     return (
         <div className="public-survey-handler-container">
             <p>Processing your request...</p>
+            {/* This state should be transient. If it persists, there's an issue in the logic. */}
         </div>
     );
 };
 
 export default PublicSurveyHandler;
-// ----- END OF COMPLETE MODIFIED FILE -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext - Added console log for collectorSettings) -----

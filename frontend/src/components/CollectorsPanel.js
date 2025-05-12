@@ -1,10 +1,10 @@
 // frontend/src/components/CollectorsPanel.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.1 - Integrated CollectorFormModal) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Display Anonymous Setting) -----
 import React, { useState } from 'react';
 import styles from './CollectorsPanel.module.css';
 import surveyApi from '../api/surveyApi';
 import { toast } from 'react-toastify';
-import CollectorFormModal from './CollectorFormModal'; // <<<--- IMPORT ACTUAL COMPONENT
+import CollectorFormModal from './CollectorFormModal';
 
 const CollectorsPanel = ({
     isOpen,
@@ -32,7 +32,6 @@ const CollectorsPanel = ({
     };
 
     const handleDeleteCollector = async (collectorId) => {
-        // Find collector name for confirmation message
         const collectorToDelete = initialCollectors.find(c => c._id === collectorId);
         const collectorName = collectorToDelete ? collectorToDelete.name : "this collector";
         
@@ -43,7 +42,7 @@ const CollectorsPanel = ({
             await surveyApi.deleteCollector(surveyId, collectorId);
             toast.success(`Collector "${collectorName}" deleted successfully!`);
             if (onCollectorsUpdate) {
-                onCollectorsUpdate();
+                onCollectorsUpdate(); // Trigger refresh
             }
         } catch (error) {
             console.error("Error deleting collector:", error);
@@ -61,6 +60,9 @@ const CollectorsPanel = ({
 
     const getCollectorLink = (collector) => {
         const publicBaseUrl = process.env.REACT_APP_PUBLIC_SURVEY_URL || window.location.origin;
+        if (collector.settings?.web_link?.customSlug) {
+            return `${publicBaseUrl}/s/${collector.settings.web_link.customSlug}`;
+        }
         return `${publicBaseUrl}/s/${collector.linkId}`;
     };
 
@@ -130,10 +132,13 @@ const CollectorsPanel = ({
                                             <span>Open Date:</span><span>{formatDate(collector.settings?.web_link?.openDate)}</span>
                                             <span>Close Date:</span><span>{formatDate(collector.settings?.web_link?.closeDate)}</span>
                                             <span>Multiple Responses:</span><span>{collector.settings?.web_link?.allowMultipleResponses ? 'Allowed' : 'Not Allowed'}</span>
-                                            <span>Password:</span><span>{collector.settings?.web_link?.passwordProtectionEnabled ? 'Enabled' : 'Disabled'}</span>
+                                            {/* --- ADDED: Display for Anonymous Responses --- */}
+                                            <span>Anonymous:</span><span>{collector.settings?.web_link?.anonymousResponses ? 'Yes' : 'No'}</span>
+                                            <span>Password:</span><span>{collector.settings?.web_link?.passwordProtectionEnabled || collector.settings?.web_link?.password ? 'Enabled' : 'Disabled'}</span>
+                                            <span>reCAPTCHA:</span><span>{collector.settings?.web_link?.enableRecaptcha ? 'Enabled' : 'Disabled'}</span>
                                         </div>
                                         
-                                        {collector.type === 'web_link' && collector.linkId && (
+                                        {collector.type === 'web_link' && (collector.linkId || collector.settings?.web_link?.customSlug) && (
                                             <div className={styles.collectorLinkSection}>
                                                 <span>Link:</span>
                                                 <input type="text" readOnly value={getCollectorLink(collector)} className={styles.linkInput} onClick={(e) => e.target.select()}/>
@@ -144,8 +149,6 @@ const CollectorsPanel = ({
                                     <div className={styles.collectorActions}>
                                         <button onClick={() => handleEditCollector(collector)} className="button button-secondary button-small">Edit</button>
                                         <button onClick={() => handleDeleteCollector(collector._id)} className="button button-danger button-small">Delete</button>
-                                        {/* Add more actions like 'View Responses', 'Pause', 'Close' etc. later */}
-                                        {/* Example: <button className="button button-tertiary button-small">View Responses</button> */}
                                     </div>
                                 </li>
                             ))}
@@ -158,11 +161,11 @@ const CollectorsPanel = ({
                         isOpen={isFormModalOpen}
                         onClose={() => {
                             setIsFormModalOpen(false);
-                            setEditingCollector(null); // Clear editing state on close
+                            setEditingCollector(null);
                         }}
                         surveyId={surveyId}
                         existingCollector={editingCollector}
-                        onSave={handleFormModalSave} // This calls onCollectorsUpdate in parent
+                        onSave={handleFormModalSave}
                     />
                 )}
 
@@ -175,4 +178,4 @@ const CollectorsPanel = ({
 };
 
 export default CollectorsPanel;
-// ----- END OF COMPLETE MODIFIED FILE (v1.1) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Display Anonymous Setting) -----
