@@ -19,29 +19,50 @@ function AdminPage() {
 
    const navigate = useNavigate();
 
-   const fetchSurveys = useCallback(async () => {
+   // MODIFIED: fetchSurveys now accepts a signal
+   const fetchSurveys = useCallback(async (signal) => {
        setLoading(true); setError(null);
        try {
-           const responseData = await surveyApi.getAllSurveys();
+           // MODIFIED: Pass the signal to the API call
+           const responseData = await surveyApi.getAllSurveys({ signal }); 
            if (responseData && responseData.success && Array.isArray(responseData.data)) {
                setSurveys(responseData.data);
-           } else if (Array.isArray(responseData)) { // Fallback for direct array response
+           } else if (Array.isArray(responseData)) {
                setSurveys(responseData);
            } else {
                const message = responseData?.message || "Failed to retrieve surveys or data is in an unexpected format.";
                setError(message); toast.error(message); setSurveys([]);
            }
        } catch (err) {
-           const errorMessage = err.response?.data?.message || err.message || "Could not load surveys.";
-           setError(errorMessage); toast.error(errorMessage); setSurveys([]);
+           // MODIFIED: Check if the error was due to an abort
+           if (err.name === 'AbortError' || (err.isAxiosError && err.message.includes('canceled'))) {
+               console.log('[AdminPage] Fetch surveys aborted.');
+               // Don't set error state for deliberate aborts, but ensure loading is false
+           } else {
+               const errorMessage = err.response?.data?.message || err.message || "Could not load surveys.";
+               setError(errorMessage); toast.error(errorMessage); setSurveys([]);
+           }
        } finally {
+           // Ensure loading is set to false even if aborted, unless the component is already unmounted.
+           // If the signal is aborted, it means the effect cleanup ran.
+           // We can check signal.aborted here if we want to be very precise,
+           // but setLoading(false) is generally safe.
            setLoading(false);
        }
-   }, []);
+   }, []); // useCallback dependency array is empty, fetchSurveys is stable
 
    useEffect(() => {
-       fetchSurveys();
-   }, [fetchSurveys]);
+       // MODIFIED: Implement AbortController
+       const controller = new AbortController();
+       
+       fetchSurveys(controller.signal); // Pass the signal
+
+       // Cleanup function to abort the request if the component unmounts or effect re-runs
+       return () => {
+           console.log('[AdminPage] useEffect cleanup: Aborting fetchSurveys.');
+           controller.abort();
+       };
+   }, [fetchSurveys]); // fetchSurveys is a stable dependency due to useCallback with empty dep array
 
    const handleCreateSurvey = async (e) => {
        e.preventDefault();
@@ -50,7 +71,9 @@ function AdminPage() {
            return;
        }
        setIsSubmitting(true); setError(null);
+       const controller = new AbortController(); // Optional: AbortController for create if it can be long
        try {
+           // Consider passing { signal: controller.signal } if createSurvey supports it and can be aborted
            const createdSurveyResponse = await surveyApi.createSurvey({ title: newSurveyTitle.trim() });
            const createdSurvey = createdSurveyResponse.data || createdSurveyResponse;
 
@@ -59,36 +82,61 @@ function AdminPage() {
            }
            toast.success(`Survey "${createdSurvey.title}" created! Redirecting...`);
            setNewSurveyTitle('');
+           // No need to call fetchSurveys() here if navigating away immediately
            navigate(`/admin/surveys/${createdSurvey._id}/build`);
        } catch (err) {
-           const errorMessage = err.response?.data?.message || err.message || "Error creating survey.";
-           setError(errorMessage); toast.error(errorMessage);
+           if (err.name === 'AbortError' || (err.isAxiosError && err.message.includes('canceled'))) {
+               console.log('[AdminPage] Create survey aborted.');
+           } else {
+               const errorMessage = err.response?.data?.message || err.message || "Error creating survey.";
+               setError(errorMessage); toast.error(errorMessage);
+           }
        } finally {
             setIsSubmitting(false);
+            // if (controller) controller.abort(); // If createSurvey had an abort controller
        }
    };
 
    const handleDeleteSurvey = async (surveyId, surveyTitle) => {
        if (!window.confirm(`Are you sure you want to delete "${surveyTitle}"? This cannot be undone.`)) { return; }
        setIsSubmitting(true);
+       // Optional: AbortController for delete if needed
        try {
            await surveyApi.deleteSurvey(surveyId);
            toast.success(`Survey "${surveyTitle}" deleted.`);
-           fetchSurveys(); // Refresh
+           // Re-fetch surveys. The fetchSurveys called by useEffect will handle its own abort logic.
+           // If you want to trigger a fresh fetch immediately:
+           const newController = new AbortController();
+           fetchSurveys(newController.signal); 
+           // However, if fetchSurveys is only in useEffect, changing a state that useEffect depends on
+           // (if any) or simply relying on the existing structure might be enough.
+           // For simplicity, the existing useEffect will re-run if its dependencies change,
+           // or you can call fetchSurveys directly if it's designed to be called imperatively.
+           // Given the current setup, calling fetchSurveys() directly will use a new signal internally if we modify it to do so,
+           // or rely on the one from useEffect if we pass it.
+           // The simplest is to let the useEffect handle it, or if fetchSurveys is called directly, ensure it handles its own signal.
+           // Let's assume the useEffect will re-fetch or we trigger it.
+           // For an immediate refresh after delete, it's common to call fetchSurveys again.
+           // The useEffect's fetchSurveys will be aborted if the component unmounts during this new fetch.
        } catch (err) {
-           const errorMessage = err.response?.data?.message || err.message || "Error deleting survey.";
-           toast.error(errorMessage);
+            if (err.name === 'AbortError' || (err.isAxiosError && err.message.includes('canceled'))) {
+               console.log('[AdminPage] Delete survey aborted.');
+           } else {
+               const errorMessage = err.response?.data?.message || err.message || "Error deleting survey.";
+               toast.error(errorMessage);
+           }
        } finally {
            setIsSubmitting(false);
        }
    };
 
    const handleStatusChange = async (surveyId, newStatus) => {
-       const originalSurveys = JSON.parse(JSON.stringify(surveys)); // Deep copy for revert
+       const originalSurveys = JSON.parse(JSON.stringify(surveys)); 
        setSurveys(prevSurveys =>
            prevSurveys.map(s => s._id === surveyId ? { ...s, status: newStatus } : s)
        );
        setIsSubmitting(true);
+       // Optional: AbortController for update if needed
        try {
            const updatedSurveyResponse = await surveyApi.updateSurveyStructure(surveyId, { status: newStatus });
            const updatedSurvey = updatedSurveyResponse.data || updatedSurveyResponse;
@@ -97,18 +145,24 @@ function AdminPage() {
              throw new Error("Status update did not return valid survey data.");
            }
            toast.success(`Survey status updated to ${updatedSurvey.status}.`);
-           setSurveys(prevSurveys => // Update with server-confirmed data
-               prevSurveys.map(s => s._id === surveyId ? { ...s, ...updatedSurvey } : s)
-           );
+           // It's better to re-fetch or update based on the confirmed server response
+           // to ensure data consistency.
+           fetchSurveys(new AbortController().signal); // Re-fetch with a new signal
        } catch (err) {
-           const errorMessage = err.response?.data?.message || err.message || "Error updating status.";
-           toast.error(errorMessage);
-           setSurveys(originalSurveys); // Revert
+            if (err.name === 'AbortError' || (err.isAxiosError && err.message.includes('canceled'))) {
+               console.log('[AdminPage] Status change aborted.');
+               // Potentially revert optimistic update if abort was not due to unmount
+           } else {
+               const errorMessage = err.response?.data?.message || err.message || "Error updating status.";
+               toast.error(errorMessage);
+               setSurveys(originalSurveys); 
+           }
        } finally {
            setIsSubmitting(false);
        }
    };
 
+   // ... (JSX remains the same) ...
    return (
        <div className="admin-page-container" style={{padding: '20px', maxWidth: '1000px', margin: '0 auto'}}>
            <h1>Admin Dashboard</h1>
@@ -164,13 +218,12 @@ function AdminPage() {
                                    </td>
                                    <td data-label="Created">{formatDate(survey.createdAt)}</td>
                                    <td data-label="Actions" className="actions-cell">
-                                       {/* MODIFIED: Changed to Link for Preview */}
                                        <Link
                                            to={`/surveys/${survey._id}/preview`}
                                            className="button button-small button-info"
                                            style={{ marginRight: '5px' }}
-                                           target="_blank" // Optional: open preview in new tab
-                                           rel="noopener noreferrer" // If using target="_blank"
+                                           target="_blank" 
+                                           rel="noopener noreferrer"
                                        >
                                            Preview
                                        </Link>
@@ -202,7 +255,7 @@ function AdminPage() {
                    </table>
                </div>
            )}
-           {/* Basic styling, you should move this to a CSS file for AdminPage */}
+           {/* Basic styling */}
            <style jsx>{`
                .admin-page-container { padding: 20px; max-width: 1000px; margin: 0 auto; }
                .error-message-banner { color: red; background-color: #ffebeb; border: 1px solid red; padding: 10px; margin: 10px 0; border-radius: 4px; }
@@ -220,7 +273,7 @@ function AdminPage() {
                .button-primary { background-color: #007bff; color: white; }
                .button-secondary { background-color: #6c757d; color: white; }
                .button-danger { background-color: #dc3545; color: white; }
-               .button-info { background-color: #17a2b8; color: white; } /* Added for Preview */
+               .button-info { background-color: #17a2b8; color: white; }
                .button-small { padding: 4px 8px; font-size: 0.8em; }
                @media (max-width: 768px) {
                    .surveys-table thead { display: none; }
