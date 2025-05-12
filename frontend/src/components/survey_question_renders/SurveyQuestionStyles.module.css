@@ -1,5 +1,5 @@
 /* frontend/src/components/survey_question_renders/SurveyQuestionStyles.module.css */
-/* ----- START OF COMPLETE MODIFIED FILE (v1.2 - Added styles for complex question types) ----- */
+/* ----- START OF COMPLETE MODIFIED FILE (v1.3 - Added CardSort DND styles) ----- */
 .questionContainer {
     margin-bottom: 20px;
     padding: 20px 25px; /* Slightly more padding */
@@ -11,7 +11,22 @@
 .questionContainer.disabled {
     background-color: var(--background-disabled, #f8f8f8);
     opacity: 0.7;
+    pointer-events: none; /* Prevent interaction on the whole container */
 }
+/* Ensure child elements within a disabled container also adopt a disabled look if needed */
+.questionContainer.disabled input,
+.questionContainer.disabled textarea,
+.questionContainer.disabled select,
+.questionContainer.disabled button {
+    cursor: not-allowed;
+    /* opacity: 0.7; /* Or a more specific disabled style */
+}
+.questionContainer.disabled .rankingSortableItem,
+.questionContainer.disabled .cardSortCard {
+    cursor: not-allowed !important; /* Override grab cursor */
+}
+
+
 .questionText {
     font-size: 1.15em; /* Slightly larger */
     font-weight: 600; /* Bolder */
@@ -70,10 +85,16 @@
     resize: vertical;
 }
 .otherTextInput {
-    margin-left: 10px; /* Align with option text */
+    margin-left: 28px; /* Align with option text if radio/checkbox has margin */
     flex-grow: 1; /* Allow it to take available space */
     max-width: 400px; /* Optional: prevent it from becoming too wide */
+    margin-top: 0; /* Reset margin-top if it's part of .optionItem */
 }
+.optionItem > .otherTextInput { /* Specific for other text input next to a radio/checkbox */
+    margin-left: 10px;
+    margin-top: 0;
+}
+
 .errorMessage {
     color: var(--error-text, red);
     font-style: italic;
@@ -91,38 +112,38 @@
     color: var(--input-text);
 }
 
-/* --- Rating Styles (Existing) --- */
+/* --- Rating Styles --- */
 .ratingScaleContainer {
     display: flex;
     align-items: center;
-    justify-content: center; /* Center items if space allows */
-    gap: 5px; /* Gap between min/max labels and options */
+    justify-content: center;
+    gap: 5px;
     margin-top: 10px;
-    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+    flex-wrap: wrap;
 }
 .ratingOptions {
     display: flex;
     justify-content: center;
-    gap: 5px; /* Gap between rating buttons */
+    gap: 5px;
 }
-.ratingItem { /* Wrapper for hidden radio and label button */
-    display: inline-block; /* Allow items to sit side-by-side */
+.ratingItem {
+    display: inline-block;
 }
-.ratingInputHidden { /* Hide the actual radio button */
+.ratingInputHidden {
     opacity: 0;
     position: absolute;
     width: 0;
     height: 0;
 }
 .ratingLabelButton {
-    display: inline-flex; /* Use flex for centering text */
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 8px 0; /* Vertical padding */
-    width: 38px; /* Fixed width for buttons */
-    height: 38px; /* Fixed height */
+    padding: 8px 0;
+    width: 38px;
+    height: 38px;
     border: 1px solid var(--border-color, #ccc);
-    border-radius: var(--border-radius-md, 6px); /* Slightly more rounded */
+    border-radius: var(--border-radius-md, 6px);
     cursor: pointer;
     transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.15s ease;
     background-color: var(--background-secondary, #fff);
@@ -142,10 +163,10 @@
     font-weight: bold;
     box-shadow: var(--shadow-sm, 0 2px 4px rgba(0,0,0,0.07));
 }
-.ratingInputHidden:focus + .ratingLabelButton { /* Focus style */
+.ratingInputHidden:focus + .ratingLabelButton {
     outline: 2px solid var(--primary-color-light, #7bceff);
     outline-offset: 2px;
-    border-color: var(--primary-color, #007bff); /* Ensure border matches focus outline */
+    border-color: var(--primary-color, #007bff);
 }
 .ratingInputHidden:disabled + .ratingLabelButton {
     background-color: var(--button-disabled-bg, #e9ecef);
@@ -157,12 +178,12 @@
 .ratingMinMaxLabel {
     font-size: 0.9em;
     color: var(--text-secondary, #555);
-    padding: 0 10px; /* Space around labels */
+    padding: 0 10px;
     text-align: center;
-    min-width: 80px; /* Give some space for labels */
+    min-width: 80px;
 }
 
-/* --- NPS Styles (Existing) --- */
+/* --- NPS Styles --- */
 .npsScaleContainer {
     margin-top: 10px;
     padding: 10px 0;
@@ -170,14 +191,14 @@
 .npsOptions {
     display: flex;
     justify-content: center;
-    flex-wrap: wrap; /* Allow wrapping on small screens */
-    gap: 4px; /* Small gap between buttons */
+    flex-wrap: wrap;
+    gap: 4px;
     margin-bottom: 10px;
 }
-.npsItem { /* Wrapper for hidden radio and label button */
+.npsItem {
     display: inline-block;
 }
-.npsInputHidden { /* Hide the actual radio button */
+.npsInputHidden {
     opacity: 0;
     position: absolute;
     width: 0;
@@ -187,7 +208,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px; /* Slightly smaller for more buttons */
+    width: 36px;
     height: 36px;
     padding: 6px 0;
     border: 1px solid var(--border-color, #ccc);
@@ -203,26 +224,26 @@
     background-color: var(--background-accent-hover, #f0f0f0);
     border-color: var(--border-color-heavy, #bbb);
 }
-.npsLabelButton.selected { /* Generic selected, specific colors will override */
+.npsLabelButton.selected {
     font-weight: bold;
     box-shadow: var(--shadow-sm);
 }
-.npsDetractorSelected { /* Specific color for 0-6 */
+.npsDetractorSelected {
     background-color: var(--nps-detractor-bg, #f8d7da);
     color: var(--nps-detractor-text, #721c24);
     border-color: var(--nps-detractor-border, #f5c6cb);
 }
-.npsPassiveSelected { /* Specific color for 7-8 */
+.npsPassiveSelected {
     background-color: var(--nps-passive-bg, #fff3cd);
     color: var(--nps-passive-text, #856404);
     border-color: var(--nps-passive-border, #ffeeba);
 }
-.npsPromoterSelected { /* Specific color for 9-10 */
+.npsPromoterSelected {
     background-color: var(--nps-promoter-bg, #d4edda);
     color: var(--nps-promoter-text, #155724);
     border-color: var(--nps-promoter-border, #c3e6cb);
 }
-.npsInputHidden:focus + .npsLabelButton { /* Focus style */
+.npsInputHidden:focus + .npsLabelButton {
     outline: 2px solid var(--primary-color-light, #7bceff);
     outline-offset: 2px;
     border-color: var(--primary-color, #007bff);
@@ -240,12 +261,13 @@
     font-size: 0.85em;
     color: var(--text-secondary, #555);
     margin-top: 8px;
-    padding: 0 5%; /* Add some padding to align with the ends of the scale */
+    padding: 0 5%;
 }
 
-/* ----- NEW STYLES FOR COMPLEX QUESTION TYPES ----- */
-
 /* --- Matrix Question Styles --- */
+.matrixTableContainer {
+    overflow-x: auto; /* Allow horizontal scrolling for large matrices */
+}
 .matrixTable {
     width: 100%;
     border-collapse: collapse;
@@ -254,7 +276,7 @@
 }
 .matrixTh, .matrixTd {
     border: 1px solid var(--border-color, #ddd);
-    padding: 10px; /* Increased padding */
+    padding: 10px;
     text-align: center;
     vertical-align: middle;
 }
@@ -268,49 +290,44 @@
     font-weight: 500;
     background-color: var(--background-accent-light, #fcfcfc);
 }
-.matrixInput { /* Using existing .radioInput, .checkboxInput for consistency */
-    margin: 0; /* Centered in cell */
-}
 
 /* --- Slider Question Styles --- */
 .sliderWrapper {
     display: flex;
     align-items: center;
-    gap: 15px; /* Increased gap */
+    gap: 15px;
     margin-top: 15px;
     padding: 10px 0;
 }
 .sliderMinLabel, .sliderMaxLabel {
     font-size: 0.9em;
     color: var(--text-secondary, #555);
-    min-width: 60px; /* Ensure space for labels */
+    min-width: 60px;
     text-align: center;
 }
 .sliderInput {
     flex-grow: 1;
     cursor: pointer;
-    accent-color: var(--primary-color, #007bff); /* For the thumb and track */
-    height: 8px; /* Thicker track */
+    accent-color: var(--primary-color, #007bff);
+    height: 8px;
     border-radius: 4px;
-    background: var(--border-color-light, #ddd); /* Track background */
+    background: var(--border-color-light, #ddd);
 }
-/* Specific styling for WebKit (Chrome, Safari) slider track and thumb */
 .sliderInput::-webkit-slider-runnable-track {
     height: 8px;
     background: var(--border-color-light, #ddd);
     border-radius: 4px;
 }
 .sliderInput::-webkit-slider-thumb {
-    -webkit-appearance: none; /* Override default */
+    -webkit-appearance: none;
     appearance: none;
-    width: 20px; /* Larger thumb */
+    width: 20px;
     height: 20px;
     background: var(--primary-color, #007bff);
     border-radius: 50%;
-    margin-top: -6px; /* Center thumb on track */
+    margin-top: -6px;
     box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.1));
 }
-/* Specific styling for Mozilla (Firefox) slider track and thumb */
 .sliderInput::-moz-range-track {
     height: 8px;
     background: var(--border-color-light, #ddd);
@@ -333,78 +350,80 @@
     text-align: right;
 }
 
-/* --- Ranking Question Styles --- */
-.rankingList {
+/* --- Ranking Question DND Styles --- */
+.rankingListContainer { /* From RankingQuestion.js */
     list-style: none;
     padding: 0;
     margin-top: 10px;
 }
-.rankingItem {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px; /* Consistent padding */
+.rankingSortableItem {
+    padding: 10px 12px;
     border: 1px solid var(--border-color, #ddd);
-    margin-bottom: 8px; /* Space between items */
+    margin-bottom: 8px;
     border-radius: var(--border-radius-sm, 4px);
     background-color: var(--background-secondary, #fff);
     box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.03));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: grab;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
 }
-.rankingItemText {
+.rankingSortableItemIsDragging {
+    opacity: 0.8;
+    box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05));
+}
+.rankingSortableItemIsOver { /* Style for when an item is being dragged over another */
+    outline: 2px dashed var(--primary-color-light, #7bceff);
+    outline-offset: -2px; /* Inside border */
+}
+.rankingItemIndex {
+    margin-right: 10px;
+    color: var(--text-secondary, #555);
+    font-weight: bold;
+    flex-shrink: 0;
+}
+.rankingItemTextDnD {
     flex-grow: 1;
     color: var(--text-primary);
     font-size: 1em;
 }
-.rankingControls {
-    display: flex;
-    gap: 8px; /* Space between buttons */
+.rankingDragHandle {
     margin-left: 10px;
+    cursor: grab;
+    color: var(--text-muted, #6c757d);
+    font-size: 1.2em;
+    flex-shrink: 0;
 }
-.rankingButton {
-    padding: 4px 10px; /* Slightly larger */
-    cursor: pointer;
-    border: 1px solid var(--border-color-medium, #bbb);
-    border-radius: var(--border-radius-sm, 4px);
-    background-color: var(--button-secondary-bg, #e9ecef);
-    color: var(--button-secondary-text, #333);
-    font-size: 0.9em;
-    line-height: 1; /* Ensure text aligns well */
-    transition: background-color 0.15s ease;
-}
-.rankingButton:hover:not(:disabled) {
-    background-color: var(--button-secondary-hover-bg, #d8dde1);
-    border-color: var(--border-color-heavy, #999);
-}
-.rankingButton:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+.rankingDragHandle:active {
+    cursor: grabbing;
 }
 
 /* --- Heatmap Question Styles --- */
 .heatmapImageContainer {
     position: relative;
-    display: inline-block; /* So it doesn't take full width unless image does */
+    display: inline-block;
     max-width: 100%;
-    border: 2px dashed var(--border-color-medium, #ccc); /* Dashed border to indicate clickable area */
+    border: 2px dashed var(--border-color-medium, #ccc);
     cursor: crosshair;
     margin-top: 10px;
-    overflow: hidden; /* Ensure dots don't overflow if image is constrained */
+    overflow: hidden;
 }
 .heatmapImage {
-    display: block; /* Remove bottom space under image */
+    display: block;
     max-width: 100%;
-    max-height: 500px; /* Prevent overly large images */
-    user-select: none; /* Prevent image selection */
+    max-height: 500px;
+    user-select: none;
 }
 .heatmapClickDot {
     position: absolute;
-    width: 12px; /* Slightly larger dot */
+    width: 12px;
     height: 12px;
-    background-color: rgba(220, 53, 69, 0.75); /* Using var(--error-bg) or similar */
+    background-color: rgba(220, 53, 69, 0.75);
     border: 1px solid rgba(150, 20, 30, 0.9);
     border-radius: 50%;
-    transform: translate(-50%, -50%); /* Center the dot on click */
-    pointer-events: none; /* So dots don't interfere with new clicks */
+    transform: translate(-50%, -50%);
+    pointer-events: none;
     box-shadow: 0 0 5px rgba(0,0,0,0.3);
 }
 .heatmapControls {
@@ -413,7 +432,7 @@
     align-items: center;
     gap: 15px;
 }
-.heatmapButton { /* Generic button style, can reuse if you have one */
+.heatmapButton {
     padding: 8px 15px;
     cursor: pointer;
     border: 1px solid var(--button-secondary-border, #6c757d);
@@ -454,9 +473,6 @@
     text-align: left;
     font-weight: 500;
 }
-.maxDiffInput { /* Using existing .radioInput for consistency */
-    margin: 0; /* Centered in cell */
-}
 
 /* --- Conjoint Question Styles (Simplified Preview) --- */
 .conjointInfoText {
@@ -473,7 +489,7 @@
     background-color: var(--background-secondary, #fff);
 }
 .conjointAttributeName {
-    font-weight: 600; /* Bolder attribute name */
+    font-weight: 600;
     margin-bottom: 10px;
     display: block;
     font-size: 1.05em;
@@ -482,10 +498,10 @@
 .conjointLevelsContainer {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px; /* Gap between level buttons */
+    gap: 10px;
 }
 .conjointLevelButton {
-    padding: 8px 15px; /* Good padding */
+    padding: 8px 15px;
     border: 1px solid var(--border-color-medium, #ccc);
     border-radius: var(--border-radius-sm, 4px);
     cursor: pointer;
@@ -502,29 +518,37 @@
     background-color: var(--primary-color, #007bff);
     color: var(--primary-text-light, white);
     border-color: var(--primary-color-dark, #0056b3);
-    font-weight: 500; /* Slightly bolder when selected */
+    font-weight: 500;
     box-shadow: var(--shadow-sm, 0 2px 4px rgba(0,0,0,0.07));
 }
 
-/* --- Card Sort Question Styles (Simplified Preview) --- */
+/* --- Card Sort Question Styles (DND Version) --- */
 .cardSortLayout {
     display: flex;
     gap: 20px;
-    flex-wrap: wrap; /* Allow columns to wrap */
+    flex-wrap: wrap;
     margin-top: 15px;
+    align-items: flex-start; /* Align columns at the top */
 }
 .cardSortCategoryColumn {
     flex: 1;
-    min-width: 220px; /* Minimum width for a category column */
-    padding: 15px;
+    min-width: 200px; /* Minimum width for a category column */
+    max-width: 300px; /* Optional: max width */
+    padding: 10px;
     border: 1px dashed var(--border-color-medium, #ccc);
     border-radius: var(--border-radius-md, 6px);
     background-color: var(--background-accent-light, #fdfdfd);
-    min-height: 150px; /* Ensure columns have some height */
+    min-height: 120px; /* Ensure columns have some height */
+    transition: background-color 0.2s ease;
+}
+.cardSortCategoryColumnOver { /* Style for when a card is dragged over a category */
+    background-color: var(--primary-color-xlight, #e7f3ff);
+    border-style: solid;
+    border-color: var(--primary-color-light, #7bceff);
 }
 .cardSortCategoryTitle {
     font-weight: 600;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border-color-light, #eee);
     color: var(--text-primary);
@@ -533,26 +557,34 @@
     justify-content: space-between;
     align-items: center;
 }
+.cardSortCardList { /* Container for cards within a category */
+    min-height: 50px; /* Minimum height for the card list area */
+}
 .cardSortCard {
-    padding: 10px;
+    padding: 10px 12px;
     margin: 8px 0;
     border: 1px solid var(--border-color-medium, #b0b0b0);
     border-radius: var(--border-radius-sm, 4px);
-    background-color: var(--background-secondary, #fff); /* Card background */
+    background-color: var(--background-secondary, #fff);
     box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05));
     text-align: center;
     font-size: 0.95em;
     color: var(--text-primary);
+    cursor: grab; /* Default cursor for draggable card */
+    user-select: none; /* Prevent text selection when dragging */
 }
-.cardSortCardSelect { /* The dropdown within each card */
-    display: block;
-    margin-top: 8px;
-    width: 100%;
-    padding: 6px 8px; /* Smaller padding for select inside card */
-    font-size: 0.9em;
-    border: 1px solid var(--input-border, #ccc);
-    border-radius: var(--border-radius-xs, 3px);
-    background-color: var(--input-bg, white);
+.cardSortCardOverlay { /* Style for the card being dragged (DragOverlay) */
+    cursor: grabbing !important;
+    box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05));
+    /* Ensure it's on top */
+    z-index: 1000;
+}
+.cardSortEmptyCategoryText {
+    font-size: 0.85em;
+    color: var(--text-muted, #888);
+    text-align: center;
+    padding: 10px 0;
+    font-style: italic;
 }
 .cardSortUserCategorySection {
     margin-top: 25px;
@@ -565,10 +597,10 @@
     align-items: center;
     margin-top: 5px;
 }
-.cardSortAddCategoryInput { /* Using existing .textInput for consistency */
+.cardSortAddCategoryInput {
     flex-grow: 1;
 }
-.cardSortAddCategoryButton { /* Using .heatmapButton as a base */
+.cardSortAddCategoryButton {
     padding: 8px 15px;
     cursor: pointer;
     border: 1px solid var(--button-primary-border, #007bff);
@@ -599,5 +631,153 @@
 .cardSortRemoveCategoryButton:hover {
     color: var(--error-text-dark, #a71d2a);
 }
-
-/* ----- END OF COMPLETE MODIFIED FILE (v1.2) ----- */
+/* --- Conjoint Question Styles (CBC v2.0) --- */
+.conjointTaskInfo {
+    font-size: 0.95em;
+    color: var(--text-secondary, #555);
+    margin-bottom: 15px;
+    text-align: center;
+    font-weight: 500;
+}
+.conjointTaskContainer {
+    display: flex;
+    flex-wrap: wrap; /* Allow cards to wrap on smaller screens */
+    gap: 20px; /* Space between profile cards */
+    justify-content: center; /* Center cards if they don't fill the row */
+    margin-bottom: 20px;
+}
+.conjointProfileCard {
+    flex: 1; /* Allow cards to grow */
+    min-width: 220px; /* Minimum width for a profile card */
+    max-width: 300px; /* Maximum width to prevent them from getting too wide */
+    padding: 15px;
+    border: 2px solid var(--border-color-light, #e0e0e0);
+    border-radius: var(--border-radius-lg, 8px); /* Larger radius for cards */
+    background-color: var(--background-secondary, #fff);
+    box-shadow: var(--shadow-sm, 0 2px 5px rgba(0,0,0,0.07));
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+    position: relative; /* For absolute positioning of radio button if needed for styling */
+}
+.conjointProfileCard:hover {
+    border-color: var(--primary-color-light, #7bceff);
+    box-shadow: var(--shadow-md, 0 4px 8px rgba(0,0,0,0.1));
+}
+.conjointProfileCardSelected {
+    border-color: var(--primary-color, #007bff);
+    box-shadow: var(--shadow-md, 0 4px 10px rgba(0, 0, 0, 0.12)), 0 0 0 2px var(--primary-color, #007bff) inset; /* Inner glow */
+    transform: translateY(-2px); /* Slight lift */
+}
+.conjointProfileNoneCard { /* Specific styling for the "None" option card */
+    border-style: dashed;
+}
+.conjointProfileTitle {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    text-align: center;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color-xlight, #f0f0f0);
+}
+.conjointProfileAttributes {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 15px 0;
+}
+.conjointProfileAttributeItem {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 0.9em;
+    border-bottom: 1px dotted var(--border-color-xlight, #f5f5f5);
+}
+.conjointProfileAttributeItem:last-child {
+    border-bottom: none;
+}
+.conjointProfileAttrName {
+    font-weight: 500;
+    color: var(--text-secondary, #555);
+    margin-right: 8px;
+}
+.conjointProfileAttrLevel {
+    font-weight: 600;
+    color: var(--text-primary, #333);
+    text-align: right;
+}
+.conjointProfileSelector {
+    margin-top: 15px;
+    text-align: center;
+}
+.conjointProfileRadio { /* Visually hidden but accessible */
+    opacity: 0;
+    position: absolute;
+    width: 0;
+    height: 0;
+}
+.conjointProfileRadioLabel { /* This label can be styled as a button or text */
+    display: inline-block;
+    padding: 8px 12px;
+    border: 1px solid transparent; /* Keep space for border on selected */
+    border-radius: var(--border-radius-sm);
+    font-size: 0.9em;
+    color: var(--primary-color);
+    /* Remove if card click is primary selection method */
+    /* If you want this to look like a button:
+    background-color: var(--background-accent);
+    border-color: var(--border-color-medium);
+    */
+}
+.conjointProfileCardSelected .conjointProfileRadioLabel {
+    font-weight: bold;
+    /* If styled as button:
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color-dark);
+    */
+}
+/* Focus styles for keyboard navigation on the card itself */
+.conjointProfileCard:focus-visible {
+    outline: 2px solid var(--primary-color-light, #7bceff);
+    outline-offset: 2px;
+    border-color: var(--primary-color, #007bff);
+}
+.conjointNavigation {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 25px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color-light, #eee);
+}
+.conjointNavButton { /* Reusing existing button styles if possible, or define new */
+    padding: 10px 20px;
+    font-size: 1em;
+    cursor: pointer;
+    border-radius: var(--border-radius-md, 6px);
+    border: 1px solid var(--button-secondary-border, #6c757d);
+    background-color: var(--button-secondary-bg, #6c757d);
+    color: var(--button-secondary-text-light, white);
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.conjointNavButton:hover:not(:disabled) {
+    background-color: var(--button-secondary-hover-bg, #5a6268);
+    border-color: var(--button-secondary-hover-border, #545b62);
+}
+.conjointNavButton:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+.conjointCompletionMessage {
+    padding: 20px;
+    text-align: center;
+    background-color: var(--background-accent-light, #f8f9fa);
+    border: 1px solid var(--border-color-light, #e9ecef);
+    border-radius: var(--border-radius-md, 6px);
+    margin-top: 10px;
+}
+.conjointCompletionMessage p {
+    font-size: 1.1em;
+    color: var(--text-success, #28a745); /* Or a neutral color */
+    margin-bottom: 15px;
+}
+/* ----- END OF COMPLETE MODIFIED FILE (v1.3) ----- */

@@ -1,8 +1,17 @@
 // frontend/src/components/survey_question_renders/MatrixQuestion.js
+// ----- START OF COMPLETE MODIFIED FILE (v2.0 - CSS Modules) -----
 import React from 'react';
+import styles from './SurveyQuestionStyles.module.css'; // Using the shared CSS module
 
-const MatrixQuestion = ({ question, currentAnswer, onAnswerChange }) => {
-    const { _id: questionId, text, matrixRows = [], matrixColumns = [], matrixType = 'radio' } = question;
+const MatrixQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMode, disabled }) => {
+    const {
+        _id: questionId,
+        text,
+        matrixRows = [],
+        matrixColumns = [],
+        matrixType = 'radio',
+        description
+    } = question;
 
     // Initialize answers from currentAnswer or as an empty object
     const internalAnswers = React.useMemo(() => {
@@ -10,6 +19,7 @@ const MatrixQuestion = ({ question, currentAnswer, onAnswerChange }) => {
             return currentAnswer;
         }
         const initial = {};
+        // For checkbox type, ensure each row has an entry in answers, even if empty
         if (matrixType === 'checkbox') {
             matrixRows.forEach(row => { initial[row] = {}; });
         }
@@ -18,6 +28,7 @@ const MatrixQuestion = ({ question, currentAnswer, onAnswerChange }) => {
 
 
     const handleChange = (row, column) => {
+        if (disabled) return;
         const newAnswers = JSON.parse(JSON.stringify(internalAnswers)); // Deep copy
 
         if (matrixType === 'radio') {
@@ -28,55 +39,68 @@ const MatrixQuestion = ({ question, currentAnswer, onAnswerChange }) => {
             }
             newAnswers[row][column] = !newAnswers[row][column];
         }
-        onAnswerChange(questionId, newAnswers);
+        if (typeof onAnswerChange === 'function') {
+            onAnswerChange(questionId, newAnswers);
+        }
     };
 
-    const styles = {
-        container: { margin: '15px 0', padding: '10px', border: '1px solid #eee', borderRadius: '5px', backgroundColor: '#f9f9f9' },
-        title: { margin: '0 0 10px 0', fontSize: '1.1em' },
-        table: { width: '100%', borderCollapse: 'collapse' },
-        th: { backgroundColor: '#f0f0f0', padding: '8px', border: '1px solid #ddd', textAlign: 'center' },
-        td: { padding: '8px', border: '1px solid #ddd', textAlign: 'center' },
-        rowHeader: { textAlign: 'left', fontWeight: 'bold' },
-        input: { margin: '0 5px' },
-    };
+    if (!matrixRows.length || !matrixColumns.length) {
+        return (
+            <div className={`${styles.questionContainer} ${disabled ? styles.disabled : ''}`}>
+                <h4 className={styles.questionText}>
+                    {text}
+                    {question.requiredSetting === 'required' && !isPreviewMode && <span className={styles.requiredIndicator}>*</span>}
+                </h4>
+                {description && <p className={styles.questionDescription}>{description}</p>}
+                <p className={styles.questionDescription}>Matrix rows or columns are not defined.</p>
+            </div>
+        );
+    }
 
     return (
-        <div style={styles.container}>
-            <h4 style={styles.title}>{text}</h4>
-            <table style={styles.table}>
-                <thead>
-                    <tr>
-                        <th style={styles.th}></th> {/* Empty corner */}
-                        {matrixColumns.map(col => <th key={col} style={styles.th}>{col}</th>)}
-                    </tr>
-                </thead>
-                <tbody>
-                    {matrixRows.map(row => (
-                        <tr key={row}>
-                            <td style={{...styles.td, ...styles.rowHeader}}>{row}</td>
-                            {matrixColumns.map(col => (
-                                <td key={col} style={styles.td}>
-                                    <input
-                                        type={matrixType}
-                                        name={`matrix-${questionId}-${row}`} // Ensures radio buttons are grouped per row
-                                        value={col} // For radio, this is the value when selected
-                                        checked={
-                                            matrixType === 'radio'
-                                                ? internalAnswers[row] === col
-                                                : !!internalAnswers[row]?.[col]
-                                        }
-                                        onChange={() => handleChange(row, col)}
-                                        style={styles.input}
-                                    />
-                                </td>
-                            ))}
+        <div className={`${styles.questionContainer} ${disabled ? styles.disabled : ''}`}>
+            <h4 className={styles.questionText}>
+                {text}
+                {question.requiredSetting === 'required' && !isPreviewMode && <span className={styles.requiredIndicator}>*</span>}
+            </h4>
+            {description && <p className={styles.questionDescription}>{description}</p>}
+            <div className={styles.matrixTableContainer}> {/* Added for better scroll/overflow handling if needed */}
+                <table className={styles.matrixTable}>
+                    <thead>
+                        <tr>
+                            <th className={styles.matrixTh}></th> {/* Empty corner */}
+                            {matrixColumns.map(col => <th key={col} className={styles.matrixTh}>{col}</th>)}
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {matrixRows.map(row => (
+                            <tr key={row}>
+                                <td className={`${styles.matrixTd} ${styles.matrixRowHeader}`}>{row}</td>
+                                {matrixColumns.map(col => (
+                                    <td key={col} className={styles.matrixTd}>
+                                        <input
+                                            type={matrixType}
+                                            name={`matrix-${questionId}-${row}`}
+                                            value={col}
+                                            checked={
+                                                matrixType === 'radio'
+                                                    ? internalAnswers[row] === col
+                                                    : !!internalAnswers[row]?.[col]
+                                            }
+                                            onChange={() => handleChange(row, col)}
+                                            className={matrixType === 'radio' ? styles.radioInput : styles.checkboxInput} // Reuse existing styles
+                                            disabled={disabled}
+                                        />
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 };
 
 export default MatrixQuestion;
+// ----- END OF COMPLETE MODIFIED FILE (v2.0 - CSS Modules) -----

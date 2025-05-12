@@ -1,7 +1,9 @@
 // frontend/src/components/survey_question_renders/SliderQuestion.js
+// ----- START OF COMPLETE MODIFIED FILE (v2.0 - CSS Modules) -----
 import React, { useState, useEffect } from 'react';
+import styles from './SurveyQuestionStyles.module.css'; // Using the shared CSS module
 
-const SliderQuestion = ({ question, currentAnswer, onAnswerChange }) => {
+const SliderQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMode, disabled }) => {
     const {
         _id: questionId,
         text,
@@ -9,44 +11,40 @@ const SliderQuestion = ({ question, currentAnswer, onAnswerChange }) => {
         sliderMax = 100,
         sliderStep = 1,
         sliderMinLabel = '',
-        sliderMaxLabel = ''
+        sliderMaxLabel = '',
+        description
     } = question;
 
-    const initialValue = currentAnswer !== undefined && currentAnswer !== null && !isNaN(parseFloat(currentAnswer))
-        ? parseFloat(currentAnswer)
-        : parseFloat(sliderMin); // Default to min if no answer or invalid
-
-    const [value, setValue] = useState(initialValue);
+    const parseValue = (val, defaultVal) => {
+        const num = parseFloat(val);
+        return (val !== undefined && val !== null && !isNaN(num)) ? num : parseFloat(defaultVal);
+    };
+    
+    const [value, setValue] = useState(() => parseValue(currentAnswer, sliderMin));
 
     useEffect(() => {
-        // Update if currentAnswer prop changes from parent
-        const newInitialValue = currentAnswer !== undefined && currentAnswer !== null && !isNaN(parseFloat(currentAnswer))
-            ? parseFloat(currentAnswer)
-            : parseFloat(sliderMin);
-        setValue(newInitialValue);
+        setValue(parseValue(currentAnswer, sliderMin));
     }, [currentAnswer, sliderMin]);
 
 
     const handleChange = (event) => {
+        if (disabled) return;
         const newValue = parseFloat(event.target.value);
         setValue(newValue);
-        onAnswerChange(questionId, newValue);
-    };
-
-    const styles = {
-        container: { margin: '15px 0', padding: '10px', border: '1px solid #eee', borderRadius: '5px', backgroundColor: '#f9f9f9' },
-        title: { margin: '0 0 10px 0', fontSize: '1.1em' },
-        sliderContainer: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' },
-        label: { minWidth: '50px', textAlign: 'center' },
-        input: { flexGrow: 1, cursor: 'pointer' },
-        currentValue: { fontWeight: 'bold', fontSize: '1.1em', marginLeft: '15px', minWidth: '40px', textAlign: 'right' },
+        if (typeof onAnswerChange === 'function') {
+            onAnswerChange(questionId, newValue);
+        }
     };
 
     return (
-        <div style={styles.container}>
-            <h4 style={styles.title}>{text}</h4>
-            <div style={styles.sliderContainer}>
-                {sliderMinLabel && <span style={styles.label}>{sliderMinLabel}</span>}
+        <div className={`${styles.questionContainer} ${disabled ? styles.disabled : ''}`}>
+            <h4 className={styles.questionText}>
+                {text}
+                {question.requiredSetting === 'required' && !isPreviewMode && <span className={styles.requiredIndicator}>*</span>}
+            </h4>
+            {description && <p className={styles.questionDescription}>{description}</p>}
+            <div className={styles.sliderWrapper}>
+                {sliderMinLabel && <span className={styles.sliderMinLabel}>{sliderMinLabel}</span>}
                 <input
                     type="range"
                     min={sliderMin}
@@ -54,13 +52,15 @@ const SliderQuestion = ({ question, currentAnswer, onAnswerChange }) => {
                     step={sliderStep}
                     value={value}
                     onChange={handleChange}
-                    style={styles.input}
+                    className={styles.sliderInput}
+                    disabled={disabled}
                 />
-                {sliderMaxLabel && <span style={styles.label}>{sliderMaxLabel}</span>}
-                <span style={styles.currentValue}>{value}</span>
+                {sliderMaxLabel && <span className={styles.sliderMaxLabel}>{sliderMaxLabel}</span>}
+                <span className={styles.sliderValueDisplay}>{value}</span>
             </div>
         </div>
     );
 };
 
 export default SliderQuestion;
+// ----- END OF COMPLETE MODIFIED FILE (v2.0 - CSS Modules) -----
