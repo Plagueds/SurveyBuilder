@@ -1,5 +1,5 @@
 /* frontend/src/components/survey_question_renders/SurveyQuestionStyles.module.css */
-/* ----- START OF COMPLETE MODIFIED FILE (v1.1 - Rating/NPS UI Enhancements) ----- */
+/* ----- START OF COMPLETE MODIFIED FILE (v1.2 - Added styles for complex question types) ----- */
 .questionContainer {
     margin-bottom: 20px;
     padding: 20px 25px; /* Slightly more padding */
@@ -91,7 +91,7 @@
     color: var(--input-text);
 }
 
-/* --- New Rating Styles --- */
+/* --- Rating Styles (Existing) --- */
 .ratingScaleContainer {
     display: flex;
     align-items: center;
@@ -162,7 +162,7 @@
     min-width: 80px; /* Give some space for labels */
 }
 
-/* --- New NPS Styles --- */
+/* --- NPS Styles (Existing) --- */
 .npsScaleContainer {
     margin-top: 10px;
     padding: 10px 0;
@@ -242,4 +242,362 @@
     margin-top: 8px;
     padding: 0 5%; /* Add some padding to align with the ends of the scale */
 }
-/* ----- END OF COMPLETE MODIFIED FILE (v1.1) ----- */
+
+/* ----- NEW STYLES FOR COMPLEX QUESTION TYPES ----- */
+
+/* --- Matrix Question Styles --- */
+.matrixTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 0.95em;
+}
+.matrixTh, .matrixTd {
+    border: 1px solid var(--border-color, #ddd);
+    padding: 10px; /* Increased padding */
+    text-align: center;
+    vertical-align: middle;
+}
+.matrixTh {
+    background-color: var(--background-accent, #f8f9fa);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.matrixRowHeader {
+    text-align: left;
+    font-weight: 500;
+    background-color: var(--background-accent-light, #fcfcfc);
+}
+.matrixInput { /* Using existing .radioInput, .checkboxInput for consistency */
+    margin: 0; /* Centered in cell */
+}
+
+/* --- Slider Question Styles --- */
+.sliderWrapper {
+    display: flex;
+    align-items: center;
+    gap: 15px; /* Increased gap */
+    margin-top: 15px;
+    padding: 10px 0;
+}
+.sliderMinLabel, .sliderMaxLabel {
+    font-size: 0.9em;
+    color: var(--text-secondary, #555);
+    min-width: 60px; /* Ensure space for labels */
+    text-align: center;
+}
+.sliderInput {
+    flex-grow: 1;
+    cursor: pointer;
+    accent-color: var(--primary-color, #007bff); /* For the thumb and track */
+    height: 8px; /* Thicker track */
+    border-radius: 4px;
+    background: var(--border-color-light, #ddd); /* Track background */
+}
+/* Specific styling for WebKit (Chrome, Safari) slider track and thumb */
+.sliderInput::-webkit-slider-runnable-track {
+    height: 8px;
+    background: var(--border-color-light, #ddd);
+    border-radius: 4px;
+}
+.sliderInput::-webkit-slider-thumb {
+    -webkit-appearance: none; /* Override default */
+    appearance: none;
+    width: 20px; /* Larger thumb */
+    height: 20px;
+    background: var(--primary-color, #007bff);
+    border-radius: 50%;
+    margin-top: -6px; /* Center thumb on track */
+    box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.1));
+}
+/* Specific styling for Mozilla (Firefox) slider track and thumb */
+.sliderInput::-moz-range-track {
+    height: 8px;
+    background: var(--border-color-light, #ddd);
+    border-radius: 4px;
+    border: none;
+}
+.sliderInput::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    background: var(--primary-color, #007bff);
+    border-radius: 50%;
+    border: none;
+    box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.1));
+}
+.sliderValueDisplay {
+    font-weight: bold;
+    font-size: 1.1em;
+    color: var(--text-primary);
+    min-width: 40px;
+    text-align: right;
+}
+
+/* --- Ranking Question Styles --- */
+.rankingList {
+    list-style: none;
+    padding: 0;
+    margin-top: 10px;
+}
+.rankingItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px; /* Consistent padding */
+    border: 1px solid var(--border-color, #ddd);
+    margin-bottom: 8px; /* Space between items */
+    border-radius: var(--border-radius-sm, 4px);
+    background-color: var(--background-secondary, #fff);
+    box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.03));
+}
+.rankingItemText {
+    flex-grow: 1;
+    color: var(--text-primary);
+    font-size: 1em;
+}
+.rankingControls {
+    display: flex;
+    gap: 8px; /* Space between buttons */
+    margin-left: 10px;
+}
+.rankingButton {
+    padding: 4px 10px; /* Slightly larger */
+    cursor: pointer;
+    border: 1px solid var(--border-color-medium, #bbb);
+    border-radius: var(--border-radius-sm, 4px);
+    background-color: var(--button-secondary-bg, #e9ecef);
+    color: var(--button-secondary-text, #333);
+    font-size: 0.9em;
+    line-height: 1; /* Ensure text aligns well */
+    transition: background-color 0.15s ease;
+}
+.rankingButton:hover:not(:disabled) {
+    background-color: var(--button-secondary-hover-bg, #d8dde1);
+    border-color: var(--border-color-heavy, #999);
+}
+.rankingButton:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* --- Heatmap Question Styles --- */
+.heatmapImageContainer {
+    position: relative;
+    display: inline-block; /* So it doesn't take full width unless image does */
+    max-width: 100%;
+    border: 2px dashed var(--border-color-medium, #ccc); /* Dashed border to indicate clickable area */
+    cursor: crosshair;
+    margin-top: 10px;
+    overflow: hidden; /* Ensure dots don't overflow if image is constrained */
+}
+.heatmapImage {
+    display: block; /* Remove bottom space under image */
+    max-width: 100%;
+    max-height: 500px; /* Prevent overly large images */
+    user-select: none; /* Prevent image selection */
+}
+.heatmapClickDot {
+    position: absolute;
+    width: 12px; /* Slightly larger dot */
+    height: 12px;
+    background-color: rgba(220, 53, 69, 0.75); /* Using var(--error-bg) or similar */
+    border: 1px solid rgba(150, 20, 30, 0.9);
+    border-radius: 50%;
+    transform: translate(-50%, -50%); /* Center the dot on click */
+    pointer-events: none; /* So dots don't interfere with new clicks */
+    box-shadow: 0 0 5px rgba(0,0,0,0.3);
+}
+.heatmapControls {
+    margin-top: 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+.heatmapButton { /* Generic button style, can reuse if you have one */
+    padding: 8px 15px;
+    cursor: pointer;
+    border: 1px solid var(--button-secondary-border, #6c757d);
+    border-radius: var(--border-radius-sm, 4px);
+    background-color: var(--button-secondary-bg, #6c757d);
+    color: var(--button-secondary-text-light, white);
+    font-size: 0.9em;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.heatmapButton:hover {
+    background-color: var(--button-secondary-hover-bg, #5a6268);
+    border-color: var(--button-secondary-hover-border, #545b62);
+}
+.heatmapClickInfo {
+    font-size: 0.9em;
+    color: var(--text-secondary, #555);
+}
+
+/* --- MaxDiff Question Styles --- */
+.maxDiffTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 0.95em;
+}
+.maxDiffTh, .maxDiffTd {
+    border: 1px solid var(--border-color, #ddd);
+    padding: 10px;
+    text-align: center;
+    vertical-align: middle;
+}
+.maxDiffTh {
+    background-color: var(--background-accent, #f8f9fa);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.maxDiffOptionCell {
+    text-align: left;
+    font-weight: 500;
+}
+.maxDiffInput { /* Using existing .radioInput for consistency */
+    margin: 0; /* Centered in cell */
+}
+
+/* --- Conjoint Question Styles (Simplified Preview) --- */
+.conjointInfoText {
+    font-size: 0.9em;
+    color: var(--text-secondary, #666);
+    margin-bottom: 15px;
+    font-style: italic;
+}
+.conjointAttributeBlock {
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 1px solid var(--border-color-light, #e0e0e0);
+    border-radius: var(--border-radius-md, 6px);
+    background-color: var(--background-secondary, #fff);
+}
+.conjointAttributeName {
+    font-weight: 600; /* Bolder attribute name */
+    margin-bottom: 10px;
+    display: block;
+    font-size: 1.05em;
+    color: var(--text-primary);
+}
+.conjointLevelsContainer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px; /* Gap between level buttons */
+}
+.conjointLevelButton {
+    padding: 8px 15px; /* Good padding */
+    border: 1px solid var(--border-color-medium, #ccc);
+    border-radius: var(--border-radius-sm, 4px);
+    cursor: pointer;
+    background-color: var(--background-secondary, #fff);
+    color: var(--text-primary, #333);
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.15s ease;
+    font-size: 0.95em;
+}
+.conjointLevelButton:hover {
+    background-color: var(--background-accent-hover, #f0f0f0);
+    border-color: var(--border-color-heavy, #bbb);
+}
+.conjointLevelButtonSelected {
+    background-color: var(--primary-color, #007bff);
+    color: var(--primary-text-light, white);
+    border-color: var(--primary-color-dark, #0056b3);
+    font-weight: 500; /* Slightly bolder when selected */
+    box-shadow: var(--shadow-sm, 0 2px 4px rgba(0,0,0,0.07));
+}
+
+/* --- Card Sort Question Styles (Simplified Preview) --- */
+.cardSortLayout {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap; /* Allow columns to wrap */
+    margin-top: 15px;
+}
+.cardSortCategoryColumn {
+    flex: 1;
+    min-width: 220px; /* Minimum width for a category column */
+    padding: 15px;
+    border: 1px dashed var(--border-color-medium, #ccc);
+    border-radius: var(--border-radius-md, 6px);
+    background-color: var(--background-accent-light, #fdfdfd);
+    min-height: 150px; /* Ensure columns have some height */
+}
+.cardSortCategoryTitle {
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color-light, #eee);
+    color: var(--text-primary);
+    font-size: 1.05em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.cardSortCard {
+    padding: 10px;
+    margin: 8px 0;
+    border: 1px solid var(--border-color-medium, #b0b0b0);
+    border-radius: var(--border-radius-sm, 4px);
+    background-color: var(--background-secondary, #fff); /* Card background */
+    box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05));
+    text-align: center;
+    font-size: 0.95em;
+    color: var(--text-primary);
+}
+.cardSortCardSelect { /* The dropdown within each card */
+    display: block;
+    margin-top: 8px;
+    width: 100%;
+    padding: 6px 8px; /* Smaller padding for select inside card */
+    font-size: 0.9em;
+    border: 1px solid var(--input-border, #ccc);
+    border-radius: var(--border-radius-xs, 3px);
+    background-color: var(--input-bg, white);
+}
+.cardSortUserCategorySection {
+    margin-top: 25px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color-light, #eee);
+}
+.cardSortUserCategoryInputContainer {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 5px;
+}
+.cardSortAddCategoryInput { /* Using existing .textInput for consistency */
+    flex-grow: 1;
+}
+.cardSortAddCategoryButton { /* Using .heatmapButton as a base */
+    padding: 8px 15px;
+    cursor: pointer;
+    border: 1px solid var(--button-primary-border, #007bff);
+    border-radius: var(--border-radius-sm, 4px);
+    background-color: var(--button-primary-bg, #007bff);
+    color: var(--button-primary-text-light, white);
+    font-size: 0.9em;
+}
+.cardSortAddCategoryButton:hover:not(:disabled) {
+    background-color: var(--button-primary-hover-bg, #0056b3);
+    border-color: var(--button-primary-hover-border, #004085);
+}
+.cardSortAddCategoryButton:disabled {
+    background-color: var(--button-disabled-bg, #e9ecef);
+    border-color: var(--button-disabled-border, #ced4da);
+    color: var(--button-disabled-text, #6c757d);
+    cursor: not-allowed;
+}
+.cardSortRemoveCategoryButton {
+    font-size: 0.9em;
+    color: var(--error-text, #dc3545);
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0 5px;
+    font-weight: bold;
+}
+.cardSortRemoveCategoryButton:hover {
+    color: var(--error-text-dark, #a71d2a);
+}
+
+/* ----- END OF COMPLETE MODIFIED FILE (v1.2) ----- */
