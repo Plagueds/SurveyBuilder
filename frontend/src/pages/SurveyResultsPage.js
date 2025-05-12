@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyResultsPage.js
-// ----- START OF COMPLETE MODIFIED FILE (v3.0 - Robust Chart Options & Tooltips) -----
+// ----- START OF COMPLETE MODIFIED FILE (v3.1 - Enhanced Debugging for "r is undefined") -----
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Bar, Pie } from 'react-chartjs-2';
@@ -32,15 +32,26 @@ function SurveyResultsPage() {
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
     const processAllAnswers = useCallback((surveyDefinition, allRawAnswersFromDb) => {
-        console.log("[ResultsPage v3.0] Processing raw answers...", { numAnswers: allRawAnswersFromDb.length });
-        if (!surveyDefinition || !surveyDefinition.questions || !allRawAnswersFromDb || !Array.isArray(allRawAnswersFromDb)) { return {}; }
+        console.log("[ResultsPage v3.1] Processing raw answers...", { numAnswers: allRawAnswersFromDb.length });
+        if (!surveyDefinition || !surveyDefinition.questions || !allRawAnswersFromDb || !Array.isArray(allRawAnswersFromDb)) {
+            console.error("[ResultsPage v3.1] Invalid input to processAllAnswers", { surveyDefinition, allRawAnswersFromDb });
+            return {};
+        }
         const results = {};
         const respondentSessionIds = new Set(allRawAnswersFromDb.map(a => a.sessionId));
         const totalRespondentsOverall = respondentSessionIds.size;
 
         surveyDefinition.questions.forEach(question => {
+            // --- ADDED: Check if question is valid ---
+            if (!question || !question._id || !question.type) {
+                console.warn("[ResultsPage v3.1] Skipping invalid question object in surveyDefinition:", question);
+                return; // Skip this iteration
+            }
+
             const questionId = question._id;
             const questionType = question.type;
+            console.log(`[ResultsPage v3.1] Processing question: ID=${questionId}, Type=${questionType}, Text="${question.text}"`);
+
             const questionAnswersFromDb = allRawAnswersFromDb.filter(a => a.questionId === questionId);
             const questionRespondents = new Set(questionAnswersFromDb.map(a => a.sessionId)).size;
             
@@ -79,9 +90,60 @@ function SurveyResultsPage() {
                             } 
                         } break;
                     case 'text': case 'textarea': stats.responses = questionAnswersFromDb.map(ans => ans.answerValue).filter(val => val !== null && val !== undefined && String(val).trim() !== ''); break;
-                    case 'matrix': stats.rows = {}; const isRatingMatrix = question.matrixType === 'rating'; questionAnswersFromDb.forEach(ans => { const matrixData = safeJsonParse(ans.answerValue, {}); Object.entries(matrixData).forEach(([row, value]) => { if (!question.matrixRows?.includes(row)) return; if (!stats.rows[row]) { stats.rows[row] = { counts: {}, total: 0, sum: 0, values: [] }; } stats.rows[row].total++; stats.rows[row].counts[String(value)] = (stats.rows[row].counts[String(value)] || 0) + 1; if (isRatingMatrix) { const ratingValue = parseFloat(value); if (!isNaN(ratingValue)) { stats.rows[row].sum += ratingValue; stats.rows[row].values.push(ratingValue); } } }); }); if (isRatingMatrix) { Object.keys(stats.rows).forEach(row => { const rd = stats.rows[row]; if (rd.total > 0 && rd.values.length > 0) { rd.average = (rd.sum / rd.values.length); } else { rd.average = null; } }); } break;
+                    case 'matrix':
+                        stats.rows = {};
+                        const isRatingMatrix = question.matrixType === 'rating';
+                        // --- ADDED: Check for matrixRows and matrixColumns ---
+                        if (!Array.isArray(question.matrixRows) || !Array.isArray(question.matrixColumns)) {
+                            console.error(`[ResultsPage v3.1] Matrix question ID=${questionId} is missing matrixRows or matrixColumns. Rows:`, question.matrixRows, "Cols:", question.matrixColumns);
+                            stats.processingError = "Matrix definition incomplete (missing rows/columns).";
+                            break; 
+                        }
+                        questionAnswersFromDb.forEach(ans => {
+                            // --- ADDED: Log raw answerValue for matrix ---
+                            console.log(`[ResultsPage v3.1] Matrix ans for QID ${questionId}:`, ans.answerValue, "Typeof:", typeof ans.answerValue);
+                            const matrixData = safeJsonParse(ans.answerValue, {});
+                            if (typeof matrixData !== 'object' || matrixData === null) {
+                                console.warn(`[ResultsPage v3.1] Matrix QID ${questionId}: Parsed matrixData is not an object for answerValue:`, ans.answerValue);
+                                return; // Skip this answer
+                            }
+                            Object.entries(matrixData).forEach(([row, value]) => {
+                                // --- MODIFIED: Check question.matrixRows before .includes ---
+                                if (!question.matrixRows || !question.matrixRows.includes(row)) {
+                                    console.warn(`[ResultsPage v3.1] Matrix QID ${questionId}: Row "${row}" from answer not found in question.matrixRows. Skipping. matrixRows:`, question.matrixRows);
+                                    return;
+                                }
+                                if (!stats.rows[row]) { stats.rows[row] = { counts: {}, total: 0, sum: 0, values: [] }; }
+                                stats.rows[row].total++;
+                                stats.rows[row].counts[String(value)] = (stats.rows[row].counts[String(value)] || 0) + 1;
+                                if (isRatingMatrix) { const ratingValue = parseFloat(value); if (!isNaN(ratingValue)) { stats.rows[row].sum += ratingValue; stats.rows[row].values.push(ratingValue); } }
+                            });
+                        });
+                        if (isRatingMatrix) { Object.keys(stats.rows).forEach(row => { const rd = stats.rows[row]; if (rd.total > 0 && rd.values.length > 0) { rd.average = (rd.sum / rd.values.length); } else { rd.average = null; } }); }
+                        break;
                     case 'ranking': stats.averageRanks = {}; stats.rankCounts = {}; const rankOptions = question.options || []; questionAnswersFromDb.forEach(ans => { const rankedList = (typeof ans.answerValue === 'string') ? safeJsonParse(ans.answerValue, []) : (Array.isArray(ans.answerValue) ? ans.answerValue : []); if (!Array.isArray(rankedList)) return; rankedList.forEach((option, index) => { if (!rankOptions.includes(option)) return; const rankPosition = index + 1; if (!stats.averageRanks[option]) { stats.averageRanks[option] = { sum: 0, count: 0 }; } stats.averageRanks[option].sum += rankPosition; stats.averageRanks[option].count++; if (!stats.rankCounts[option]) { stats.rankCounts[option] = {}; } stats.rankCounts[option][rankPosition] = (stats.rankCounts[option][rankPosition] || 0) + 1; }); }); Object.keys(stats.averageRanks).forEach(option => { const d = stats.averageRanks[option]; if (d.count > 0) { d.average = (d.sum / d.count); } }); break;
-                    case 'heatmap': stats.clicks = []; questionAnswersFromDb.forEach(ans => { const clicksData = (typeof ans.answerValue === 'string') ? safeJsonParse(ans.answerValue, []) : (Array.isArray(ans.answerValue) ? ans.answerValue : []); if (Array.isArray(clicksData)) { clicksData.forEach(click => { if (typeof click === 'object' && click !== null && typeof click.x === 'number' && typeof click.y === 'number' && click.x >= 0 && click.x <= 1 && click.y >= 0 && click.y <= 1) { stats.clicks.push(click); } }); } }); break;
+                    case 'heatmap':
+                        stats.clicks = [];
+                        questionAnswersFromDb.forEach(ans => {
+                            // --- ADDED: Log raw answerValue for heatmap ---
+                            console.log(`[ResultsPage v3.1] Heatmap ans for QID ${questionId}:`, ans.answerValue, "Typeof:", typeof ans.answerValue);
+                            const clicksData = (typeof ans.answerValue === 'string') ? safeJsonParse(ans.answerValue, []) : (Array.isArray(ans.answerValue) ? ans.answerValue : []);
+                            if (!Array.isArray(clicksData)) {
+                                console.warn(`[ResultsPage v3.1] Heatmap QID ${questionId}: Parsed clicksData is not an array for answerValue:`, ans.answerValue);
+                                return; // Skip this answer
+                            }
+                            clicksData.forEach(click => {
+                                // --- ADDED: Check if 'click' is a valid object before accessing properties ---
+                                if (typeof click === 'object' && click !== null &&
+                                    typeof click.x === 'number' && typeof click.y === 'number' &&
+                                    click.x >= 0 && click.x <= 1 && click.y >= 0 && click.y <= 1) {
+                                    stats.clicks.push(click);
+                                } else {
+                                    console.warn(`[ResultsPage v3.1] Heatmap QID ${questionId}: Invalid click object found in clicksData:`, click, "Original answerValue:", ans.answerValue);
+                                }
+                            });
+                        });
+                        break;
                     case 'maxdiff': stats.bestCounts = {}; stats.worstCounts = {}; questionAnswersFromDb.forEach(ans => { const mdData = (typeof ans.answerValue === 'string') ? safeJsonParse(ans.answerValue, {}) : (typeof ans.answerValue === 'object' && ans.answerValue !== null ? ans.answerValue : {}); if (typeof mdData === 'object' && mdData !== null) { if (mdData.best && question.options?.includes(mdData.best)) { stats.bestCounts[mdData.best] = (stats.bestCounts[mdData.best] || 0) + 1; } if (mdData.worst && question.options?.includes(mdData.worst)) { stats.worstCounts[mdData.worst] = (stats.worstCounts[mdData.worst] || 0) + 1; } } }); break;
                     case 'conjoint': stats.levelCounts = {}; questionAnswersFromDb.forEach(ans => { const chosenProfile = (typeof ans.answerValue === 'string') ? safeJsonParse(ans.answerValue, {}) : (typeof ans.answerValue === 'object' && ans.answerValue !== null ? ans.answerValue : {}); if (typeof chosenProfile === 'object' && chosenProfile !== null) { Object.entries(chosenProfile).forEach(([attribute, level]) => { if (typeof attribute === 'string' && typeof level === 'string') { if (!stats.levelCounts[attribute]) { stats.levelCounts[attribute] = {}; } stats.levelCounts[attribute][level] = (stats.levelCounts[attribute][level] || 0) + 1; } }); } }); break;
                     case 'cardsort': stats.cardPlacementsByCard = {}; stats.cardPlacementsByCategory = { [CARD_SORT_UNASSIGNED_ID]: {} }; (question.cardSortCategories || []).forEach(catName => { stats.cardPlacementsByCategory[catName] = {}; }); const foundUserCategoryIds = new Set(); stats.userCategoriesFromAnswers = []; questionAnswersFromDb.forEach(ans => { const parsedAnswer = (typeof ans.answerValue === 'string') ? safeJsonParse(ans.answerValue, { assignments: {}, userCategories: [] }) : (typeof ans.answerValue === 'object' && ans.answerValue !== null ? ans.answerValue : { assignments: {}, userCategories: [] }); const assignments = parsedAnswer.assignments || {}; const userAnswerCategories = parsedAnswer.userCategories || []; userAnswerCategories.forEach(uc => { if (uc && uc.id && uc.name && !foundUserCategoryIds.has(uc.id)) { stats.userCategoriesFromAnswers.push({ id: uc.id, name: uc.name }); foundUserCategoryIds.add(uc.id); if (!stats.cardPlacementsByCategory[uc.id]) { stats.cardPlacementsByCategory[uc.id] = {}; } } }); Object.entries(assignments).forEach(([cardId, categoryId]) => { if (!question.options?.includes(cardId)) return; if (!stats.cardPlacementsByCard[cardId]) stats.cardPlacementsByCard[cardId] = {}; stats.cardPlacementsByCard[cardId][categoryId] = (stats.cardPlacementsByCard[cardId][categoryId] || 0) + 1; if (!stats.cardPlacementsByCategory[categoryId]) { if (foundUserCategoryIds.has(categoryId)) { /* ok */ } else if (categoryId !== CARD_SORT_UNASSIGNED_ID && !(question.cardSortCategories || []).includes(categoryId)) { return; } if (!stats.cardPlacementsByCategory[categoryId]) { stats.cardPlacementsByCategory[categoryId] = {}; } } stats.cardPlacementsByCategory[categoryId][cardId] = (stats.cardPlacementsByCategory[categoryId][cardId] || 0) + 1; }); }); break;
@@ -91,7 +153,7 @@ function SurveyResultsPage() {
             results[questionId] = { stats };
         });
         results.overallTotalRespondents = totalRespondentsOverall;
-        console.log("[ResultsPage v3.0] Processed results:", results);
+        console.log("[ResultsPage v3.1] Processed results (end of function):", JSON.parse(JSON.stringify(results))); // Deep copy for logging
         return results;
     }, []);
 
