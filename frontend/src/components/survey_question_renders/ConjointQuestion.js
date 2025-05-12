@@ -1,10 +1,11 @@
 // frontend/src/components/survey_question_renders/ConjointQuestion.js
+// ----- START OF COMPLETE MODIFIED FILE (v1.1 - Added type="button") -----
 import React, { useState, useEffect } from 'react';
+import styles from './SurveyQuestionStyles.module.css'; // Assuming you've applied styles
 
-const ConjointQuestion = ({ question, currentAnswer, onAnswerChange }) => {
-    const { _id: questionId, text, conjointAttributes = [] } = question;
+const ConjointQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMode }) => {
+    const { _id: questionId, text, conjointAttributes = [], description } = question;
 
-    // currentAnswer should be an object like { "AttributeName1": "LevelNameA", "AttributeName2": "LevelNameX" }
     const [selections, setSelections] = useState(currentAnswer && typeof currentAnswer === 'object' ? currentAnswer : {});
 
     useEffect(() => {
@@ -20,47 +21,36 @@ const ConjointQuestion = ({ question, currentAnswer, onAnswerChange }) => {
         onAnswerChange(questionId, newSelections);
     };
 
-    const styles = {
-        container: { margin: '15px 0', padding: '10px', border: '1px solid #eee', borderRadius: '5px', backgroundColor: '#f9f9f9' },
-        title: { margin: '0 0 10px 0', fontSize: '1.1em' },
-        attributeBlock: { marginBottom: '15px', padding: '10px', border: '1px solid #e0e0e0', borderRadius: '4px' },
-        attributeName: { fontWeight: 'bold', marginBottom: '5px', display: 'block' },
-        levelButton: {
-            padding: '6px 12px', margin: '5px', border: '1px solid #ccc', borderRadius: '4px',
-            cursor: 'pointer', backgroundColor: '#fff'
-        },
-        selectedLevel: { backgroundColor: '#007bff', color: 'white', borderColor: '#0056b3' },
-        info: { fontSize: '0.9em', color: '#666', fontStyle: 'italic' }
-    };
-
     if (!conjointAttributes || conjointAttributes.length === 0) {
         return (
-            <div style={styles.container}>
-                <h4 style={styles.title}>{text}</h4>
-                <p>No attributes defined for this conjoint task.</p>
+            <div className={styles.questionContainer}>
+                <h4 className={styles.questionText}>{text}</h4>
+                <p className={styles.questionDescription}>No attributes defined for this conjoint task.</p>
             </div>
         );
     }
 
     return (
-        <div style={styles.container}>
-            <h4 style={styles.title}>{text}</h4>
-            <p style={styles.info}>
+        <div className={styles.questionContainer}>
+            <h4 className={styles.questionText}>
+                {text}
+                {question.requiredSetting === 'required' && !isPreviewMode && <span className={styles.requiredIndicator}>*</span>}
+            </h4>
+            {description && <p className={styles.questionDescription}>{description}</p>}
+            <p className={styles.conjointInfoText}>
                 For each attribute below, please select the level you prefer.
                 (This is a simplified preview of a conjoint task).
             </p>
             {conjointAttributes.map(attr => (
-                <div key={attr.name} style={styles.attributeBlock}>
-                    <span style={styles.attributeName}>{attr.name}</span>
-                    <div>
+                <div key={attr.name} className={styles.conjointAttributeBlock}>
+                    <span className={styles.conjointAttributeName}>{attr.name}</span>
+                    <div className={styles.conjointLevelsContainer}>
                         {(attr.levels || []).map(level => (
                             <button
+                                type="button" // PREVENTS FORM SUBMISSION
                                 key={level}
                                 onClick={() => handleLevelSelect(attr.name, level)}
-                                style={{
-                                    ...styles.levelButton,
-                                    ...(selections[attr.name] === level ? styles.selectedLevel : {})
-                                }}
+                                className={`${styles.conjointLevelButton} ${selections[attr.name] === level ? styles.conjointLevelButtonSelected : ''}`}
                             >
                                 {level}
                             </button>
@@ -73,3 +63,4 @@ const ConjointQuestion = ({ question, currentAnswer, onAnswerChange }) => {
 };
 
 export default ConjointQuestion;
+// ----- END OF COMPLETE MODIFIED FILE (v1.1) -----

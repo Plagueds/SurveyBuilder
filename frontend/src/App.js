@@ -1,7 +1,7 @@
 // frontend/src/App.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.1 - Updated default routing) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Added route for Survey Thank You Preview) -----
 import React from 'react';
-import { Routes, Route, useLocation, Navigate, Outlet } from 'react-router-dom'; // Added Navigate, Outlet
+import { Routes, Route, useLocation, Navigate, Outlet } from 'react-router-dom';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
 
@@ -29,10 +29,8 @@ import PublicSurveyHandler from './pages/PublicSurveyHandler';
 
 function App() {
     const location = useLocation();
-    const { isAuthenticated, isLoading: authIsLoading } = useAuth(); // Renamed isLoading to authIsLoading
+    const { isAuthenticated, isLoading: authIsLoading } = useAuth();
 
-    // Determine if Navbar should be shown.
-    // Example: Don't show on login/register if you prefer a cleaner look for those pages.
     const hideNavbarOnRoutes = ['/login', '/register'];
     const showNavbar = !hideNavbarOnRoutes.includes(location.pathname);
 
@@ -51,7 +49,6 @@ function App() {
             <main className={`main-content ${showNavbar ? 'with-navbar' : 'without-navbar'}`}>
                 <Routes>
                     {/* --- Authentication Routes --- */}
-                    {/* If authenticated, redirect from /login and /register to /admin */}
                     <Route 
                         path="/login" 
                         element={isAuthenticated ? <Navigate to="/admin" replace /> : <LoginPage />} 
@@ -65,16 +62,18 @@ function App() {
                     <Route path="/s/:accessIdentifier" element={<PublicSurveyHandler />} />
                     <Route path="/surveys/:surveyId/c/:collectorId" element={<SurveyTakingPage />} />
                     <Route path="/surveys/:surveyId/preview" element={<SurveyPreviewPage />} />
-                    <Route path="/thank-you" element={<ThankYouPage />} />
+                    
+                    {/* ADDED ROUTE FOR SURVEY PREVIEW THANK YOU PAGE */}
+                    <Route path="/survey/:surveyId/thankyou-preview" element={<ThankYouPage />} />
+                    
+                    <Route path="/thank-you" element={<ThankYouPage />} /> {/* Generic thank you page */}
                     
                     {/* --- Protected Routes Wrapper --- */}
-                    {/* If not authenticated, ProtectedRoute logic (from ProtectedRoute.js) will redirect to /login */}
                     <Route element={isAuthenticated ? <Outlet /> : <Navigate to="/login" state={{ from: location }} replace />}>
                         <Route path="/admin" element={<AdminPage />} />
                         <Route path="/admin/surveys/:surveyId" element={<AdminSurveyDetailPage />} />
                         <Route path="/admin/surveys/:surveyId/build" element={<SurveyBuildPage />} />
                         <Route path="/admin/surveys/:surveyId/results" element={<SurveyResultsPage />} />
-                        {/* Add any other admin/protected routes here */}
                     </Route>
                     
                     {/* --- Root Path Handling --- */}
@@ -88,12 +87,11 @@ function App() {
                     />
 
                     {/* --- Catch-all for Not Found --- */}
-                    {/* Redirect to an appropriate page based on auth status */}
                     <Route 
                         path="*" 
                         element={
                             isAuthenticated
-                                ? <NotFoundPage /> // Or <Navigate to="/admin" replace />
+                                ? <NotFoundPage /> 
                                 : <Navigate to="/login" replace /> 
                         }
                     />
@@ -104,4 +102,4 @@ function App() {
 }
 
 export default App;
-// ----- END OF COMPLETE MODIFIED FILE (v1.1 - Updated default routing) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Added route for Survey Thank You Preview) -----

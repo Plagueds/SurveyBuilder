@@ -1,5 +1,5 @@
 /* frontend/src/pages/ThankYouPage.module.css */
-
+/* ----- START OF COMPLETE MODIFIED FILE (v1.1 - Added styles for button container and secondary button) ----- */
 .thankYouContainer {
     display: flex; /* Enable flexbox */
     flex-direction: column; /* Stack items vertically */
@@ -8,40 +8,82 @@
     min-height: 60vh; /* Take up significant vertical space */
     text-align: center; /* Ensure text inside is centered */
     padding: 40px 20px; /* Add some padding */
-    background-color: #f8f9fa; /* Light grey background */
-    border-radius: 8px; /* Slightly rounded corners */
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+    background-color: var(--background-accent-light, #f8f9fa); /* Using CSS var if available */
+    border-radius: var(--border-radius-lg, 8px); /* Using CSS var */
+    box-shadow: var(--shadow-md, 0 2px 10px rgba(0, 0, 0, 0.1)); /* Using CSS var */
     max-width: 600px; /* Limit maximum width */
     margin: 40px auto; /* Center the container itself on the page */
   }
   
   .thankYouHeading {
-    color: #28a745; /* Success green color */
+    color: var(--success-text, #28a745); /* Using CSS var */
     font-size: 2.5rem; /* Larger heading */
-    margin-bottom: 15px; /* Space below heading */
+    margin-bottom: 20px; /* Increased space below heading */
     font-weight: 600;
   }
   
   .thankYouMessage {
-    color: #343a40; /* Darker text color for readability */
+    color: var(--text-primary, #343a40); /* Using CSS var */
     font-size: 1.1rem; /* Slightly larger paragraph text */
-    margin-bottom: 30px; /* Space below message */
+    margin-bottom: 35px; /* Increased space below message */
+    line-height: 1.6; /* Improved readability */
   }
   
-  /* Style the button to match others potentially */
-  /* If you have global button styles, you might not need this */
-  .homeButton {
+.buttonContainer {
+    display: flex;
+    flex-direction: column; /* Stack buttons vertically on small screens */
+    gap: 15px; /* Space between buttons */
+    align-items: center; /* Center buttons if they don't take full width */
+}
+
+/* Renamed .homeButton to .primaryButton for more generic use */
+.primaryButton {
     padding: 12px 25px;
     font-size: 1rem;
-    color: #fff;
-    background-color: #007bff; /* Standard blue button */
+    color: var(--primary-text-light, #fff);
+    background-color: var(--primary-color, #007bff); 
     border: none;
-    border-radius: 5px;
-    text-decoration: none; /* Remove underline from Link */
+    border-radius: var(--border-radius-md, 5px);
+    text-decoration: none; 
     cursor: pointer;
-    transition: background-color 0.2s ease;
-  }
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    min-width: 200px; /* Give buttons a decent minimum width */
+    text-align: center;
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.1));
+}
   
-  .homeButton:hover {
-    background-color: #0056b3; /* Darker blue on hover */
-  }
+.primaryButton:hover {
+    background-color: var(--primary-color-dark, #0056b3);
+    box-shadow: var(--shadow-md, 0 2px 5px rgba(0,0,0,0.15));
+}
+
+/* New style for a secondary action button/link */
+.secondaryButton {
+    padding: 10px 20px; /* Slightly smaller padding */
+    font-size: 0.95rem;
+    color: var(--secondary-text, #007bff); /* Use primary color for text */
+    background-color: transparent; /* Transparent background */
+    border: 1px solid var(--secondary-border, #007bff); /* Border with primary color */
+    border-radius: var(--border-radius-md, 5px);
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+    min-width: 200px; /* Consistent minimum width */
+    text-align: center;
+}
+
+.secondaryButton:hover {
+    background-color: var(--secondary-hover-bg, rgba(0, 123, 255, 0.1)); /* Light primary color background on hover */
+    color: var(--secondary-hover-text, #0056b3);
+    border-color: var(--secondary-hover-border, #0056b3);
+    box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05));
+}
+
+/* Responsive adjustments for button container if needed */
+@media (min-width: 576px) { /* Small devices (tablets, large phones) */
+    .buttonContainer {
+        flex-direction: row; /* Buttons side-by-side on larger screens */
+        justify-content: center; /* Center buttons in the row */
+    }
+}
+/* ----- END OF COMPLETE MODIFIED FILE (v1.1) ----- */
