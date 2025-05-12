@@ -1,10 +1,10 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.7 - Corrected answer payload processing) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.8 - Corrected, Save otherText, use answerValue consistently) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
 const Question = require('../models/Question');
-const Answer = require('../models/Answer');
+const Answer = require('../models/Answer'); // Ensure this path is correct
 const Collector = require('../models/Collector');
 const { evaluateAllLogic } = require('../utils/logicEvaluator');
 const axios = require('axios');
@@ -27,15 +27,32 @@ const generateConjointProfiles = (attributes) => {
     return combine(0, {});
 };
 
-
 // --- Helper Function for CSV Export (used in exportSurveyResults) ---
 const CSV_SEPARATOR = '; ';
-const formatValueForCsv = (value, questionType) => {
+const formatValueForCsv = (value, questionType, otherTextValue) => { // Added otherTextValue
     if (value === null || value === undefined) return '';
+
+    // Handle "Other" and "N/A" specifically for relevant types
+    if (questionType === 'multiple-choice' || questionType === 'dropdown' || questionType === 'checkbox') {
+        if (value === '__OTHER__' && otherTextValue) {
+            return `"Other: ${String(otherTextValue).replace(/"/g, '""')}"`;
+        }
+        if (value === '__NA__') { // Assuming __NA__ is your internal key for N/A
+            return '"N/A"';
+        }
+        if (Array.isArray(value)) { // Checkbox with multiple values
+            return `"${value.map(v => {
+                if (v === '__OTHER__' && otherTextValue) return `Other: ${String(otherTextValue).replace(/"/g, '""')}`;
+                if (v === '__NA__') return 'N/A';
+                return String(v).replace(/"/g, '""');
+            }).join(CSV_SEPARATOR)}"`;
+        }
+    }
+
     if (typeof value === 'string') return `"${value.replace(/"/g, '""')}"`;
     if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+
     switch (questionType) {
-        case 'checkbox': return Array.isArray(value) ? `"${value.map(v => String(v).replace(/"/g, '""')).join(CSV_SEPARATOR)}"` : `"${String(value).replace(/"/g, '""')}"`;
         case 'heatmap': return Array.isArray(value) ? value.length + " clicks" : JSON.stringify(value);
         case 'matrix': return (typeof value === 'object' && value !== null) ? `"${Object.entries(value).map(([row, col]) => `${row}:${col}`).join(CSV_SEPARATOR)}"` : JSON.stringify(value);
         case 'ranking': return Array.isArray(value) ? `"${value.map(v => String(v).replace(/"/g, '""')).join(CSV_SEPARATOR)}"` : JSON.stringify(value);
@@ -176,14 +193,12 @@ exports.deleteSurvey = async (req, res) => {
     }
 };
 
-
-// --- Survey Submission and Public-Facing Endpoints ---
-
 // @desc    Submit answers for a survey
 // @route   POST /api/surveys/:surveyId/submit
 // @access  Public
 exports.submitSurveyAnswers = async (req, res) => {
     const { surveyId } = req.params;
+    // The payload from frontend should have 'answers' array, where each item has 'answerValue' and 'otherText'
     const { answers: answersPayload, sessionId: payloadSessionId, collectorId, recaptchaToken } = req.body;
 
     console.log(`[submitSurveyAnswers] Received submission for surveyId: ${surveyId}`);
@@ -197,7 +212,7 @@ exports.submitSurveyAnswers = async (req, res) => {
         console.warn('[submitSurveyAnswers] answersPayload is not an array:', answersPayload);
         return res.status(400).json({ success: false, message: 'Answers payload must be an array.' });
     }
-    const sessionIdToUse = payloadSessionId || (answersPayload[0]?.sessionId); // sessionId can also be part of answersPayload items
+    const sessionIdToUse = payloadSessionId || (answersPayload[0]?.sessionId);
     if (!sessionIdToUse) {
         console.warn('[submitSurveyAnswers] Session ID is missing.');
         return res.status(400).json({ success: false, message: 'Session ID is required.' });
@@ -233,13 +248,11 @@ exports.submitSurveyAnswers = async (req, res) => {
         }
         console.log(`[submitSurveyAnswers] Found collector: ${collector.name}, Type: ${collector.type}, Response Count: ${collector.responseCount}`);
         console.log(`[submitSurveyAnswers] Collector settings for web_link:`, JSON.stringify(collector.settings?.web_link, null, 2));
-
         if (String(collector.survey) !== String(surveyId)) {
             console.warn(`[submitSurveyAnswers] Collector ${collectorId} does not belong to survey ${surveyId}. Belongs to: ${collector.survey}`);
             await session.abortTransaction(); session.endSession();
             return res.status(400).json({ success: false, message: 'Collector does not belong to this survey.' });
         }
-
         if (collector.status !== 'open') {
             console.warn(`[submitSurveyAnswers] Collector ${collectorId} is not open. Status: ${collector.status}`);
             await session.abortTransaction(); session.endSession();
@@ -279,7 +292,7 @@ exports.submitSurveyAnswers = async (req, res) => {
             console.log('[submitSurveyAnswers] Verifying reCAPTCHA with Google...');
             try {
                 const recaptchaResponse = await axios.post(verificationUrl);
-                const { success: recaptchaSuccess, 'error-codes': errorCodes } = recaptchaResponse.data; // Removed score, action, hostname for v2
+                const { success: recaptchaSuccess, 'error-codes': errorCodes } = recaptchaResponse.data;
                 console.log('[submitSurveyAnswers] Google reCAPTCHA response:', JSON.stringify(recaptchaResponse.data, null, 2));
                 if (!recaptchaSuccess) {
                     console.warn('[submitSurveyAnswers] reCAPTCHA verification failed with Google. Errors:', errorCodes);
@@ -298,13 +311,13 @@ exports.submitSurveyAnswers = async (req, res) => {
 
         const answersToUpsert = [];
         const questionIdsInPayload = new Set();
-        console.log('[submitSurveyAnswers] Processing answersPayload:', JSON.stringify(answersPayload, null, 2));
+        console.log('[submitSurveyAnswers] Processing answersPayload (expecting answerValue and otherText):', JSON.stringify(answersPayload, null, 2));
+
         for (const item of answersPayload) {
-            // <<< --- MODIFICATION START --- >>>
-            // Change item.answerValue to item.answer to match payload
-            if (!item?.questionId || !mongoose.Types.ObjectId.isValid(item.questionId) || item.answer === undefined) {
-            // <<< --- MODIFICATION END --- >>>
-                console.log('[submitSurveyAnswers] Skipping invalid answer item (missing questionId or answer value):', JSON.stringify(item, null, 2));
+            // Ensure item.answerValue is used, and item.otherText is captured
+            // The frontend now sends `item.answerValue` directly
+            if (!item?.questionId || !mongoose.Types.ObjectId.isValid(item.questionId) || item.answerValue === undefined) {
+                console.log('[submitSurveyAnswers] Skipping invalid answer item (missing questionId or answerValue):', JSON.stringify(item, null, 2));
                 continue;
             }
             if (questionIdsInPayload.has(String(item.questionId))) {
@@ -319,9 +332,8 @@ exports.submitSurveyAnswers = async (req, res) => {
                 surveyId,
                 questionId: item.questionId,
                 sessionId: sessionIdToUse,
-                // <<< --- MODIFICATION START --- >>>
-                answerValue: item.answer, // Use item.answer here
-                // <<< --- MODIFICATION END --- >>>
+                answerValue: item.answerValue, // This is the main selection/value
+                otherText: item.otherText || null, // Save otherText if provided, else null
                 collectorId: collector._id
             });
         }
@@ -390,7 +402,6 @@ exports.submitSurveyAnswers = async (req, res) => {
     }
 };
 
-// @desc    Get survey results (for admin/owner)
 exports.getSurveyResults = async (req, res) => {
     const { surveyId } = req.params;
     try {
@@ -398,7 +409,7 @@ exports.getSurveyResults = async (req, res) => {
         if (!survey) {
             return res.status(404).json({ success: false, message: 'Survey not found for results (post-authorization check).' });
         }
-        const answers = await Answer.find({ surveyId }).sort({ sessionId: 1, createdAt: 1 }).lean();
+        const answers = await Answer.find({ surveyId }).sort({ sessionId: 1, createdAt: 1 }).lean(); // Fetch all fields including otherText
 
         const resultsBySession = {};
         answers.forEach(answer => {
@@ -407,7 +418,10 @@ exports.getSurveyResults = async (req, res) => {
             }
             const question = survey.questions.find(q => String(q._id) === String(answer.questionId));
             resultsBySession[answer.sessionId].answers[answer.questionId] = {
-                questionText: question?.text || 'Unknown', questionType: question?.type || 'unknown', answerValue: answer.answerValue
+                questionText: question?.text || 'Unknown',
+                questionType: question?.type || 'unknown',
+                answerValue: answer.answerValue,
+                otherText: answer.otherText // Pass otherText to results
             };
             if (answer.updatedAt > (resultsBySession[answer.sessionId].submittedAt || 0)) {
                  resultsBySession[answer.sessionId].submittedAt = answer.updatedAt;
@@ -431,7 +445,6 @@ exports.getSurveyResults = async (req, res) => {
     }
 };
 
-// @desc    Export survey results (for admin/owner)
 exports.exportSurveyResults = async (req, res) => {
     const { surveyId } = req.params;
     try {
@@ -439,7 +452,7 @@ exports.exportSurveyResults = async (req, res) => {
         if (!survey) {
             return res.status(404).json({ success: false, message: 'Survey not found for export (post-authorization check).' });
         }
-        const answers = await Answer.find({ surveyId }).sort({ sessionId: 1, createdAt: 1 }).lean();
+        const answers = await Answer.find({ surveyId }).sort({ sessionId: 1, createdAt: 1 }).lean(); // Fetch all fields
         if (answers.length === 0) return res.status(200).json({ success: true, message: 'No answers to export.', data: "" });
 
         const collectorIds = [...new Set(answers.map(a => a.collectorId).filter(Boolean))];
@@ -468,7 +481,8 @@ exports.exportSurveyResults = async (req, res) => {
             }
             const sessionData = dataMap.get(ans.sessionId);
             const question = questionMap.get(String(ans.questionId));
-            sessionData.answers[String(ans.questionId)] = formatValueForCsv(ans.answerValue, question?.type || 'unknown');
+            // Pass otherText to formatValueForCsv
+            sessionData.answers[String(ans.questionId)] = formatValueForCsv(ans.answerValue, question?.type || 'unknown', ans.otherText);
             if (ans.updatedAt > (sessionData.submittedAt || 0)) sessionData.submittedAt = ans.updatedAt;
         });
         const dataForCsv = Array.from(dataMap.values());
@@ -482,4 +496,4 @@ exports.exportSurveyResults = async (req, res) => {
         res.status(500).json({ success: false, message: "Error exporting results" });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (v1.7 - Corrected answer payload processing) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.8) -----

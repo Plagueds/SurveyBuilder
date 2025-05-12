@@ -1,47 +1,58 @@
 // backend/models/Answer.js
-// ----- START OF COMPLETE UPDATED FILE (v1.2 - Added collectorId) -----
+// ----- START OF COMPLETE MODIFIED FILE -----
 const mongoose = require('mongoose');
-const Schema = mongoose.Schema;
 
-const answerSchema = new Schema({
-    // --- Fields matching the frontend payload ---
+const answerSchema = new mongoose.Schema({
     surveyId: {
-        type: Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.ObjectId,
         ref: 'Survey',
-        required: [true, 'Survey ID is required.'],
-        index: true
+        required: true,
+        index: true,
     },
     questionId: {
-        type: Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.ObjectId,
         ref: 'Question',
-        required: [true, 'Question ID is required.'],
-        index: true
+        required: true,
+        index: true,
     },
-    sessionId: {
+    sessionId: { // Identifies a single respondent's session
         type: String,
-        required: [true, 'Session ID is required.'],
-        index: true
+        required: true,
+        index: true,
     },
-    answerValue: {
-        type: Schema.Types.Mixed,
-        required: [true, 'Answer value is required.']
+    answerValue: { // Stores the main answer (e.g., selected option, text input, rating value, JSON for complex types)
+        type: mongoose.Schema.Types.Mixed, // Flexible to store various types
     },
-    // +++ ADDED FIELD FOR COLLECTOR REFERENCE +++
-    collectorId: {
-        type: Schema.Types.ObjectId,
-        ref: 'Collector', // Link to the Collector model
-        required: [true, 'Collector ID is required for an answer.'], // Make it required
-        index: true
+    otherText: { // Specifically for "Other - Write In" text
+        type: String,
+        trim: true,
     },
-
-}, {
-    timestamps: true // Use Mongoose's built-in createdAt and updatedAt fields
+    collectorId: { // To track which collector was used for this response
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Collector',
+        index: true,
+        // Not strictly required for an answer to exist, but highly recommended for tracking
+    },
+    // Timestamps
+    createdAt: {
+        type: Date,
+        default: Date.now,
+    },
+    updatedAt: {
+        type: Date,
+        default: Date.now,
+    }
 });
 
-// Compound indexes
-answerSchema.index({ surveyId: 1, sessionId: 1, createdAt: 1 });
-answerSchema.index({ surveyId: 1, questionId: 1 });
-answerSchema.index({ collectorId: 1, createdAt: 1 }); // <<<--- ADDED: Index for queries by collector
+// Update timestamp on modification
+answerSchema.pre('save', function(next) {
+    this.updatedAt = Date.now();
+    next();
+});
+
+// Index for common queries
+answerSchema.index({ surveyId: 1, sessionId: 1 });
+answerSchema.index({ questionId: 1, answerValue: 1 }); // Example, adjust as needed
 
 module.exports = mongoose.model('Answer', answerSchema);
-// ----- END OF COMPLETE UPDATED FILE (v1.2 - Added collectorId) -----
+// ----- END OF COMPLETE MODIFIED FILE -----

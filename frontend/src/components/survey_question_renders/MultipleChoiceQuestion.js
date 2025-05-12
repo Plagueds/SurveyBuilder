@@ -1,19 +1,20 @@
 // frontend/src/components/survey_question_renders/MultipleChoiceQuestion.js
-import React from 'react';
-// You'll need a CSS module for styling. Let's create one:
-// frontend/src/components/survey_question_renders/SurveyQuestionStyles.module.css
-import styles from './SurveyQuestionStyles.module.css';
+// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Align with QEP props for Other/NA) -----
+import React, { useMemo } from 'react';
+import styles from './SurveyQuestionStyles.module.css'; // Assuming this is SurveyQuestionStyles.module.css
+
+const NA_VALUE_INTERNAL = '__NA__';
+const OTHER_VALUE_INTERNAL = '__OTHER__';
 
 const MultipleChoiceQuestion = ({
     question,
     currentAnswer,
     onAnswerChange,
     otherValue,
-    onOtherTextChange, // Callback to update text for "Other" option
+    onOtherTextChange,
     disabled,
-    optionsOrder // For randomized options, if you implement it
+    optionsOrder
 }) => {
-    // Basic validation
     if (!question || !Array.isArray(question.options)) {
         console.error("[MultipleChoiceQuestion] Invalid question data:", question);
         return <p className={styles.errorMessage}>Question data or options are missing.</p>;
@@ -23,40 +24,42 @@ const MultipleChoiceQuestion = ({
         onAnswerChange(question._id, event.target.value);
     };
 
-    const handleOtherTextChange = (event) => {
+    const handleOtherText = (event) => {
         if (onOtherTextChange) {
             onOtherTextChange(question._id, event.target.value);
         }
     };
 
-    // Use optionsOrder for randomized options if available, otherwise use original order
-    const orderedOptions = optionsOrder
-        ? optionsOrder.map(index => question.options[index]).filter(opt => opt !== undefined)
-        : question.options;
+    const orderedOptions = useMemo(() => {
+        return optionsOrder
+            ? optionsOrder.map(index => (question.options || [])[index]).filter(opt => opt !== undefined)
+            : (question.options || []);
+    }, [question.options, optionsOrder]);
 
     return (
         <div className={`${styles.questionContainer} ${disabled ? styles.disabled : ''}`}>
-            <p className={styles.questionText}>{question.text || 'Question text is missing'}</p>
+            <p className={styles.questionText}>
+                {question.text || 'Question text is missing'}
+                {question.isRequired && <span className={styles.requiredIndicator}>*</span>}
+            </p>
             {question.description && <p className={styles.questionDescription}>{question.description}</p>}
 
             <div className={styles.optionsContainer}>
                 {orderedOptions.map((option, index) => {
-                    // Your options might be strings or objects like { text: "Option A", value: "opt_a" }
-                    // Adapt this based on how options are structured in your `questionData` from the API
                     const optionText = typeof option === 'object' ? option.text : option;
                     const optionValue = typeof option === 'object' ? option.value : option;
 
                     if (optionText === undefined || optionValue === undefined) {
                         console.warn("[MultipleChoiceQuestion] Malformed option:", option, "at index", index);
-                        return null; // Skip rendering this option
+                        return null;
                     }
 
                     return (
-                        <div key={optionValue || index} className={styles.option}>
+                        <div key={optionValue || index} className={styles.optionItem}>
                             <input
                                 type="radio"
                                 id={`q_${question._id}_opt_${index}`}
-                                name={`q_${question._id}`} // Ensures only one radio can be selected for this question
+                                name={`q_${question._id}`}
                                 value={optionValue}
                                 checked={currentAnswer === optionValue}
                                 onChange={handleChange}
@@ -70,34 +73,56 @@ const MultipleChoiceQuestion = ({
                     );
                 })}
 
-                {/* Handle "Other" option if configured in questionData */}
+                {/* Uses `question.addOtherOption` from QuestionEditPanel.js */}
                 {question.addOtherOption && (
-                    <div className={styles.option}>
+                    <div className={styles.optionItem}>
                         <input
                             type="radio"
                             id={`q_${question._id}_opt_other`}
                             name={`q_${question._id}`}
-                            value="__OTHER__" // A conventional value for the "Other" choice
-                            checked={currentAnswer === "__OTHER__"}
+                            value={OTHER_VALUE_INTERNAL}
+                            checked={currentAnswer === OTHER_VALUE_INTERNAL}
                             onChange={handleChange}
                             disabled={disabled}
                             className={styles.radioInput}
                         />
                         <label htmlFor={`q_${question._id}_opt_other`} className={styles.optionLabel}>
-                            Other
+                            {question.otherLabel || 'Other'} 
                         </label>
-                        {currentAnswer === "__OTHER__" && (
+                        {currentAnswer === OTHER_VALUE_INTERNAL && (
                             <input
                                 type="text"
-                                value={otherValue || ''} // Controlled component for "Other" text
-                                onChange={handleOtherTextChange}
+                                value={otherValue || ''}
+                                onChange={handleOtherText}
                                 placeholder={question.otherPlaceholder || "Please specify"}
                                 className={styles.otherTextInput}
                                 disabled={disabled}
-                                // Add 'required' attribute if question.requireOtherIfSelected is true
-                                required={question.requireOtherIfSelected && currentAnswer === "__OTHER__"}
+                                // Uses `question.requireOtherIfSelected` from QuestionEditPanel.js
+                                required={question.requireOtherIfSelected && currentAnswer === OTHER_VALUE_INTERNAL}
                             />
                         )}
+                    </div>
+                )}
+
+                {/* Uses `question.addNAOption` from QuestionEditPanel.js */}
+                {question.addNAOption && (
+                    <div className={styles.optionItem}>
+                        <input
+                            type="radio"
+                            id={`q_${question._id}_opt_na`}
+                            name={`q_${question._id}`}
+                            // Use a consistent internal value for N/A.
+                            // If you add `naValue` to QuestionEditPanel, use `question.naValue || NA_VALUE_INTERNAL`
+                            value={NA_VALUE_INTERNAL} 
+                            checked={currentAnswer === NA_VALUE_INTERNAL}
+                            onChange={handleChange}
+                            disabled={disabled}
+                            className={styles.radioInput}
+                        />
+                        <label htmlFor={`q_${question._id}_opt_na`} className={styles.optionLabel}>
+                            {/* If you add `naText` to QuestionEditPanel, use `question.naText || 'Not Applicable'` */}
+                            Not Applicable 
+                        </label>
                     </div>
                 )}
             </div>
@@ -106,3 +131,4 @@ const MultipleChoiceQuestion = ({
 };
 
 export default MultipleChoiceQuestion;
+// ----- END OF COMPLETE MODIFIED FILE (v1.2) -----

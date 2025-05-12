@@ -1,90 +1,245 @@
 /* frontend/src/components/survey_question_renders/SurveyQuestionStyles.module.css */
+/* ----- START OF COMPLETE MODIFIED FILE (v1.1 - Rating/NPS UI Enhancements) ----- */
 .questionContainer {
     margin-bottom: 20px;
-    padding: 15px;
-    border: 1px solid #eee;
-    border-radius: 5px;
-    background-color: #fff; /* Added for better visibility */
+    padding: 20px 25px; /* Slightly more padding */
+    border: 1px solid var(--border-color-light, #eee);
+    border-radius: var(--border-radius-md, 6px);
+    background-color: var(--background-secondary, #fff);
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.05));
 }
 .questionContainer.disabled {
-    background-color: #f8f8f8;
+    background-color: var(--background-disabled, #f8f8f8);
     opacity: 0.7;
 }
 .questionText {
-    font-size: 1.1em;
+    font-size: 1.15em; /* Slightly larger */
+    font-weight: 600; /* Bolder */
+    margin-bottom: 8px;
+    color: var(--text-primary, #212529);
+    line-height: 1.4;
+}
+.requiredIndicator {
+    color: var(--error-text, #dc3545);
+    margin-left: 4px;
     font-weight: bold;
-    margin-bottom: 10px;
-    color: #333; /* Added for better visibility */
 }
 .questionDescription {
     font-size: 0.9em;
-    color: #555;
+    color: var(--text-secondary, #555);
     margin-bottom: 15px;
+    line-height: 1.5;
 }
 .optionsContainer {
     display: flex;
     flex-direction: column;
+    gap: 10px; /* Space between options */
 }
-.option {
-    margin-bottom: 8px;
+.optionItem { /* Renamed from .option for clarity */
+    margin-bottom: 0; /* Handled by gap in optionsContainer */
     display: flex;
     align-items: center;
+    padding: 5px 0; /* Add some vertical padding */
 }
 .radioInput, .checkboxInput {
-    margin-right: 8px;
-    accent-color: #007bff; /* Example accent color */
+    margin-right: 10px; /* More space */
+    accent-color: var(--primary-color, #007bff);
+    width: 1.2em; /* Slightly larger */
+    height: 1.2em;
+    flex-shrink: 0;
 }
 .optionLabel {
     cursor: pointer;
-    color: #444; /* Added for better visibility */
+    color: var(--text-primary, #333);
+    font-size: 1em;
+    line-height: 1.5;
 }
-.textInput, .textareaInput, .otherTextInput { /* Combined text inputs */
+.textInput, .textareaInput, .otherTextInput {
     width: 100%;
-    padding: 10px; /* Increased padding */
+    padding: 10px 12px;
     margin-top: 5px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    border: 1px solid var(--input-border, #ccc);
+    border-radius: var(--border-radius-sm, 4px);
     box-sizing: border-box;
-    font-size: 1em; /* Added for better visibility */
+    font-size: 1em;
+    color: var(--input-text);
+    background-color: var(--input-bg);
 }
 .textareaInput {
-    min-height: 80px; /* Default height for textarea */
+    min-height: 80px;
+    resize: vertical;
 }
 .otherTextInput {
-    margin-left: 20px;
-    width: calc(100% - 30px); /* Adjusted width */
+    margin-left: 10px; /* Align with option text */
+    flex-grow: 1; /* Allow it to take available space */
+    max-width: 400px; /* Optional: prevent it from becoming too wide */
 }
 .errorMessage {
-    color: red;
+    color: var(--error-text, red);
     font-style: italic;
     margin-top: 5px;
+    font-size: 0.9em;
 }
 .dropdownSelect {
     width: 100%;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 10px 12px;
+    border: 1px solid var(--input-border, #ccc);
+    border-radius: var(--border-radius-sm, 4px);
     box-sizing: border-box;
-    background-color: white;
+    background-color: var(--input-bg, white);
     font-size: 1em;
+    color: var(--input-text);
 }
-.ratingContainer button, .npsContainer button {
-    background: none;
-    border: 1px solid #ccc;
-    padding: 8px 12px;
-    margin: 2px;
+
+/* --- New Rating Styles --- */
+.ratingScaleContainer {
+    display: flex;
+    align-items: center;
+    justify-content: center; /* Center items if space allows */
+    gap: 5px; /* Gap between min/max labels and options */
+    margin-top: 10px;
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+}
+.ratingOptions {
+    display: flex;
+    justify-content: center;
+    gap: 5px; /* Gap between rating buttons */
+}
+.ratingItem { /* Wrapper for hidden radio and label button */
+    display: inline-block; /* Allow items to sit side-by-side */
+}
+.ratingInputHidden { /* Hide the actual radio button */
+    opacity: 0;
+    position: absolute;
+    width: 0;
+    height: 0;
+}
+.ratingLabelButton {
+    display: inline-flex; /* Use flex for centering text */
+    align-items: center;
+    justify-content: center;
+    padding: 8px 0; /* Vertical padding */
+    width: 38px; /* Fixed width for buttons */
+    height: 38px; /* Fixed height */
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: var(--border-radius-md, 6px); /* Slightly more rounded */
     cursor: pointer;
-    border-radius: 4px;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.15s ease;
+    background-color: var(--background-secondary, #fff);
+    color: var(--text-primary, #333);
+    font-weight: 500;
+    font-size: 1em;
+    box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.04));
 }
-.ratingContainer button.selected, .npsContainer button.selected {
-    background-color: #007bff;
-    color: white;
-    border-color: #007bff;
+.ratingLabelButton:hover:not(.selected):not(:disabled) {
+    background-color: var(--background-accent-hover, #f0f0f0);
+    border-color: var(--border-color-heavy, #bbb);
 }
-.npsLabels {
+.ratingLabelButton.selected {
+    background-color: var(--primary-color, #007bff);
+    color: var(--primary-text-light, white);
+    border-color: var(--primary-color-dark, #0056b3);
+    font-weight: bold;
+    box-shadow: var(--shadow-sm, 0 2px 4px rgba(0,0,0,0.07));
+}
+.ratingInputHidden:focus + .ratingLabelButton { /* Focus style */
+    outline: 2px solid var(--primary-color-light, #7bceff);
+    outline-offset: 2px;
+    border-color: var(--primary-color, #007bff); /* Ensure border matches focus outline */
+}
+.ratingInputHidden:disabled + .ratingLabelButton {
+    background-color: var(--button-disabled-bg, #e9ecef);
+    color: var(--text-muted, #6c757d);
+    cursor: not-allowed;
+    border-color: var(--border-color-light, #ddd);
+    box-shadow: none;
+}
+.ratingMinMaxLabel {
+    font-size: 0.9em;
+    color: var(--text-secondary, #555);
+    padding: 0 10px; /* Space around labels */
+    text-align: center;
+    min-width: 80px; /* Give some space for labels */
+}
+
+/* --- New NPS Styles --- */
+.npsScaleContainer {
+    margin-top: 10px;
+    padding: 10px 0;
+}
+.npsOptions {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap; /* Allow wrapping on small screens */
+    gap: 4px; /* Small gap between buttons */
+    margin-bottom: 10px;
+}
+.npsItem { /* Wrapper for hidden radio and label button */
+    display: inline-block;
+}
+.npsInputHidden { /* Hide the actual radio button */
+    opacity: 0;
+    position: absolute;
+    width: 0;
+    height: 0;
+}
+.npsLabelButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px; /* Slightly smaller for more buttons */
+    height: 36px;
+    padding: 6px 0;
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: var(--border-radius-sm, 4px);
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.15s ease;
+    background-color: var(--background-secondary, #fff);
+    color: var(--text-primary, #333);
+    font-weight: 500;
+    font-size: 0.95em;
+}
+.npsLabelButton:hover:not(.selected):not(:disabled) {
+    background-color: var(--background-accent-hover, #f0f0f0);
+    border-color: var(--border-color-heavy, #bbb);
+}
+.npsLabelButton.selected { /* Generic selected, specific colors will override */
+    font-weight: bold;
+    box-shadow: var(--shadow-sm);
+}
+.npsDetractorSelected { /* Specific color for 0-6 */
+    background-color: var(--nps-detractor-bg, #f8d7da);
+    color: var(--nps-detractor-text, #721c24);
+    border-color: var(--nps-detractor-border, #f5c6cb);
+}
+.npsPassiveSelected { /* Specific color for 7-8 */
+    background-color: var(--nps-passive-bg, #fff3cd);
+    color: var(--nps-passive-text, #856404);
+    border-color: var(--nps-passive-border, #ffeeba);
+}
+.npsPromoterSelected { /* Specific color for 9-10 */
+    background-color: var(--nps-promoter-bg, #d4edda);
+    color: var(--nps-promoter-text, #155724);
+    border-color: var(--nps-promoter-border, #c3e6cb);
+}
+.npsInputHidden:focus + .npsLabelButton { /* Focus style */
+    outline: 2px solid var(--primary-color-light, #7bceff);
+    outline-offset: 2px;
+    border-color: var(--primary-color, #007bff);
+}
+.npsInputHidden:disabled + .npsLabelButton {
+    background-color: var(--button-disabled-bg, #e9ecef);
+    color: var(--text-muted, #6c757d);
+    cursor: not-allowed;
+    border-color: var(--border-color-light, #ddd);
+    box-shadow: none;
+}
+.npsMinMaxLabels {
     display: flex;
     justify-content: space-between;
-    font-size: 0.8em;
-    color: #777;
-    margin-top: 5px;
+    font-size: 0.85em;
+    color: var(--text-secondary, #555);
+    margin-top: 8px;
+    padding: 0 5%; /* Add some padding to align with the ends of the scale */
 }
+/* ----- END OF COMPLETE MODIFIED FILE (v1.1) ----- */

@@ -1,10 +1,14 @@
 // frontend/src/components/survey_question_renders/CheckboxQuestion.js
-import React from 'react';
+// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Align with QEP props, refined N/A logic) -----
+import React, { useMemo } from 'react';
 import styles from './SurveyQuestionStyles.module.css';
+
+const NA_VALUE_INTERNAL = '__NA__'; // Default internal N/A value if not specified by question
+const OTHER_VALUE_INTERNAL = '__OTHER__';
 
 const CheckboxQuestion = ({
     question,
-    currentAnswer, // Expects a string like "opt1||opt3"
+    currentAnswer,
     onCheckboxChange, // Expects (questionId, optionValue, isChecked)
     otherValue,
     onOtherTextChange,
@@ -15,9 +19,17 @@ const CheckboxQuestion = ({
         return <p className={styles.errorMessage}>Question data or options are missing.</p>;
     }
 
-    const selectedSet = new Set(currentAnswer ? String(currentAnswer).split('||').filter(v => v) : []);
+    const selectedSet = useMemo(() => new Set(currentAnswer ? String(currentAnswer).split('||').filter(v => v) : []), [currentAnswer]);
+    
+    // Determine the actual N/A value to use (from question config or default)
+    // Your QuestionEditPanel saves `addNAOption` but not `naValue` or `naText` explicitly.
+    // For now, we'll assume a default internal value and text if `addNAOption` is true.
+    // If you make `naValue` and `naText` configurable in QuestionEditPanel, use them here.
+    const actualNaValue = question.naValue || NA_VALUE_INTERNAL; 
+    const actualNaText = question.naText || "Not Applicable";
 
     const handleLocalCheckboxChange = (optionValue, isChecked) => {
+        // This function in SurveyTakingPage will handle the logic of updating the string
         onCheckboxChange(question._id, optionValue, isChecked);
     };
 
@@ -27,13 +39,23 @@ const CheckboxQuestion = ({
         }
     };
 
-    const orderedOptions = optionsOrder
-        ? optionsOrder.map(index => question.options[index]).filter(opt => opt !== undefined)
-        : question.options;
+    const orderedOptions = useMemo(() => {
+        return optionsOrder
+            ? optionsOrder.map(index => (question.options || [])[index]).filter(opt => opt !== undefined)
+            : (question.options || []);
+    }, [question.options, optionsOrder]);
+    
+    // Determine if N/A option makes other options disabled (if naIsExclusive is true)
+    // Your QuestionEditPanel doesn't explicitly set `naIsExclusive`. Assuming true for now.
+    const naIsExclusive = question.naIsExclusive === undefined ? true : question.naIsExclusive;
+    const isNASelected = selectedSet.has(actualNaValue);
 
     return (
         <div className={`${styles.questionContainer} ${disabled ? styles.disabled : ''}`}>
-            <p className={styles.questionText}>{question.text || 'Question text missing'}</p>
+            <p className={styles.questionText}>
+                {question.text || 'Question text missing'}
+                {question.isRequired && <span className={styles.requiredIndicator}>*</span>}
+            </p>
             {question.description && <p className={styles.questionDescription}>{question.description}</p>}
             <div className={styles.optionsContainer}>
                 {orderedOptions.map((option, index) => {
@@ -41,15 +63,20 @@ const CheckboxQuestion = ({
                     const optionValue = typeof option === 'object' ? option.value : option;
                     if (optionText === undefined || optionValue === undefined) return null;
 
+                    const isOptionDisabled = disabled || 
+                                             (isNASelected && naIsExclusive) || // Disable if exclusive N/A is selected
+                                             (!selectedSet.has(optionValue) && selectedSet.size >= (question.maxSelections || Infinity) && !isNASelected);
+
+
                     return (
-                        <div key={optionValue || index} className={styles.option}>
+                        <div key={optionValue || index} className={styles.optionItem}>
                             <input
                                 type="checkbox"
                                 id={`q_${question._id}_opt_${index}`}
                                 value={optionValue}
                                 checked={selectedSet.has(optionValue)}
                                 onChange={(e) => handleLocalCheckboxChange(optionValue, e.target.checked)}
-                                disabled={disabled || (selectedSet.has(question.naValue) && optionValue !== question.naValue)} // Example N/A logic
+                                disabled={isOptionDisabled}
                                 className={styles.checkboxInput}
                             />
                             <label htmlFor={`q_${question._id}_opt_${index}`} className={styles.optionLabel}>
@@ -58,52 +85,59 @@ const CheckboxQuestion = ({
                         </div>
                     );
                 })}
+
+                {/* Uses `question.addOtherOption` from QuestionEditPanel.js */}
                 {question.addOtherOption && (
-                    <div className={styles.option}>
+                    <div className={styles.optionItem}>
                         <input
                             type="checkbox"
                             id={`q_${question._id}_opt_other`}
-                            value="__OTHER__" // Consistent "other" value
-                            checked={selectedSet.has("__OTHER__")}
-                            onChange={(e) => handleLocalCheckboxChange("__OTHER__", e.target.checked)}
-                            disabled={disabled || (selectedSet.has(question.naValue) && "__OTHER__" !== question.naValue)}
+                            value={OTHER_VALUE_INTERNAL}
+                            checked={selectedSet.has(OTHER_VALUE_INTERNAL)}
+                            onChange={(e) => handleLocalCheckboxChange(OTHER_VALUE_INTERNAL, e.target.checked)}
+                            disabled={disabled || (isNASelected && naIsExclusive) || (!selectedSet.has(OTHER_VALUE_INTERNAL) && selectedSet.size >= (question.maxSelections || Infinity) && !isNASelected)}
                             className={styles.checkboxInput}
                         />
                         <label htmlFor={`q_${question._id}_opt_other`} className={styles.optionLabel}>
-                            Other
+                            {question.otherLabel || 'Other'}
                         </label>
-                        {selectedSet.has("__OTHER__") && (
+                        {selectedSet.has(OTHER_VALUE_INTERNAL) && (
                             <input
                                 type="text"
                                 value={otherValue || ''}
                                 onChange={handleOtherText}
-                                placeholder="Please specify"
+                                placeholder={question.otherPlaceholder || "Please specify"}
                                 className={styles.otherTextInput}
-                                disabled={disabled}
-                                required={question.requireOtherIfSelected && selectedSet.has("__OTHER__")}
+                                disabled={disabled || (isNASelected && naIsExclusive)}
+                                // Uses `question.requireOtherIfSelected` from QuestionEditPanel.js
+                                required={question.requireOtherIfSelected && selectedSet.has(OTHER_VALUE_INTERNAL)}
                             />
                         )}
                     </div>
                 )}
-                 {/* Example N/A option rendering - adapt based on your question data structure */}
-                {question.addNAOption && question.naValue && (
-                     <div key={question.naValue} className={styles.option}>
+                
+                {/* Uses `question.addNAOption` from QuestionEditPanel.js */}
+                {question.addNAOption && (
+                     <div key={actualNaValue} className={styles.optionItem}>
                         <input
                             type="checkbox"
                             id={`q_${question._id}_opt_na`}
-                            value={question.naValue}
-                            checked={selectedSet.has(question.naValue)}
-                            onChange={(e) => handleLocalCheckboxChange(question.naValue, e.target.checked)}
-                            disabled={disabled}
+                            value={actualNaValue} 
+                            checked={isNASelected}
+                            onChange={(e) => handleLocalCheckboxChange(actualNaValue, e.target.checked)}
+                            disabled={disabled || (!isNASelected && selectedSet.size >= (question.maxSelections || Infinity))} // N/A can usually be selected even if max is reached for other options
                             className={styles.checkboxInput}
                         />
                         <label htmlFor={`q_${question._id}_opt_na`} className={styles.optionLabel}>
-                            {question.naText || "N/A"}
+                            {actualNaText}
                         </label>
                     </div>
                 )}
             </div>
+            {question.minSelections && <p className={styles.selectionRequirement}>Select at least {question.minSelections} option(s).</p>}
+            {question.maxSelections && <p className={styles.selectionRequirement}>Select up to {question.maxSelections} option(s).</p>}
         </div>
     );
 };
 export default CheckboxQuestion;
+// ----- END OF COMPLETE MODIFIED FILE (v1.2) -----
