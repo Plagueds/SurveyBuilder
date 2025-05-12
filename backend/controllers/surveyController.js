@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.5 - Added reCAPTCHA Verification) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.7 - Corrected answer payload processing) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -7,10 +7,9 @@ const Question = require('../models/Question');
 const Answer = require('../models/Answer');
 const Collector = require('../models/Collector');
 const { evaluateAllLogic } = require('../utils/logicEvaluator');
-const axios = require('axios'); // <<<--- ADD THIS LINE for making HTTP requests
+const axios = require('axios');
 
 // --- Helper Function for Conjoint Question Type (used in getSurveyById) ---
-// ... (generateConjointProfiles function remains the same)
 const generateConjointProfiles = (attributes) => {
     if (!Array.isArray(attributes) || attributes.length === 0) { return []; }
     const validAttributes = attributes.filter(attr => attr && attr.name && Array.isArray(attr.levels) && attr.levels.length > 0);
@@ -30,7 +29,6 @@ const generateConjointProfiles = (attributes) => {
 
 
 // --- Helper Function for CSV Export (used in exportSurveyResults) ---
-// ... (formatValueForCsv function remains the same)
 const CSV_SEPARATOR = '; ';
 const formatValueForCsv = (value, questionType) => {
     if (value === null || value === undefined) return '';
@@ -55,7 +53,6 @@ const formatValueForCsv = (value, questionType) => {
 };
 
 // --- Controller Functions ---
-// ... (getAllSurveys, createSurvey, getSurveyById, updateSurvey, deleteSurvey remain the same)
 exports.getAllSurveys = async (req, res) => {
     try {
         const filter = { createdBy: req.user.id };
@@ -166,7 +163,6 @@ exports.deleteSurvey = async (req, res) => {
     session.startTransaction();
     try {
         await Answer.deleteMany({ surveyId: surveyId }, { session });
-        // Also delete collectors associated with this survey
         await Collector.deleteMany({ survey: surveyId }, { session });
         await Survey.findByIdAndDelete(surveyId, { session });
         await session.commitTransaction();
@@ -188,158 +184,213 @@ exports.deleteSurvey = async (req, res) => {
 // @access  Public
 exports.submitSurveyAnswers = async (req, res) => {
     const { surveyId } = req.params;
-    // <<<--- ADD recaptchaToken to destructuring ---
     const { answers: answersPayload, sessionId: payloadSessionId, collectorId, recaptchaToken } = req.body;
 
+    console.log(`[submitSurveyAnswers] Received submission for surveyId: ${surveyId}`);
+    console.log('[submitSurveyAnswers] Request body:', JSON.stringify(req.body, null, 2));
+
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
+        console.warn('[submitSurveyAnswers] Invalid Survey ID format:', surveyId);
         return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
     }
     if (!Array.isArray(answersPayload)) {
+        console.warn('[submitSurveyAnswers] answersPayload is not an array:', answersPayload);
         return res.status(400).json({ success: false, message: 'Answers payload must be an array.' });
     }
-    const sessionIdToUse = payloadSessionId || (answersPayload[0]?.sessionId);
+    const sessionIdToUse = payloadSessionId || (answersPayload[0]?.sessionId); // sessionId can also be part of answersPayload items
     if (!sessionIdToUse) {
+        console.warn('[submitSurveyAnswers] Session ID is missing.');
         return res.status(400).json({ success: false, message: 'Session ID is required.' });
     }
     if (!collectorId || !mongoose.Types.ObjectId.isValid(collectorId)) {
+        console.warn('[submitSurveyAnswers] Invalid or missing Collector ID:', collectorId);
         return res.status(400).json({ success: false, message: 'Valid Collector ID is required for submission.' });
     }
 
     const session = await mongoose.startSession();
     session.startTransaction();
+    console.log(`[submitSurveyAnswers] Started transaction for session ${sessionIdToUse}`);
 
     try {
         const survey = await Survey.findById(surveyId).populate('questions').select('+status +globalSkipLogic +questions').session(session);
         if (!survey) {
+            console.warn(`[submitSurveyAnswers] Survey not found: ${surveyId}`);
             await session.abortTransaction(); session.endSession();
             return res.status(404).json({ success: false, message: 'Survey not found.' });
         }
+        console.log(`[submitSurveyAnswers] Found survey: ${survey.title}, Status: ${survey.status}`);
         if (survey.status !== 'active' && survey.status !== 'draft') {
+            console.warn(`[submitSurveyAnswers] Survey ${surveyId} is not active. Status: ${survey.status}`);
             await session.abortTransaction(); session.endSession();
             return res.status(400).json({ success: false, message: 'This survey is not currently active or accepting responses.' });
         }
 
         const collector = await Collector.findById(collectorId).session(session);
         if (!collector) {
+            console.warn(`[submitSurveyAnswers] Collector not found: ${collectorId}`);
             await session.abortTransaction(); session.endSession();
             return res.status(404).json({ success: false, message: 'Collector not found.' });
         }
+        console.log(`[submitSurveyAnswers] Found collector: ${collector.name}, Type: ${collector.type}, Response Count: ${collector.responseCount}`);
+        console.log(`[submitSurveyAnswers] Collector settings for web_link:`, JSON.stringify(collector.settings?.web_link, null, 2));
+
         if (String(collector.survey) !== String(surveyId)) {
+            console.warn(`[submitSurveyAnswers] Collector ${collectorId} does not belong to survey ${surveyId}. Belongs to: ${collector.survey}`);
             await session.abortTransaction(); session.endSession();
             return res.status(400).json({ success: false, message: 'Collector does not belong to this survey.' });
         }
 
-        // --- Re-validate Collector Status ---
-        if (collector.status !== 'open') { /* ... (existing status check logic) ... */ }
+        if (collector.status !== 'open') {
+            console.warn(`[submitSurveyAnswers] Collector ${collectorId} is not open. Status: ${collector.status}`);
+            await session.abortTransaction(); session.endSession();
+            return res.status(400).json({ success: false, message: `This survey link is currently ${collector.status}.` });
+        }
         const now = new Date();
-        if (collector.settings.web_link.openDate && collector.settings.web_link.openDate > now) { /* ... */ }
-        if (collector.settings.web_link.closeDate && collector.settings.web_link.closeDate < now) { /* ... */ }
-        if (collector.settings.web_link.maxResponses && collector.responseCount >= collector.settings.web_link.maxResponses) { /* ... */ }
+        if (collector.settings?.web_link?.openDate && new Date(collector.settings.web_link.openDate) > now) {
+            console.warn(`[submitSurveyAnswers] Collector ${collectorId} not yet open. Opens at: ${collector.settings.web_link.openDate}`);
+            await session.abortTransaction(); session.endSession();
+            return res.status(400).json({ success: false, message: 'This survey is not yet open.' });
+        }
+        if (collector.settings?.web_link?.closeDate && new Date(collector.settings.web_link.closeDate) < now) {
+            console.warn(`[submitSurveyAnswers] Collector ${collectorId} has closed. Closed at: ${collector.settings.web_link.closeDate}`);
+            await session.abortTransaction(); session.endSession();
+            return res.status(400).json({ success: false, message: 'This survey has closed.' });
+        }
+        if (collector.settings?.web_link?.maxResponses && collector.responseCount >= collector.settings.web_link.maxResponses) {
+            console.warn(`[submitSurveyAnswers] Collector ${collectorId} has reached max responses. Count: ${collector.responseCount}, Max: ${collector.settings.web_link.maxResponses}`);
+            await session.abortTransaction(); session.endSession();
+            return res.status(400).json({ success: false, message: 'This survey has reached its maximum response limit.' });
+        }
 
-
-        // --- BEGIN reCAPTCHA VERIFICATION ---
-        if (collector.type === 'web_link' && collector.settings && collector.settings.web_link && collector.settings.web_link.enableRecaptcha) {
+        if (collector.type === 'web_link' && collector.settings?.web_link?.enableRecaptcha) {
+            console.log('[submitSurveyAnswers] reCAPTCHA is enabled for this web link collector. Verifying token...');
             if (!recaptchaToken) {
+                console.warn('[submitSurveyAnswers] reCAPTCHA token not provided.');
                 await session.abortTransaction(); session.endSession();
                 return res.status(400).json({ success: false, message: 'reCAPTCHA verification is required but token was not provided.' });
             }
-
             const secretKey = process.env.RECAPTCHA_V2_SECRET_KEY;
             if (!secretKey) {
-                console.error("RECAPTCHA_V2_SECRET_KEY is not set in .env file.");
+                console.error("[submitSurveyAnswers] RECAPTCHA_V2_SECRET_KEY is not set in .env file.");
                 await session.abortTransaction(); session.endSession();
                 return res.status(500).json({ success: false, message: 'reCAPTCHA configuration error on server.' });
             }
-
             const verificationUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${recaptchaToken}`;
-
+            console.log('[submitSurveyAnswers] Verifying reCAPTCHA with Google...');
             try {
                 const recaptchaResponse = await axios.post(verificationUrl);
-                const { success: recaptchaSuccess, 'error-codes': errorCodes } = recaptchaResponse.data;
-
+                const { success: recaptchaSuccess, 'error-codes': errorCodes } = recaptchaResponse.data; // Removed score, action, hostname for v2
+                console.log('[submitSurveyAnswers] Google reCAPTCHA response:', JSON.stringify(recaptchaResponse.data, null, 2));
                 if (!recaptchaSuccess) {
-                    console.warn('reCAPTCHA verification failed:', errorCodes);
+                    console.warn('[submitSurveyAnswers] reCAPTCHA verification failed with Google. Errors:', errorCodes);
                     await session.abortTransaction(); session.endSession();
                     return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed. Please try again.', errors: errorCodes });
                 }
-                // Optional: Check hostname, action, score for v3 if you implement that later
                 console.log('reCAPTCHA verification successful.');
             } catch (e) {
-                console.error('Error during reCAPTCHA verification request:', e.message);
+                console.error('[submitSurveyAnswers] Error during reCAPTCHA verification request to Google:', e.message);
                 await session.abortTransaction(); session.endSession();
                 return res.status(500).json({ success: false, message: 'Error verifying reCAPTCHA. Please try again later.' });
             }
+        } else {
+            console.log('[submitSurveyAnswers] reCAPTCHA is NOT enabled for this collector or not a web_link type.');
         }
-        // --- END reCAPTCHA VERIFICATION ---
-
 
         const answersToUpsert = [];
         const questionIdsInPayload = new Set();
+        console.log('[submitSurveyAnswers] Processing answersPayload:', JSON.stringify(answersPayload, null, 2));
         for (const item of answersPayload) {
-            if (!item?.questionId || !mongoose.Types.ObjectId.isValid(item.questionId) || item.answerValue === undefined) continue;
+            // <<< --- MODIFICATION START --- >>>
+            // Change item.answerValue to item.answer to match payload
+            if (!item?.questionId || !mongoose.Types.ObjectId.isValid(item.questionId) || item.answer === undefined) {
+            // <<< --- MODIFICATION END --- >>>
+                console.log('[submitSurveyAnswers] Skipping invalid answer item (missing questionId or answer value):', JSON.stringify(item, null, 2));
+                continue;
+            }
             if (questionIdsInPayload.has(String(item.questionId))) {
                 const idx = answersToUpsert.findIndex(a => String(a.questionId) === String(item.questionId));
-                if (idx > -1) answersToUpsert.splice(idx, 1);
+                if (idx > -1) {
+                    console.log(`[submitSurveyAnswers] Replacing previous answer for questionId ${item.questionId}`);
+                    answersToUpsert.splice(idx, 1);
+                }
             }
             questionIdsInPayload.add(String(item.questionId));
             answersToUpsert.push({
                 surveyId,
                 questionId: item.questionId,
                 sessionId: sessionIdToUse,
-                answerValue: item.answerValue,
+                // <<< --- MODIFICATION START --- >>>
+                answerValue: item.answer, // Use item.answer here
+                // <<< --- MODIFICATION END --- >>>
                 collectorId: collector._id
             });
         }
 
+        console.log(`[submitSurveyAnswers] Number of valid answers to upsert: ${answersToUpsert.length}`);
+        console.log('[submitSurveyAnswers] Validated answersToUpsert:', JSON.stringify(answersToUpsert, null, 2));
+
         if (answersToUpsert.length > 0) {
-            await Answer.bulkWrite(answersToUpsert.map(ans => ({
+            console.log('[submitSurveyAnswers] Attempting Answer.bulkWrite...');
+            const bulkWriteResult = await Answer.bulkWrite(answersToUpsert.map(ans => ({
                 updateOne: {
                     filter: { surveyId: ans.surveyId, questionId: ans.questionId, sessionId: ans.sessionId },
                     update: { $set: ans }, upsert: true,
                 }
             })), { session });
+            console.log('[submitSurveyAnswers] Answer.bulkWrite result:', JSON.stringify(bulkWriteResult, null, 2));
+            if (bulkWriteResult.hasWriteErrors()) {
+                 console.error('[submitSurveyAnswers] BulkWriteError during answer saving:', bulkWriteResult.getWriteErrors());
+                 await session.abortTransaction(); session.endSession();
+                 return res.status(500).json({ success: false, message: 'Error saving some answers during bulk operation.' });
+            }
+        } else {
+            console.log('[submitSurveyAnswers] No valid answers to save after processing payload.');
         }
 
         collector.responseCount += 1;
-        if (collector.settings.web_link.maxResponses && collector.responseCount >= collector.settings.web_link.maxResponses) {
+        console.log(`[submitSurveyAnswers] Incrementing collector responseCount to: ${collector.responseCount}`);
+        if (collector.settings?.web_link?.maxResponses && collector.responseCount >= collector.settings.web_link.maxResponses) {
             collector.status = 'completed_quota';
+            console.log(`[submitSurveyAnswers] Collector status changed to 'completed_quota'.`);
         }
         await collector.save({ session });
+        console.log('[submitSurveyAnswers] Collector saved successfully.');
 
         await session.commitTransaction();
+        console.log(`[submitSurveyAnswers] Transaction committed for session ${sessionIdToUse}.`);
 
         let triggeredAction = null;
         if (survey.globalSkipLogic?.length > 0 && survey.questions) {
             const allSessionAnswers = await Answer.find({ surveyId, sessionId: sessionIdToUse }).lean();
             triggeredAction = evaluateAllLogic(survey.globalSkipLogic, allSessionAnswers, survey.questions);
             if (triggeredAction?.type === 'disqualifyRespondent') {
+                console.log(`[submitSurveyAnswers] Respondent disqualified for session ${sessionIdToUse}. Message: ${triggeredAction.disqualificationMessage}`);
                 return res.status(200).json({ success: true, message: triggeredAction.disqualificationMessage || 'Disqualified.', action: triggeredAction, sessionId: sessionIdToUse, answersSaved: answersToUpsert.length });
             }
         }
+        console.log(`[submitSurveyAnswers] Submission successful for session ${sessionIdToUse}. answersSaved: ${answersToUpsert.length}`);
         res.status(201).json({ success: true, message: 'Answers submitted successfully.', sessionId: sessionIdToUse, answersSaved: answersToUpsert.length, action: triggeredAction });
 
     } catch (error) {
-        if (session.inTransaction()) { // Check if session is active before aborting
+        console.error(`[submitSurveyAnswers] Error during submission for survey ${surveyId}, session ${sessionIdToUse}:`, error);
+        if (session.inTransaction()) {
+            console.log('[submitSurveyAnswers] Aborting transaction due to error.');
             await session.abortTransaction();
         }
-        console.error(`Error submitting answers for survey ${surveyId}, session ${sessionIdToUse}:`, error);
-        if (error.name === 'ValidationError') return res.status(400).json({ success: false, message: 'Validation Error.', details: error.errors });
-        if (error.name === 'BulkWriteError') return res.status(500).json({ success: false, message: 'Error saving some answers.', code: error.code, writeErrors: error.writeErrors?.length });
-        // Avoid sending generic 500 if a specific error was already sent (like reCAPTCHA failure)
         if (!res.headersSent) {
+            if (error.name === 'ValidationError') return res.status(400).json({ success: false, message: 'Validation Error.', details: error.errors });
+            if (error.name === 'BulkWriteError') return res.status(500).json({ success: false, message: 'Error saving some answers.', code: error.code, writeErrors: error.writeErrors?.length });
             res.status(500).json({ success: false, message: 'Error submitting answers.' });
         }
     } finally {
-        if (session.inTransaction()) { // Ensure session is ended only if it was active
-             session.endSession();
-        } else if (session.hasEnded === false) { // Handle cases where transaction might not have started but session exists
+        if (session.hasEnded === false) {
+            console.log(`[submitSurveyAnswers] Ending session for ${sessionIdToUse} in finally block.`);
             session.endSession();
         }
     }
 };
 
 // @desc    Get survey results (for admin/owner)
-// ... (getSurveyResults function remains the same)
 exports.getSurveyResults = async (req, res) => {
     const { surveyId } = req.params;
     try {
@@ -381,7 +432,6 @@ exports.getSurveyResults = async (req, res) => {
 };
 
 // @desc    Export survey results (for admin/owner)
-// ... (exportSurveyResults function remains the same)
 exports.exportSurveyResults = async (req, res) => {
     const { surveyId } = req.params;
     try {
@@ -432,4 +482,4 @@ exports.exportSurveyResults = async (req, res) => {
         res.status(500).json({ success: false, message: "Error exporting results" });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (v1.5 - Added reCAPTCHA Verification) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.7 - Corrected answer payload processing) -----
