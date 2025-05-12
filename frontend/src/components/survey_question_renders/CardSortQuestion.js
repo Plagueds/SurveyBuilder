@@ -1,5 +1,5 @@
 // frontend/src/components/survey_question_renders/CardSortQuestion.js
-// ----- START OF COMPLETE MODIFIED FILE (v2.1 - Import Fix) -----
+// ----- START OF COMPLETE MODIFIED FILE (v2.2 - DND Fix for Multiple Cards) -----
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     DndContext,
@@ -9,20 +9,20 @@ import {
     useSensor,
     useSensors,
     closestCorners,
+    useDroppable, // Changed from useSortable for category columns
 } from '@dnd-kit/core';
 import {
     SortableContext,
-    // arrayMove, // Not directly used here for cross-container, but could be for within-category sorting
     verticalListSortingStrategy,
     useSortable,
-    sortableKeyboardCoordinates, // <<<--- ADDED THIS IMPORT
+    sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import styles from './SurveyQuestionStyles.module.css';
 
 const UNASSIGNED_CATEGORY_ID = '__UNASSIGNED__';
 
-// --- Draggable Card Component ---
+// --- Draggable Card Component (Remains the same) ---
 function DraggableCard({ id, children, isDragging, isOverlay }) {
     const {
         attributes,
@@ -52,13 +52,13 @@ function DraggableCard({ id, children, isDragging, isOverlay }) {
     );
 }
 
-// --- Droppable Category Column Component ---
+// --- Droppable Category Column Component (Modified) ---
 function DroppableCategory({ id, title, children, onRemoveCategory, allowUserCategories }) {
-    const { setNodeRef, isOver } = useSortable({ id });
+    const { setNodeRef, isOver } = useDroppable({ id: id }); // Use useDroppable
 
     return (
         <div
-            ref={setNodeRef}
+            ref={setNodeRef} // setNodeRef from useDroppable
             className={`${styles.cardSortCategoryColumn} ${isOver ? styles.cardSortCategoryColumnOver : ''}`}
         >
             <h5 className={styles.cardSortCategoryTitle}>
@@ -75,7 +75,14 @@ function DroppableCategory({ id, title, children, onRemoveCategory, allowUserCat
                 )}
             </h5>
             <div className={styles.cardSortCardList}>
-                {children}
+                {/* SortableContext for cards *within* this droppable category */}
+                {/* Items for SortableContext are the IDs of the DraggableCard children */}
+                <SortableContext
+                    items={React.Children.map(children, child => child.props.id) || []}
+                    strategy={verticalListSortingStrategy}
+                >
+                    {children}
+                </SortableContext>
                 {React.Children.count(children) === 0 && (
                     <p className={styles.cardSortEmptyCategoryText}>(Empty)</p>
                 )}
@@ -95,7 +102,7 @@ const CardSortQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMo
         description
     } = question;
 
-    const initialCards = useMemo(() => cardsFromProps.map(card => ({ id: String(card), text: String(card) })), [cardsFromProps]);
+    const initialCards = useMemo(() => cardsFromProps.map(cardText => ({ id: String(cardText), text: String(cardText) })), [cardsFromProps]);
 
     const initialPredefinedCategories = useMemo(() =>
         predefinedCategoriesFromProps.map(name => ({
@@ -106,7 +113,7 @@ const CardSortQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMo
     const [userCategories, setUserCategories] = useState([]);
     const [assignments, setAssignments] = useState({});
     const [newUserCategoryName, setNewUserCategoryName] = useState('');
-    const [activeCard, setActiveCard] = useState(null);
+    const [activeCard, setActiveCard] = useState(null); // For DragOverlay
 
     useEffect(() => {
         const savedAssignments = currentAnswer?.assignments || {};
@@ -118,7 +125,6 @@ const CardSortQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMo
             name: String(cat.name)
         })));
     }, [currentAnswer]);
-
 
     const allCategoryObjects = useMemo(() => [
         { id: UNASSIGNED_CATEGORY_ID, name: 'Unassigned Cards' },
@@ -142,30 +148,25 @@ const CardSortQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMo
         setActiveCard(null);
         const { active, over } = event;
 
-        if (active && over && active.id !== over.id) {
+        if (active && over) { // A card was dropped onto a droppable area
             const cardId = active.id;
-            const targetCategoryId = over.id;
+            const targetCategoryId = over.id; // This is the ID of the DroppableCategory
 
-            const isValidCategory = allCategoryObjects.some(cat => cat.id === targetCategoryId);
+            // Check if targetCategoryId is a valid category (could be a card if reordering within category was implemented differently)
+            const isValidCategoryDropTarget = allCategoryObjects.some(cat => cat.id === targetCategoryId);
 
-            if (isValidCategory) {
+            if (isValidCategoryDropTarget && assignments[cardId] !== targetCategoryId) {
                 const newAssignments = { ...assignments, [cardId]: targetCategoryId };
                 setAssignments(newAssignments);
                 if (typeof onAnswerChange === 'function') {
                     onAnswerChange(questionId, { assignments: newAssignments, userCategories });
                 }
-            } else {
-                 // Card was dropped outside a valid category, assign to unassigned if it was previously in a real category
-                if (assignments[cardId] && assignments[cardId] !== UNASSIGNED_CATEGORY_ID) {
-                    const newAssignments = { ...assignments, [cardId]: UNASSIGNED_CATEGORY_ID };
-                    setAssignments(newAssignments);
-                    if (typeof onAnswerChange === 'function') {
-                        onAnswerChange(questionId, { assignments: newAssignments, userCategories });
-                    }
-                }
             }
-        } else if (active && !over) { // Dropped outside any droppable
-            // If card was in a category, move to unassigned
+            // If not a valid category drop target (e.g., dropped on another card, or outside),
+            // and if reordering within a category was implemented, that logic would go here.
+            // For now, we only handle drops onto category columns.
+        } else if (active && !over) { // Card was dragged and dropped outside any valid droppable area
+            // If the card was previously assigned to a specific category, move it to "Unassigned"
             if (assignments[active.id] && assignments[active.id] !== UNASSIGNED_CATEGORY_ID) {
                  const newAssignments = { ...assignments, [active.id]: UNASSIGNED_CATEGORY_ID };
                  setAssignments(newAssignments);
@@ -178,7 +179,6 @@ const CardSortQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMo
     
     const handleAddUserCategory = () => {
         if (disabled || !newUserCategoryName.trim() || !cardSortAllowUserCategories) return;
-        
         const newCategory = {
             id: `user_${Date.now()}_${newUserCategoryName.trim().replace(/\s+/g, '_')}`,
             name: newUserCategoryName.trim()
@@ -194,10 +194,8 @@ const CardSortQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMo
     const handleRemoveUserCategory = (categoryIdToRemove) => {
         if (disabled) return;
         if (!window.confirm("Are you sure you want to remove this category and reassign its cards to 'Unassigned'?")) return;
-
         const updatedUserCategories = userCategories.filter(cat => cat.id !== categoryIdToRemove);
         setUserCategories(updatedUserCategories);
-
         const newAssignments = { ...assignments };
         Object.keys(newAssignments).forEach(cardId => {
             if (newAssignments[cardId] === categoryIdToRemove) {
@@ -236,25 +234,28 @@ const CardSortQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMo
                 onDragEnd={handleDragEnd}
             >
                 <div className={styles.cardSortLayout}>
-                    {allCategoryObjects.map(category => (
-                        <DroppableCategory
-                            key={category.id}
-                            id={category.id}
-                            title={category.name}
-                            onRemoveCategory={handleRemoveUserCategory}
-                            allowUserCategories={cardSortAllowUserCategories}
-                        >
-                            <SortableContext items={initialCards.filter(card => (assignments[card.id] || UNASSIGNED_CATEGORY_ID) === category.id).map(c => c.id)} strategy={verticalListSortingStrategy}>
-                                {initialCards
-                                    .filter(card => (assignments[card.id] || UNASSIGNED_CATEGORY_ID) === category.id)
-                                    .map(card => (
-                                        <DraggableCard key={card.id} id={card.id} isDragging={activeCard?.id === card.id}>
-                                            {card.text}
-                                        </DraggableCard>
-                                    ))}
-                            </SortableContext>
-                        </DroppableCategory>
-                    ))}
+                    {allCategoryObjects.map(category => {
+                        // Filter cards that belong to the current category
+                        const cardsInThisCategory = initialCards
+                            .filter(card => (assignments[card.id] || UNASSIGNED_CATEGORY_ID) === category.id);
+                        
+                        return (
+                            <DroppableCategory
+                                key={category.id}
+                                id={category.id} // This ID is what `over.id` will be from useDroppable
+                                title={category.name}
+                                onRemoveCategory={handleRemoveUserCategory}
+                                allowUserCategories={cardSortAllowUserCategories}
+                            >
+                                {/* Pass the actual DraggableCard components as children */}
+                                {cardsInThisCategory.map(card => (
+                                    <DraggableCard key={card.id} id={card.id} isDragging={activeCard?.id === card.id}>
+                                        {card.text}
+                                    </DraggableCard>
+                                ))}
+                            </DroppableCategory>
+                        );
+                    })}
                 </div>
                 <DragOverlay>
                     {activeCard ? (
@@ -293,4 +294,4 @@ const CardSortQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMo
 };
 
 export default CardSortQuestion;
-// ----- END OF COMPLETE MODIFIED FILE (v2.1 - Import Fix) -----
+// ----- END OF COMPLETE MODIFIED FILE (v2.2 - DND Fix for Multiple Cards) -----
