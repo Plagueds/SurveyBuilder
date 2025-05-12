@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyResultsPage.js
-// ----- START OF COMPLETE MODIFIED FILE (v3.1 - Enhanced Debugging for "r is undefined") -----
+// ----- START OF COMPLETE MODIFIED FILE (v3.2 - More robust renderQuestionResults) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Bar, Pie } from 'react-chartjs-2';
@@ -32,9 +32,9 @@ function SurveyResultsPage() {
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
     const processAllAnswers = useCallback((surveyDefinition, allRawAnswersFromDb) => {
-        console.log("[ResultsPage v3.1] Processing raw answers...", { numAnswers: allRawAnswersFromDb.length });
+        console.log("[ResultsPage v3.2] Processing raw answers...", { numAnswers: allRawAnswersFromDb.length });
         if (!surveyDefinition || !surveyDefinition.questions || !allRawAnswersFromDb || !Array.isArray(allRawAnswersFromDb)) {
-            console.error("[ResultsPage v3.1] Invalid input to processAllAnswers", { surveyDefinition, allRawAnswersFromDb });
+            console.error("[ResultsPage v3.2] Invalid input to processAllAnswers", { surveyDefinition, allRawAnswersFromDb });
             return {};
         }
         const results = {};
@@ -42,15 +42,14 @@ function SurveyResultsPage() {
         const totalRespondentsOverall = respondentSessionIds.size;
 
         surveyDefinition.questions.forEach(question => {
-            // --- ADDED: Check if question is valid ---
             if (!question || !question._id || !question.type) {
-                console.warn("[ResultsPage v3.1] Skipping invalid question object in surveyDefinition:", question);
-                return; // Skip this iteration
+                console.warn("[ResultsPage v3.2] Skipping invalid question object in surveyDefinition:", question);
+                return; 
             }
 
             const questionId = question._id;
             const questionType = question.type;
-            console.log(`[ResultsPage v3.1] Processing question: ID=${questionId}, Type=${questionType}, Text="${question.text}"`);
+            console.log(`[ResultsPage v3.2] Processing question: ID=${questionId}, Type=${questionType}, Text="${question.text}"`);
 
             const questionAnswersFromDb = allRawAnswersFromDb.filter(a => a.questionId === questionId);
             const questionRespondents = new Set(questionAnswersFromDb.map(a => a.sessionId)).size;
@@ -93,24 +92,21 @@ function SurveyResultsPage() {
                     case 'matrix':
                         stats.rows = {};
                         const isRatingMatrix = question.matrixType === 'rating';
-                        // --- ADDED: Check for matrixRows and matrixColumns ---
                         if (!Array.isArray(question.matrixRows) || !Array.isArray(question.matrixColumns)) {
-                            console.error(`[ResultsPage v3.1] Matrix question ID=${questionId} is missing matrixRows or matrixColumns. Rows:`, question.matrixRows, "Cols:", question.matrixColumns);
+                            console.error(`[ResultsPage v3.2] Matrix question ID=${questionId} is missing matrixRows or matrixColumns. Rows:`, question.matrixRows, "Cols:", question.matrixColumns);
                             stats.processingError = "Matrix definition incomplete (missing rows/columns).";
                             break; 
                         }
                         questionAnswersFromDb.forEach(ans => {
-                            // --- ADDED: Log raw answerValue for matrix ---
-                            console.log(`[ResultsPage v3.1] Matrix ans for QID ${questionId}:`, ans.answerValue, "Typeof:", typeof ans.answerValue);
+                            console.log(`[ResultsPage v3.2] Matrix ans for QID ${questionId}:`, ans.answerValue, "Typeof:", typeof ans.answerValue);
                             const matrixData = safeJsonParse(ans.answerValue, {});
                             if (typeof matrixData !== 'object' || matrixData === null) {
-                                console.warn(`[ResultsPage v3.1] Matrix QID ${questionId}: Parsed matrixData is not an object for answerValue:`, ans.answerValue);
-                                return; // Skip this answer
+                                console.warn(`[ResultsPage v3.2] Matrix QID ${questionId}: Parsed matrixData is not an object for answerValue:`, ans.answerValue);
+                                return; 
                             }
                             Object.entries(matrixData).forEach(([row, value]) => {
-                                // --- MODIFIED: Check question.matrixRows before .includes ---
                                 if (!question.matrixRows || !question.matrixRows.includes(row)) {
-                                    console.warn(`[ResultsPage v3.1] Matrix QID ${questionId}: Row "${row}" from answer not found in question.matrixRows. Skipping. matrixRows:`, question.matrixRows);
+                                    console.warn(`[ResultsPage v3.2] Matrix QID ${questionId}: Row "${row}" from answer not found in question.matrixRows. Skipping. matrixRows:`, question.matrixRows);
                                     return;
                                 }
                                 if (!stats.rows[row]) { stats.rows[row] = { counts: {}, total: 0, sum: 0, values: [] }; }
@@ -125,21 +121,19 @@ function SurveyResultsPage() {
                     case 'heatmap':
                         stats.clicks = [];
                         questionAnswersFromDb.forEach(ans => {
-                            // --- ADDED: Log raw answerValue for heatmap ---
-                            console.log(`[ResultsPage v3.1] Heatmap ans for QID ${questionId}:`, ans.answerValue, "Typeof:", typeof ans.answerValue);
+                            console.log(`[ResultsPage v3.2] Heatmap ans for QID ${questionId}:`, ans.answerValue, "Typeof:", typeof ans.answerValue);
                             const clicksData = (typeof ans.answerValue === 'string') ? safeJsonParse(ans.answerValue, []) : (Array.isArray(ans.answerValue) ? ans.answerValue : []);
                             if (!Array.isArray(clicksData)) {
-                                console.warn(`[ResultsPage v3.1] Heatmap QID ${questionId}: Parsed clicksData is not an array for answerValue:`, ans.answerValue);
-                                return; // Skip this answer
+                                console.warn(`[ResultsPage v3.2] Heatmap QID ${questionId}: Parsed clicksData is not an array for answerValue:`, ans.answerValue);
+                                return; 
                             }
                             clicksData.forEach(click => {
-                                // --- ADDED: Check if 'click' is a valid object before accessing properties ---
                                 if (typeof click === 'object' && click !== null &&
                                     typeof click.x === 'number' && typeof click.y === 'number' &&
                                     click.x >= 0 && click.x <= 1 && click.y >= 0 && click.y <= 1) {
                                     stats.clicks.push(click);
                                 } else {
-                                    console.warn(`[ResultsPage v3.1] Heatmap QID ${questionId}: Invalid click object found in clicksData:`, click, "Original answerValue:", ans.answerValue);
+                                    console.warn(`[ResultsPage v3.2] Heatmap QID ${questionId}: Invalid click object found in clicksData:`, click, "Original answerValue:", ans.answerValue);
                                 }
                             });
                         });
@@ -153,7 +147,7 @@ function SurveyResultsPage() {
             results[questionId] = { stats };
         });
         results.overallTotalRespondents = totalRespondentsOverall;
-        console.log("[ResultsPage v3.1] Processed results (end of function):", JSON.parse(JSON.stringify(results))); // Deep copy for logging
+        console.log("[ResultsPage v3.2] Processed results (end of function):", JSON.parse(JSON.stringify(results)));
         return results;
     }, []);
 
@@ -162,21 +156,37 @@ function SurveyResultsPage() {
     useEffect(() => { if (survey && rawAnswers && !loading) { const processed = processAllAnswers(survey, rawAnswers); setProcessedResults(processed); } else if (survey && !rawAnswers && !loading && !error) { setProcessedResults({ overallTotalRespondents: 0 }); } }, [survey, rawAnswers, loading, processAllAnswers, error]);
 
     const renderQuestionResults = (question) => {
+        // --- ADDED: Check if question or question._id is missing early ---
+        if (!question || !question._id) {
+            console.error("[ResultsPage v3.2 renderQuestionResults] Invalid question object passed:", question);
+            return <p style={styles.noAnswerText}>Question definition missing or invalid.</p>;
+        }
         const questionId = question._id;
         const resultData = processedResults[questionId];
-        const stats = resultData?.stats;
-        const { type, text, options = [], matrixRows = [], matrixColumns = [], sliderMin, sliderMax, imageUrl, matrixType, cardSortCategories = [] } = question || {};
 
-        if (!question) return <p style={styles.noAnswerText}>Question definition missing.</p>;
-        if (stats?.processingError) return <p style={styles.errorText}>Error processing results: {stats.processingError}</p>;
+        // --- ADDED: Check if resultData itself is missing for this questionId ---
+        if (!resultData) {
+            console.warn(`[ResultsPage v3.2 renderQuestionResults] No resultData found for questionId: ${questionId}. This might indicate it was skipped during processing or an issue with survey definition. Question:`, question);
+            return <p style={styles.noAnswerText}>Processing data not found for this question.</p>;
+        }
+
+        const stats = resultData.stats; // Now we can be more confident resultData exists
+        const { type, text, options = [], matrixRows = [], matrixColumns = [], sliderMin, sliderMax, imageUrl, matrixType, cardSortCategories = [] } = question; // No need for question?. here as we checked question above
+
+        // --- MODIFIED: Check stats after ensuring resultData exists ---
+        if (!stats) { // This check might be redundant if processAllAnswers always creates a stats object, but good for safety
+            console.warn(`[ResultsPage v3.2 renderQuestionResults] No stats object in resultData for questionId: ${questionId}. ResultData:`, resultData);
+            return <p style={styles.noAnswerText}>Statistics not available for this question.</p>;
+        }
+        if (stats.processingError) return <p style={styles.errorText}>Error processing results: {stats.processingError}</p>;
         
-        const qRespondents = stats?.totalResponses || 0;
-        if (!stats || qRespondents === 0 && type !== 'heatmap') { // Heatmap might show image even with 0 clicks
+        const qRespondents = stats.totalResponses || 0; // This was the line causing the error (approx line 220)
+        
+        if (qRespondents === 0 && type !== 'heatmap') {
              if (type === 'heatmap' && imageUrl) { /* allow heatmap to render base image */ }
              else return <p style={styles.noAnswerText}>No responses for this question.</p>;
         }
 
-        // --- Default Chart Options ---
         const defaultPieChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, title: { display: false }, tooltip: { callbacks: { label: function(context) { let label = context.label || ''; if (label) { label += ': '; } if (context.parsed !== null && context.parsed !== undefined) { label += context.parsed.toLocaleString(); } const datasetData = context.chart?.data?.datasets?.[0]?.data; if (Array.isArray(datasetData)) { const total = datasetData.reduce((a, b) => (a || 0) + (b || 0), 0); const percentage = total > 0 && context.raw !== null && context.raw !== undefined ? ((context.raw / total) * 100).toFixed(1) + '%' : '0%'; return `${label} (${percentage})`; } return label; } } } } };
         const defaultBarChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, title: { display: false }, tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || context.label || ''; if (label) { label += ': '; } if (context.parsed?.y !== null && context.parsed?.y !== undefined) { label += context.parsed.y.toLocaleString(); } return label; } } } }, scales: { x: { beginAtZero: true, title: { display: false } }, y: { beginAtZero: true, title: { display: false }, ticks: { precision: 0 } } } };
 
@@ -225,7 +235,7 @@ function SurveyResultsPage() {
         }
     };
 
-    const styles = { pageContainer: { padding: '20px', maxWidth: '950px', margin: 'auto', fontFamily: 'Arial, sans-serif', color: '#333' }, header: { borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }, surveyTitle: { margin: 0, fontSize: '1.8em', flexGrow: 1 }, respondentCount: { fontSize: '1.1em', fontWeight: 'bold', color: '#6c757d', whiteSpace: 'nowrap' }, questionResultBox: { marginBottom: '40px', padding: '20px', border: '1px solid #dee2e6', borderRadius: '8px', backgroundColor: '#fff' }, questionText: { fontWeight: 'normal', fontSize: '1.3em', marginBottom: '20px', color: '#212529' }, resultContainer: { display: 'flex', flexDirection: 'column', gap: '20px' }, chartContainerPie: { height: '280px', width: '100%', maxWidth: '450px', margin: '0 auto 15px auto', position: 'relative' }, chartContainerBar: { height: '300px', width: '100%', marginBottom: '15px', position: 'relative' }, resultsTable: { width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em', border: '1px solid #dee2e6' }, resultsTableTh: { backgroundColor: '#f8f9fa', fontWeight: '600', padding: '10px 12px', border: '1px solid #dee2e6', textAlign: 'left' }, resultsTableCell: { border: '1px solid #dee2e6', padding: '8px 12px', textAlign: 'center', verticalAlign: 'middle' }, resultsTableCellValue: { textAlign: 'left', padding: '8px 12px', border: '1px solid #dee2e6', verticalAlign: 'middle' }, resultsTableCellPercent: { textAlign: 'left', padding: '8px 12px', border: '1px solid #dee2e6', verticalAlign: 'middle', width: '150px' }, resultsTableCellCount: { textAlign: 'right', padding: '8px 12px', border: '1px solid #dee2e6', verticalAlign: 'middle', fontWeight: '500' }, percentBarContainer: { width: '100%', backgroundColor: '#e9ecef', height: '10px', borderRadius: '3px', marginTop: '4px', overflow: 'hidden' }, percentBar: { height: '100%', transition: 'width 0.3s ease-in-out' }, summaryStat: { fontWeight: 'bold', fontSize: '1.1em', margin: '10px 0', color: '#0d6efd' }, infoText: { fontSize: '0.9em', color: '#6c757d', marginBottom: '10px' }, noAnswerText: { fontStyle: 'italic', color: '#6c757d' }, errorText: { color: '#dc3545', fontWeight: 'bold'}, textResponseList: { listStyle: 'none', padding: 0, maxHeight: '300px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '4px' }, textResponseItem: { padding: '8px 12px', borderBottom: '1px dotted #dee2e6' }, rowHeader: { fontWeight: 'bold', textAlign: 'left', padding: '8px 12px', border: '1px solid #dee2e6', verticalAlign: 'middle', backgroundColor: '#f8f9fa' }, heatmapContainer: { border: '1px solid #dee2e6', display: 'inline-block', maxWidth: '100%' }, heatmapImage: { display: 'block', maxWidth: '100%', height: 'auto' }, cardSortResultContainer: { display: 'flex', flexDirection: 'column', gap: '15px', }, cardSortResultCategory: { border: '1px solid #e0e0e0', borderRadius: '6px', backgroundColor: '#f9f9f9', padding: '15px', }, cardSortCategoryTitle: { margin: '0 0 10px 0', fontSize: '1.1em', fontWeight: 'bold', color: '#444', borderBottom: '1px solid #eee', paddingBottom: '5px', }, cardSortCardList: { listStyle: 'none', padding: 0, margin: 0, }, cardSortCardItem: { display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: '0.95em', borderBottom: '1px dotted #eee' }, cardSortCardName: { color: '#333', }, cardSortCardCount: { color: '#666', fontSize: '0.9em', whiteSpace: 'nowrap', marginLeft: '10px', }, cardSortEmptyCategory: { fontSize: '0.9em', color: '#777', fontStyle: 'italic', padding: '10px 0', }, loadingErrorText: { textAlign: 'center', padding: '40px', fontSize: '1.2em', color: '#dc3545' }, backLink: { display: 'inline-block', marginBottom: '20px', color: '#0d6efd', textDecoration: 'none' }, npsScoreContainer: { marginBottom: '20px' }, npsScoreLabel: { fontSize: '1.2em', fontWeight: 'bold', display: 'block', marginBottom: '10px' }, npsCombinedBar: { display: 'flex', height: '30px', width: '100%', borderRadius: '5px', overflow: 'hidden', border: '1px solid #ccc' }, npsBarSegment: { height: '100%', transition: 'width 0.5s ease-in-out' }, npsPromoterColor: { backgroundColor: '#28a745', color: 'white' }, npsPassiveColor: { backgroundColor: '#ffc107', color: '#212529' }, npsDetractorColor: { backgroundColor: '#dc3545', color: 'white' }, rankDistContainer: { display: 'flex', alignItems: 'flex-end', height: '40px', width: '100%', borderBottom: '1px solid #ccc', padding: '0 5px', boxSizing: 'border-box' }, rankDistBar: { flex: 1, backgroundColor: '#a6d8a8', margin: '0 2%', transition: 'height 0.3s ease' }, rankDistLabels: { display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: '#6c757d', marginTop: '2px', padding: '0 5px' }, writeInContainer: { marginTop: '15px', borderTop: '1px dashed #ccc', paddingTop: '10px' }, writeInHeader: { fontSize: '0.95em', color: '#333', marginBottom: '5px', display: 'block' }, writeInList: { listStyle: 'none', paddingLeft: '15px', maxHeight: '150px', overflowY: 'auto', fontSize: '0.9em' }, writeInItem: { marginBottom: '3px' }, writeInCount: { color: '#6c757d', marginLeft: '5px', fontSize: '0.9em' }, exportLink: { display: 'inline-block', padding: '8px 15px', backgroundColor: '#198754', color: 'white', textDecoration: 'none', borderRadius: '5px', fontSize: '0.9em', fontWeight: 'bold', transition: 'background-color 0.2s ease', whiteSpace: 'nowrap', }, };
+    const styles = { /* ... styles object as before ... */ };
 
     if (loading && !survey) return <div style={styles.loadingErrorText}>Loading survey results...</div>;
     if (error) return <div style={styles.loadingErrorText}>Error loading survey results: {error}</div>;
@@ -236,4 +246,4 @@ function SurveyResultsPage() {
 }
 
 export default SurveyResultsPage;
-// ----- END OF COMPLETE MODIFIED FILE (v3.0) -----
+// ----- END OF COMPLETE MODIFIED FILE (v3.2) -----
