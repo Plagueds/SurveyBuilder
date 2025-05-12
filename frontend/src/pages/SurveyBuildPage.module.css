@@ -193,4 +193,34 @@
     padding: 20px;
   }
 }
+/* ----- START: ADD THESE STYLES FOR MODAL ----- */
+.modalBackdrop {
+  position: fixed; /* Cover the entire viewport */
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.6); /* Semi-transparent black for grey-out effect */
+  z-index: 1040; /* Ensure it's above other page content but below the modal panel if panel has higher z-index */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px; /* Add some padding for smaller screens so modal doesn't touch edges */
+  box-sizing: border-box;
+}
+
+.modalContentWrapper {
+  /* This wrapper directly contains the SurveyLogicPanel */
+  /* SurveyLogicPanel.module.css will style the panel itself (background, padding, border-radius, etc.) */
+  /* You might not need many styles here if SurveyLogicPanel.module.css handles the visual appearance of the panel. */
+  /* However, you can add max-width or max-height constraints here if needed, specific to its modal context. */
+  /* For example, to ensure it doesn't get too wide if SurveyLogicPanel itself doesn't have a max-width. */
+  max-width: 90%; /* Example: constrain width if SurveyLogicPanel is too wide */
+  /* max-height: 90vh; /* Example: constrain height if SurveyLogicPanel is too tall */
+  /* overflow: auto; /* If SurveyLogicPanel itself doesn't handle its internal scrolling */
+  /* The SurveyLogicPanel's own CSS (.surveyLogicPanel) should define its width, background, padding, etc. */
+}
+
+/* ----- END: ADD THESE STYLES FOR MODAL ----- */
+
 /* ----- END OF COMPLETE MODIFIED FILE (v3.3) ----- */

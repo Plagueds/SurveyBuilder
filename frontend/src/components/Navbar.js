@@ -1,40 +1,38 @@
 // frontend/src/components/Navbar.js
+// ----- START OF COMPLETE MODIFIED FILE (v1.1 - Removed "Take Survey" link) -----
 import React from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import './Navbar.css'; // <--- MAKE SURE THIS LINE IS PRESENT AND CORRECT
+import './Navbar.css';
 
 
 function Navbar() {
     const { theme, toggleTheme } = useTheme();
     const { isAuthenticated, user, logout, isLoading } = useAuth();
-    const navigate = useNavigate(); 
+    const navigate = useNavigate();
 
-    // ADD THIS CONSOLE LOG
     console.log('[Navbar] Rendering. isLoading:', isLoading, 'isAuthenticated:', isAuthenticated, 'User:', user);
 
     const handleLogout = () => {
-        logout(); 
+        logout();
+        // Optionally navigate to login or home after logout
+        // navigate('/login'); 
     };
+
+    // Determine the root path based on authentication
+    // This ensures the brand link goes to an appropriate page
+    const rootPath = isAuthenticated ? "/admin" : "/login";
 
     return (
         <nav className="main-navbar">
-            <Link to="/" className="navbar-brand">
+            <Link to={rootPath} className="navbar-brand">
                 Survey App
             </Link>
 
             <ul className="navbar-links-list">
-                <li>
-                    <NavLink
-                        to="/"
-                        className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}
-                        end
-                    >
-                        Take Survey {/* This should always be visible based on current logic */}
-                    </NavLink>
-                </li>
-                {isAuthenticated && ( // Admin Dashboard link conditional
+                {/* "Take Survey" link removed */}
+                {isAuthenticated && (
                     <li>
                         <NavLink
                             to="/admin"
@@ -60,7 +58,6 @@ function Navbar() {
                     </>
                 ) : (
                     <>
-                        {/* These are the links we are interested in */}
                         <NavLink
                             to="/login"
                             className={({ isActive }) => isActive ? 'nav-link auth-link active' : 'nav-link auth-link'}
@@ -90,3 +87,4 @@ function Navbar() {
 }
 
 export default Navbar;
+// ----- END OF COMPLETE MODIFIED FILE (v1.1 - Removed "Take Survey" link) -----
