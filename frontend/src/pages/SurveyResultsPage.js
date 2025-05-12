@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyResultsPage.js
-// ----- START OF COMPLETE MODIFIED FILE (v2.7 - Corrected fetchData useCallback dependencies) -----
+// ----- START OF COMPLETE MODIFIED FILE (v2.8 - Corrected API URL construction) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Bar, Pie } from 'react-chartjs-2';
@@ -76,7 +76,9 @@ function SurveyResultsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [processedResults, setProcessedResults] = useState({});
-    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+    // apiUrl will be like 'https://yourdomain.com/api' or 'http://localhost:3001/api'
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
     const processAllAnswers = useCallback((surveyDefinition, allAnswers) => {
         console.log("[ResultsPage v2.7] Processing raw answers...", { numAnswers: allAnswers.length });
@@ -243,15 +245,15 @@ function SurveyResultsPage() {
 
     const fetchData = useCallback(async () => {
         setLoading(true);
-        setError(null); // Clear previous errors at the beginning of a fetch attempt
+        setError(null); 
         setSurvey(null);
         setRawAnswers([]);
         setProcessedResults({});
-        console.log(`SurveyResultsPage (v2.7): Fetching data for survey ID: ${surveyId}`);
+        console.log(`SurveyResultsPage (v2.8): Fetching data for survey ID: ${surveyId}`);
 
         if (!surveyId || !/^[a-f\d]{24}$/i.test(surveyId)) {
             console.error("Invalid surveyId format:", surveyId);
-            setError(`Invalid Survey ID format: "${surveyId}"`); // Set error
+            setError(`Invalid Survey ID format: "${surveyId}"`);
             setLoading(false);
             return;
         }
@@ -259,7 +261,7 @@ function SurveyResultsPage() {
         const token = localStorage.getItem('token');
         if (!token) {
             console.error("Authentication token not found in localStorage.");
-            setError("Authentication required. Please log in again."); // Set error
+            setError("Authentication required. Please log in again.");
             setLoading(false);
             return;
         }
@@ -271,8 +273,9 @@ function SurveyResultsPage() {
 
         try {
             // --- 1. Fetch Survey Definition ---
-            console.log(`Fetching survey definition from: ${apiUrl}/api/surveys/${surveyId}`);
-            const surveyResponse = await fetch(`${apiUrl}/api/surveys/${surveyId}`, { headers });
+            // apiUrl already includes /api, so we just append the resource path
+            console.log(`Fetching survey definition from: ${apiUrl}/surveys/${surveyId}`);
+            const surveyResponse = await fetch(`${apiUrl}/surveys/${surveyId}`, { headers });
             
             if (!surveyResponse.ok) {
                 const errorBody = await surveyResponse.text();
@@ -285,12 +288,11 @@ function SurveyResultsPage() {
                 } else if (surveyResponse.status === 404) {
                     errorMessage = "Survey definition not found.";
                 }
-                try { // Try to parse backend error message
+                try { 
                     const parsedError = JSON.parse(errorBody);
                     if (parsedError.message) errorMessage += ` Server: ${parsedError.message}`;
                 } catch (e) { /* Ignore if not JSON */ }
-                // setError(errorMessage); // Error will be set in the catch block
-                throw new Error(errorMessage); // Stop further execution in try block
+                throw new Error(errorMessage);
             }
 
             const surveyJsonResponse = await surveyResponse.json();
@@ -298,14 +300,14 @@ function SurveyResultsPage() {
             if (!surveyJsonResponse.success || !surveyJsonResponse.data || !surveyJsonResponse.data.questions) {
                 const msg = surveyJsonResponse.message || "Survey data from server is invalid or missing questions.";
                 console.error("Invalid survey data structure:", surveyJsonResponse);
-                // setError(msg); // Error will be set in the catch block
                 throw new Error(msg);
             }
             setSurvey(surveyJsonResponse.data);
 
             // --- 2. Fetch Survey Answers ---
-            console.log(`Fetching survey answers from: ${apiUrl}/api/answers/survey/${surveyId}`);
-            const answersResponse = await fetch(`${apiUrl}/api/answers/survey/${surveyId}`, { headers });
+            // apiUrl already includes /api, so we just append the resource path
+            console.log(`Fetching survey answers from: ${apiUrl}/answers/survey/${surveyId}`);
+            const answersResponse = await fetch(`${apiUrl}/answers/survey/${surveyId}`, { headers });
 
             if (!answersResponse.ok) {
                 const errorBody = await answersResponse.text();
@@ -320,7 +322,6 @@ function SurveyResultsPage() {
                     const parsedError = JSON.parse(errorBody);
                     if (parsedError.message) errorMessage += ` Server: ${parsedError.message}`;
                 } catch (e) { /* Ignore */ }
-                // setError(errorMessage); // Error will be set in the catch block
                 throw new Error(errorMessage);
             }
 
@@ -335,26 +336,24 @@ function SurveyResultsPage() {
             } else if (answersJsonResponse && answersJsonResponse.success === false) {
                 const msg = answersJsonResponse.message || "Fetching answers failed as indicated by server.";
                 console.error(msg, answersJsonResponse);
-                // setError(msg); // Error will be set in the catch block
                 throw new Error(msg);
             } else {
                 console.warn("Unexpected structure for answers data:", answersJsonResponse);
-                // setError("Received unexpected data format for survey answers."); // Error will be set in the catch block
                 throw new Error("Received unexpected data format for survey answers.");
             }
             setRawAnswers(actualAnswersArray);
 
         } catch (err) {
             console.error("Overall error in fetchData (SurveyResultsPage):", err);
-            setError(err.message || "An unexpected error occurred while loading results data."); // Set error ONCE in the catch block
+            setError(err.message || "An unexpected error occurred while loading results data.");
         } finally {
             setLoading(false);
         }
-    }, [surveyId, apiUrl]); // MODIFIED: Removed 'error' from dependency array
+    }, [surveyId, apiUrl]); 
 
     useEffect(() => {
         fetchData();
-    }, [fetchData]); // fetchData is memoized with useCallback
+    }, [fetchData]);
 
     useEffect(() => {
         if (survey && rawAnswers && !loading) {
@@ -516,12 +515,12 @@ function SurveyResultsPage() {
 
     // --- Main Return ---
     if (loading && !survey) { return <div style={styles.loadingErrorText}>Loading results...</div>; }
-    if (error) { return <div style={styles.loadingErrorText}>Error loading results: {error}</div>; } // Display the error state
+    if (error) { return <div style={styles.loadingErrorText}>Error loading results: {error}</div>; }
     if (!survey || !survey.questions) { return <div style={styles.loadingErrorText}>Survey definition could not be loaded or is invalid.</div>; }
 
     const overallTotalRespondents = processedResults.overallTotalRespondents || 0;
-    return ( <div style={styles.pageContainer}><Link to="/admin" style={styles.backLink}>&larr; Back to Admin</Link><div style={styles.header}><h1 style={styles.surveyTitle}>{survey.title}</h1><span style={styles.respondentCount}>Total Respondents: {overallTotalRespondents}</span>{surveyId && ( <a href={`${apiUrl}/api/surveys/${surveyId}/export`} style={styles.exportLink} target="_blank" rel="noopener noreferrer"> Export to CSV </a> )}</div>{!loading && overallTotalRespondents === 0 && Object.keys(processedResults).length > 1 && ( <p style={styles.noAnswerText}>No responses have been submitted for this survey yet.</p> )}{survey.questions.map((question, index) => ( <div key={question._id} style={styles.questionResultBox}><h3 style={styles.questionText}>{index + 1}. {question.text}</h3>{renderQuestionResults(question)}<p style={styles.infoText}>Responses for this question: {processedResults[question._id]?.stats?.totalResponses || 0}</p></div> ))}</div> );
+    return ( <div style={styles.pageContainer}><Link to="/admin" style={styles.backLink}>&larr; Back to Admin</Link><div style={styles.header}><h1 style={styles.surveyTitle}>{survey.title}</h1><span style={styles.respondentCount}>Total Respondents: {overallTotalRespondents}</span>{/* apiUrl already includes /api, so we just append the resource path for export */} {surveyId && ( <a href={`${apiUrl}/surveys/${surveyId}/export`} style={styles.exportLink} target="_blank" rel="noopener noreferrer"> Export to CSV </a> )}</div>{!loading && overallTotalRespondents === 0 && Object.keys(processedResults).length > 1 && ( <p style={styles.noAnswerText}>No responses have been submitted for this survey yet.</p> )}{survey.questions.map((question, index) => ( <div key={question._id} style={styles.questionResultBox}><h3 style={styles.questionText}>{index + 1}. {question.text}</h3>{renderQuestionResults(question)}<p style={styles.infoText}>Responses for this question: {processedResults[question._id]?.stats?.totalResponses || 0}</p></div> ))}</div> );
 }
 
 export default SurveyResultsPage;
-// ----- END OF COMPLETE MODIFIED FILE (v2.7 - Corrected fetchData useCallback dependencies) -----
+// ----- END OF COMPLETE MODIFIED FILE (v2.8 - Corrected API URL construction) -----
