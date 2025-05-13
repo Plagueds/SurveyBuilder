@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext11 - Implement Back Button Logic) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext12 - Integrated Full Logic Evaluator) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -7,6 +7,7 @@ import ReCAPTCHA from "react-google-recaptcha";
 import styles from './SurveyTakingPage.module.css';
 import surveyApiFunctions from '../api/surveyApi';
 
+// --- Question Component Imports ---
 import ShortTextQuestion from '../components/survey_question_renders/ShortTextQuestion';
 import TextAreaQuestion from '../components/survey_question_renders/TextAreaQuestion';
 import MultipleChoiceQuestion from '../components/survey_question_renders/MultipleChoiceQuestion';
@@ -22,6 +23,10 @@ import ConjointQuestion from '../components/survey_question_renders/ConjointQues
 import RankingQuestion from '../components/survey_question_renders/RankingQuestion';
 import CardSortQuestion from '../components/survey_question_renders/CardSortQuestion';
 
+// --- Import the new Logic Evaluator ---
+import { evaluateSurveyLogic } from '../utils/logicEvaluator'; // <<<--- NEW IMPORT
+
+// --- Helper Functions ---
 const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : []));
 const isAnswerEmpty = (value, questionType) => {
     if (value === null || value === undefined) return true;
@@ -43,13 +48,7 @@ const isAnswerEmpty = (value, questionType) => {
 };
 const shuffleArray = (array) => { const newArray = [...array]; for (let i = newArray.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [newArray[i], newArray[j]] = [newArray[j], newArray[i]]; } return newArray; };
 
-const evaluateRule = (rule, allAnswers, questionsById) => { 
-    if (rule && rule.conditionQuestionId && allAnswers[rule.conditionQuestionId] === rule.conditionValue) {
-        return { action: { type: rule.actionType, ...rule.actionDetails } };
-    }
-    return { action: null }; 
-};
-
+// REMOVED old simple evaluateRule function. The new one is imported.
 
 function SurveyTakingPage() {
     const { surveyId, collectorId: routeCollectorIdentifier } = useParams(); 
@@ -84,7 +83,6 @@ function SurveyTakingPage() {
     const [recaptchaToken, setRecaptchaToken] = useState(null);
     const recaptchaRef = useRef(null);
 
-    // --- NEW: State for back button allowance ---
     const [allowBackButton, setAllowBackButton] = useState(true); 
 
     const NA_VALUE_INTERNAL = '__NA__';
@@ -114,7 +112,6 @@ function SurveyTakingPage() {
         setCurrentCollectorIdentifier(effectiveCollectorIdentifier);
     }, [location.state, routeCollectorIdentifier]);
 
-
     const fetchSurvey = useCallback(async (signal) => {
         setIsLoading(true); setError(null); setHiddenQuestionIds(new Set()); setIsDisqualified(false); setCurrentVisibleIndex(0); setVisitedPath([]); setRecaptchaToken(null);
         
@@ -133,6 +130,7 @@ function SurveyTakingPage() {
             
             if (!responsePayload || !responsePayload.success || !responsePayload.data) throw new Error(responsePayload?.message || "Failed to retrieve survey data.");
             const surveyData = responsePayload.data;
+            console.log("[SurveyTakingPage] Fetched Survey Data:", JSON.stringify(surveyData, null, 2)); // <<< DEBUG LOG
             if (!surveyData || !Array.isArray(surveyData.questions)) throw new Error("Survey data is malformed (missing or invalid 'questions' field).");
             
             const fetchedCollectorSettings = surveyData.collectorSettings || {};
@@ -141,11 +139,10 @@ function SurveyTakingPage() {
             setCollectorSettings(fetchedCollectorSettings);
             setActualCollectorObjectId(fetchedActualCollectorObjectId);
 
-            // --- MODIFIED: Set allowBackButton state from fetched settings ---
             if (typeof fetchedCollectorSettings.allowBackButton === 'boolean') {
                 setAllowBackButton(fetchedCollectorSettings.allowBackButton);
             } else {
-                setAllowBackButton(true); // Default if not specified
+                setAllowBackButton(true); 
             }
 
             const storageKeyCollectorId = fetchedActualCollectorObjectId || currentCollectorIdentifier;
@@ -228,13 +225,31 @@ function SurveyTakingPage() {
         }
     }, [fetchSurvey, currentCollectorIdentifier, routeCollectorIdentifier, location.state]);
 
-
     useEffect(() => { if (isLoading || !originalQuestions || originalQuestions.length === 0) { if(visibleQuestionIndices.length > 0) setVisibleQuestionIndices([]); return; } const newVisibleOriginalIndices = questionsInCurrentOrder.map(question => question ? questionIdToOriginalIndexMap[question._id] : undefined).filter(originalIndex => { if (originalIndex === undefined) return false; const question = originalQuestions[originalIndex]; return question && !hiddenQuestionIds.has(question._id); }); setVisibleQuestionIndices(prevIndices => { if (JSON.stringify(prevIndices) !== JSON.stringify(newVisibleOriginalIndices)) { return newVisibleOriginalIndices; } return prevIndices; }); }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices.length]);
-    useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0 && !allowBackButton) setVisitedPath([]); return; } const currentPointsToValidQuestion = currentVisibleIndex < visibleQuestionIndices.length; if (!currentPointsToValidQuestion && currentVisibleIndex !== visibleQuestionIndices.length) { if(allowBackButton) { for (let i = visitedPath.length - 1; i >= 0; i--) { const pathOriginalIndex = visitedPath[i]; const pathVisibleIndex = visibleQuestionIndices.indexOf(pathOriginalIndex); if (pathVisibleIndex !== -1) { setCurrentVisibleIndex(pathVisibleIndex); return; } } } setCurrentVisibleIndex(0); } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, visitedPath, allowBackButton]); // Added allowBackButton
+    useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0 && !allowBackButton) setVisitedPath([]); return; } const currentPointsToValidQuestion = currentVisibleIndex < visibleQuestionIndices.length; if (!currentPointsToValidQuestion && currentVisibleIndex !== visibleQuestionIndices.length) { if(allowBackButton) { for (let i = visitedPath.length - 1; i >= 0; i--) { const pathOriginalIndex = visitedPath[i]; const pathVisibleIndex = visibleQuestionIndices.indexOf(pathOriginalIndex); if (pathVisibleIndex !== -1) { setCurrentVisibleIndex(pathVisibleIndex); return; } } } setCurrentVisibleIndex(0); } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, visitedPath, allowBackButton]);
     
     const evaluateDisabled = useCallback((questionOriginalIndex) => originalQuestions[questionOriginalIndex]?.isDisabled === true, [originalQuestions]);
-    const evaluateActionLogic = useCallback((questionOriginalIndex) => { const question = originalQuestions[questionOriginalIndex]; if (!question || !question.skipLogic || !Array.isArray(question.skipLogic.rules) || question.skipLogic.rules.length === 0) return null; const result = evaluateRule(question.skipLogic, currentAnswers, questionsById); return result?.action || null; }, [originalQuestions, currentAnswers, questionsById]);
-    const evaluateGlobalLogic = useCallback(() => { if (!survey || !survey.globalSkipLogic || survey.globalSkipLogic.length === 0) return null; for (const rule of survey.globalSkipLogic) { const result = evaluateRule(rule, currentAnswers, questionsById); if (result?.action) return result.action; } return null; }, [survey, currentAnswers, questionsById]);
+    
+    // --- MODIFIED: Use the new comprehensive logic evaluator ---
+    const evaluateGlobalLogic = useCallback(() => {
+        if (!survey || !survey.globalSkipLogic || survey.globalSkipLogic.length === 0) {
+            return null;
+        }
+        // currentAnswers is an object { questionId: value }
+        // originalQuestions is an array of question objects
+        return evaluateSurveyLogic(survey.globalSkipLogic, currentAnswers, originalQuestions);
+    }, [survey, currentAnswers, originalQuestions]);
+
+    // --- MODIFIED: For question-level logic (if you use the same complex structure) ---
+    const evaluateActionLogic = useCallback((questionOriginalIndex) => {
+        const question = originalQuestions[questionOriginalIndex];
+        // Assuming question.skipLogic.rules is an array of the same complex rule objects
+        // as survey.globalSkipLogic. Adjust if question-level logic has a different structure.
+        if (!question || !question.skipLogic || !Array.isArray(question.skipLogic.rules) || question.skipLogic.rules.length === 0) {
+            return null;
+        }
+        return evaluateSurveyLogic(question.skipLogic.rules, currentAnswers, originalQuestions);
+    }, [originalQuestions, currentAnswers]);
 
     const handleInputChange = useCallback((questionId, value) => { setCurrentAnswers(prev => ({ ...prev, [questionId]: value })); const question = questionsById[questionId]; if (question && question.addOtherOption && value !== OTHER_VALUE_INTERNAL) { setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); } }, [questionsById, OTHER_VALUE_INTERNAL]);
     const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { setCurrentAnswers(prevAnswers => { const currentVal = ensureArray(prevAnswers[questionId]); let newVal; if (isChecked) { newVal = [...currentVal, optionValue]; if (optionValue === NA_VALUE_INTERNAL) newVal = [NA_VALUE_INTERNAL]; else if (newVal.includes(NA_VALUE_INTERNAL)) newVal = newVal.filter(v => v !== NA_VALUE_INTERNAL); } else { newVal = currentVal.filter(v => v !== optionValue); } return { ...prevAnswers, [questionId]: newVal }; }); const question = questionsById[questionId]; if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) { setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); } }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
@@ -270,64 +285,110 @@ function SurveyTakingPage() {
 
     const handleNext = useCallback(() => { 
         if (isDisqualified || isLoading) return;  
+        
         const currentOriginalIndex = visibleQuestionIndices[currentVisibleIndex]; 
         const question = originalQuestions[currentOriginalIndex]; 
+        
+        if (!question) { // Should not happen if currentVisibleIndex is valid
+            console.error("[SurveyTakingPage] handleNext: Current question is undefined.");
+            setCurrentVisibleIndex(prev => prev + 1); // Attempt to recover
+            return;
+        }
+
         const isDisabledBySetting = evaluateDisabled(currentOriginalIndex); 
         const isQuestionValid = validateQuestion(question, currentAnswers[question._id], false, isDisabledBySetting); 
+        
         if (!isQuestionValid) { 
-            if (question && question.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[question._id], question.type)) { 
+            if (question.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[question._id], question.type)) { 
                 toast.error(`Please answer the current question: "${question.text}"`); 
             } 
             return;  
         } 
-        // --- MODIFIED: Only add to visitedPath if back button is allowed ---
+        
         if (allowBackButton) {
             setVisitedPath(prev => [...prev, currentOriginalIndex]); 
         }
+
+        // --- Evaluate Global Logic First ---
         const globalAction = evaluateGlobalLogic(); 
         if (globalAction) { 
+            console.log("[SurveyTakingPage] Global Logic Action Triggered:", JSON.stringify(globalAction, null, 2));
             if (globalAction.type === 'disqualifyRespondent') { 
                 setIsDisqualified(true); 
-                setDisqualificationMessage(globalAction.disqualificationMessage || "Disqualified by global logic."); 
+                setDisqualificationMessage(globalAction.disqualificationMessage || "You do not meet the criteria for this survey."); 
                 return; 
             } 
+            if (globalAction.type === 'skipToQuestion') {
+                const targetQOriginalIndex = questionIdToOriginalIndexMap[globalAction.targetQuestionId];
+                if (targetQOriginalIndex !== undefined) {
+                    const targetVisibleIndex = visibleQuestionIndices.indexOf(targetQOriginalIndex);
+                    if (targetVisibleIndex !== -1) {
+                        setCurrentVisibleIndex(targetVisibleIndex);
+                    } else {
+                        toast.warn("Global logic: Jump target question is not currently visible or does not exist. Proceeding sequentially.");
+                        // Fallback: proceed to next sequential question or end
+                        if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length);
+                    }
+                } else {
+                     toast.error("Global logic: Target question ID for skip not found in survey. Proceeding sequentially.");
+                     if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length);
+                }
+                return;
+            }
+            if (globalAction.type === 'markAsCompleted') {
+                 setCurrentVisibleIndex(visibleQuestionIndices.length); // Go to submit state
+                 return;
+            }
         } 
+        
+        // --- If no global action, evaluate Local (Question-Specific) Logic ---
         const localAction = evaluateActionLogic(currentOriginalIndex); 
         if (localAction) { 
-            if (localAction.type === 'jumpToQuestion') { 
+            console.log("[SurveyTakingPage] Local Logic Action Triggered for Q" + currentOriginalIndex + ":", JSON.stringify(localAction, null, 2));
+            if (localAction.type === 'jumpToQuestion' || localAction.type === 'skipToQuestion') { // Handle both common names
                 const targetQOriginalIndex = questionIdToOriginalIndexMap[localAction.targetQuestionId]; 
-                const targetVisibleIndex = visibleQuestionIndices.indexOf(targetQOriginalIndex); 
-                if (targetVisibleIndex !== -1) setCurrentVisibleIndex(targetVisibleIndex); 
-                else toast.warn("Jump target question is not visible."); 
+                if (targetQOriginalIndex !== undefined) {
+                    const targetVisibleIndex = visibleQuestionIndices.indexOf(targetQOriginalIndex); 
+                    if (targetVisibleIndex !== -1) {
+                        setCurrentVisibleIndex(targetVisibleIndex); 
+                    } else {
+                        toast.warn("Local logic: Jump target question is not currently visible or does not exist. Proceeding sequentially."); 
+                        if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length);
+                    }
+                } else {
+                    toast.error("Local logic: Target question ID for skip not found in survey. Proceeding sequentially.");
+                    if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length);
+                }
                 return; 
             } else if (localAction.type === 'disqualifyRespondent') { 
                 setIsDisqualified(true); 
-                setDisqualificationMessage(localAction.disqualificationMessage || "Disqualified by question logic."); 
+                setDisqualificationMessage(localAction.disqualificationMessage || "You do not meet the criteria based on your answer."); 
                 return; 
-            } else if (localAction.type === 'endSurvey') { 
-                setCurrentVisibleIndex(visibleQuestionIndices.length); 
+            } else if (localAction.type === 'endSurvey' || localAction.type === 'markAsCompleted') { 
+                setCurrentVisibleIndex(visibleQuestionIndices.length); // Go to submit state
                 return; 
             } 
         } 
+        
+        // --- Default: Proceed to next question if no logic action taken ---
         if (currentVisibleIndex < visibleQuestionIndices.length - 1) { 
             setCurrentVisibleIndex(prev => prev + 1); 
         } else { 
-            setCurrentVisibleIndex(visibleQuestionIndices.length); 
+            setCurrentVisibleIndex(visibleQuestionIndices.length); // End of questions, go to submit state
         } 
-    }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, visitedPath, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap, setIsDisqualified, setDisqualificationMessage, allowBackButton]); // Added allowBackButton
+    }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap, setIsDisqualified, setDisqualificationMessage]);
 
     const handlePrevious = useCallback(() => { 
-        // --- MODIFIED: Check allowBackButton flag ---
         if (!allowBackButton || isDisqualified || isLoading || visitedPath.length === 0) return; 
         const lastVisitedOriginalIndex = visitedPath[visitedPath.length - 1]; 
         const lastVisitedVisibleIndex = visibleQuestionIndices.indexOf(lastVisitedOriginalIndex); 
         if (lastVisitedVisibleIndex !== -1) { 
             setCurrentVisibleIndex(lastVisitedVisibleIndex); 
             setVisitedPath(prev => prev.slice(0, -1)); 
-        } else if (currentVisibleIndex > 0) { // Fallback if last visited is not in current visible (e.g. due to logic changes)
+        } else if (currentVisibleIndex > 0) { 
             setCurrentVisibleIndex(prev => prev - 1); 
         } 
-    }, [isDisqualified, isLoading, visitedPath, currentVisibleIndex, visibleQuestionIndices, allowBackButton]); // Added allowBackButton
+    }, [isDisqualified, isLoading, visitedPath, currentVisibleIndex, visibleQuestionIndices, allowBackButton]); 
     
     const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
@@ -438,7 +499,6 @@ function SurveyTakingPage() {
                 </div> 
             )} 
             <div className={styles.surveyNavigationArea}> 
-                {/* --- MODIFIED: Conditionally render or disable Previous button --- */}
                 {allowBackButton && (
                     <button 
                         onClick={handlePrevious} 
@@ -448,7 +508,7 @@ function SurveyTakingPage() {
                         Previous 
                     </button> 
                 )}
-                {!allowBackButton && <div style={{width: '100px'}}></div> /* Placeholder to maintain layout if button hidden */}
+                {!allowBackButton && <div style={{width: '100px'}}></div>}
 
                 {finalIsSubmitState || (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified && !isLoading) ? ( 
                     <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} > 
@@ -468,4 +528,4 @@ function SurveyTakingPage() {
     );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext11 - Implement Back Button Logic) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext12 - Integrated Full Logic Evaluator) -----
