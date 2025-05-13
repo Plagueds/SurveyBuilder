@@ -1,5 +1,5 @@
 // frontend/src/components/QuestionEditPanel.js
-// ----- START OF COMPLETE UPDATED FILE (v11.3 - Added Conjoint CBC Fields) -----
+// ----- START OF COMPLETE UPDATED FILE (v11.5 - Enhanced Conjoint Save Logging) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import styles from './QuestionEditPanel.module.css';
 
@@ -25,7 +25,7 @@ function QuestionEditPanel({
     allQuestions = [],
     questionIndex = -1
 }) {
-    console.log("[QEP v11.3] Rendering. Mode:", mode, "Q Index:", questionIndex);
+    // console.log("[QEP v11.5] Rendering. Mode:", mode, "Q Index:", questionIndex);
     const [activeTab, setActiveTab] = useState('content');
 
     const getInitialState = useCallback(() => {
@@ -40,6 +40,15 @@ function QuestionEditPanel({
         const initialMinRequired = (questionData?.minAnswersRequired === null || questionData?.minAnswersRequired === undefined) ? '' : String(questionData.minAnswersRequired);
         const initialMaxLimit = (questionData?.limitAnswersMax === null || questionData?.limitAnswersMax === undefined) ? '' : String(questionData.limitAnswersMax);
         const initialEnforceMax = !!(questionData?.limitAnswers === true && initialMaxLimit !== '' && !isNaN(Number(initialMaxLimit)) && Number(initialMaxLimit) > 0 );
+
+        let initialConjointNumTasks = questionData?.conjointNumTasks;
+        if (typeof initialConjointNumTasks !== 'number' || initialConjointNumTasks < 1) {
+            initialConjointNumTasks = 5; 
+        }
+        let initialConjointProfilesPerTask = questionData?.conjointProfilesPerTask;
+        if (typeof initialConjointProfilesPerTask !== 'number' || initialConjointProfilesPerTask < 2) {
+            initialConjointProfilesPerTask = 3; 
+        }
 
         return {
             _id: questionData?._id || null,
@@ -63,11 +72,9 @@ function QuestionEditPanel({
             heatmapMaxClicks: questionData?.heatmapMaxClicks ?? '',
             maxDiffItemsPerSet: questionData?.maxDiffItemsPerSet || 4,
             conjointAttributes: ensureArray(questionData?.conjointAttributes).map(attr => ({ name: attr?.name || '', levels: ensureArray(attr?.levels) })),
-            conjointProfilesPerTask: questionData?.conjointProfilesPerTask || 3,
-            // +++ INITIAL STATE FOR NEW CONJOINT FIELDS +++
-            conjointNumTasks: questionData?.conjointNumTasks || 5,
+            conjointProfilesPerTask: initialConjointProfilesPerTask,
+            conjointNumTasks: initialConjointNumTasks,
             conjointIncludeNoneOption: questionData?.conjointIncludeNoneOption === undefined ? true : questionData.conjointIncludeNoneOption,
-            // +++ END INITIAL STATE FOR NEW CONJOINT FIELDS +++
             cardSortCategories: ensureArray(questionData?.cardSortCategories),
             cardSortAllowUserCategories: questionData?.cardSortAllowUserCategories ?? true,
             hideByDefault: questionData?.hideByDefault || false,
@@ -108,12 +115,11 @@ function QuestionEditPanel({
         const isCheckbox = type === 'checkbox';
         let val;
 
-        if (name === 'isDisabled' || name === 'conjointIncludeNoneOption') { // Handle radio button for boolean or checkbox for conjointIncludeNoneOption
+        if (name === 'isDisabled' || name === 'conjointIncludeNoneOption') { 
             val = name === 'conjointIncludeNoneOption' ? checked : (value === 'true');
         } else {
             val = isCheckbox ? checked : value;
         }
-
 
         if (name === 'type') {
             const newType = value;
@@ -128,8 +134,8 @@ function QuestionEditPanel({
                 if (!isCardSort && wasCardSort) { newState.cardSortCategories = []; newState.cardSortAllowUserCategories = true; }
                 if (newType !== 'matrix' && prevState.type === 'matrix') { newState.matrixRows = ['']; newState.matrixColumns = ['']; }
                 else if (newType === 'matrix' && prevState.type !== 'matrix') { newState.matrixRows = ['']; newState.matrixColumns = ['']; }
-                if (newType !== 'conjoint' && prevState.type === 'conjoint') { newState.conjointAttributes = []; newState.conjointProfilesPerTask = 3; newState.conjointNumTasks = 5; newState.conjointIncludeNoneOption = true; } // Reset conjoint fields
-                else if (newType === 'conjoint' && prevState.type !== 'conjoint') { newState.conjointAttributes = []; newState.conjointProfilesPerTask = 3; newState.conjointNumTasks = 5; newState.conjointIncludeNoneOption = true; } // Initialize conjoint fields
+                if (newType !== 'conjoint' && prevState.type === 'conjoint') { newState.conjointAttributes = []; newState.conjointProfilesPerTask = 3; newState.conjointNumTasks = 5; newState.conjointIncludeNoneOption = true; } 
+                else if (newType === 'conjoint' && prevState.type !== 'conjoint') { newState.conjointAttributes = []; newState.conjointProfilesPerTask = 3; newState.conjointNumTasks = 5; newState.conjointIncludeNoneOption = true; } 
                 if (!SPECIAL_OPTION_TYPES_WITH_NA_OTHER.includes(newType)) { newState.addOtherOption = false; newState.requireOtherIfSelected = false; newState.addNAOption = false; }
                 if (!HIDE_AFTER_ANSWERING_TYPES.includes(newType)) { newState.hideAfterAnswering = false; }
                 if (!TEXT_INPUT_TYPES.includes(newType)) { newState.answerFormatCapitalization = false; newState.textValidation = 'none'; }
@@ -162,14 +168,14 @@ function QuestionEditPanel({
         if (name === 'textValidation') { setErrors(prev => ({ ...prev, textValidation: null })); }
         if (['sliderMin', 'sliderMax', 'sliderStep'].includes(name)) setErrors(prev => ({ ...prev, slider: null }));
         if (name === 'imageUrl') setErrors(prev => ({ ...prev, imageUrl: null }));
-        if (name === 'conjointAttributes' || name === 'conjointNumTasks' || name === 'conjointProfilesPerTask') setErrors(prev => ({ ...prev, conjoint: null })); // Group conjoint errors
+        if (name === 'conjointAttributes' || name === 'conjointNumTasks' || name === 'conjointProfilesPerTask') setErrors(prev => ({ ...prev, conjoint: null }));
         if (name === 'rows') setErrors(prev => ({ ...prev, rows: null }));
     };
 
     const handleNumberChange = (e) => {
         const { name, value } = e.target;
         setQuestionState(prevState => {
-            let updatedState = { ...prevState, [name]: value };
+            let updatedState = { ...prevState, [name]: value }; // value is string here
             if (name === 'limitAnswersMax') { const maxNum = Number(value); if (value === '' || isNaN(maxNum) || maxNum < 1) { updatedState.limitAnswers = false; } }
             return updatedState;
         });
@@ -209,9 +215,11 @@ function QuestionEditPanel({
         else if (currentType === 'conjoint') {
             const validAttributes = ensureArray(stateToValidate.conjointAttributes).filter(attr => attr.name?.trim() && ensureArray(attr.levels).filter(l => l?.trim()).length >= 2);
             if (validAttributes.length < 1) newErrors.conjoint = 'At least one valid attribute (name + >= 2 levels) is required.';
-            const profilesPerTask = Number(stateToValidate.conjointProfilesPerTask);
+            
+            const profilesPerTask = Number(stateToValidate.conjointProfilesPerTask); 
             if (isNaN(profilesPerTask) || profilesPerTask < 2) newErrors.conjoint = (newErrors.conjoint ? newErrors.conjoint + ' ' : '') + 'Profiles per task must be at least 2.';
-            const numTasks = Number(stateToValidate.conjointNumTasks);
+            
+            const numTasks = Number(stateToValidate.conjointNumTasks); 
             if (isNaN(numTasks) || numTasks < 1) newErrors.conjoint = (newErrors.conjoint ? newErrors.conjoint + ' ' : '') + 'Number of tasks must be at least 1.';
         }
         else if (currentType === 'textarea') { const rowsNum = Number(stateToValidate.rows); if (isNaN(rowsNum) || !Number.isInteger(rowsNum) || rowsNum < 1) newErrors.rows = 'Number of rows must be a positive whole number.'; }
@@ -220,15 +228,19 @@ function QuestionEditPanel({
         const previousQuestions = currentQActualIndex > 0 ? safeAllQuestions.slice(0, currentQActualIndex) : []; const previousQuestionIdsSet = new Set(previousQuestions.map(q => q._id)); const validSourceIdsSet = new Set(previousQuestions.filter(q => PIPING_REPEAT_SOURCE_TYPES.includes(q.type)).map(q => q._id));
         if (stateToValidate.pipeOptionsFromQuestionId || stateToValidate.repeatForEachOptionFromQuestionId) { if (stateToValidate.pipeOptionsFromQuestionId && !previousQuestionIdsSet.has(stateToValidate.pipeOptionsFromQuestionId)) newErrors.pipeOptionsFromQuestionId = 'Piping source question invalid or after current.'; else if (stateToValidate.pipeOptionsFromQuestionId && !validSourceIdsSet.has(stateToValidate.pipeOptionsFromQuestionId)) newErrors.pipeOptionsFromQuestionId = 'Piping source question type incompatible.'; if (stateToValidate.repeatForEachOptionFromQuestionId && !previousQuestionIdsSet.has(stateToValidate.repeatForEachOptionFromQuestionId)) newErrors.repeatForEachOptionFromQuestionId = 'Repeating source question invalid or after current.'; else if (stateToValidate.repeatForEachOptionFromQuestionId && !validSourceIdsSet.has(stateToValidate.repeatForEachOptionFromQuestionId)) newErrors.repeatForEachOptionFromQuestionId = 'Repeating source question type incompatible.'; }
         setErrors(newErrors); return Object.keys(newErrors).length === 0;
-    }, [allQuestions, questionState, mode]);
+    }, [allQuestions, mode]); // Removed questionState from dependency array as stateToValidate is passed directly
 
     const handleSave = (e) => {
         e.preventDefault();
         if (editingAttributeIndex !== null) { alert("Please save or cancel the current Conjoint attribute before saving the question."); return; }
+        
         let stateToSave = { ...questionState };
+        console.log("[QEP SAVE] Initial stateToSave.conjointNumTasks:", stateToSave.conjointNumTasks, "(type:", typeof stateToSave.conjointNumTasks + ")");
+
         const fieldsToFilter = ['options', 'matrixRows', 'matrixColumns', 'cardSortCategories'];
         fieldsToFilter.forEach(field => { if (stateToSave[field]) { stateToSave[field] = ensureArray(stateToSave[field]).filter(item => item?.trim() !== ''); } });
         if (stateToSave.conjointAttributes) { stateToSave.conjointAttributes = ensureArray(stateToSave.conjointAttributes).map(attr => ({ name: attr.name, levels: ensureArray(attr.levels).filter(l => l?.trim() !== '') })).filter(attr => attr.name?.trim() && attr.levels.length >= 2); }
+
         if (!HIDE_AFTER_ANSWERING_TYPES.includes(stateToSave.type)) stateToSave.hideAfterAnswering = false;
         if (!TEXT_INPUT_TYPES.includes(stateToSave.type)) { stateToSave.answerFormatCapitalization = false; stateToSave.textValidation = 'none'; }
         if (!PIPING_TARGET_TYPES.includes(stateToSave.type)) stateToSave.pipeOptionsFromQuestionId = null; else stateToSave.pipeOptionsFromQuestionId = stateToSave.pipeOptionsFromQuestionId || null;
@@ -237,45 +249,76 @@ function QuestionEditPanel({
         if (stateToSave.type !== CARD_SORT_TYPE) { delete stateToSave.cardSortCategories; delete stateToSave.cardSortAllowUserCategories; }
         if (!RANDOMIZATION_SUPPORTING_TYPES.includes(stateToSave.type)) stateToSave.randomizeOptions = false;
         if (stateToSave.type !== 'textarea') delete stateToSave.rows;
-        // +++ CONJOINT CBC FIELD CLEANUP +++
-        if (stateToSave.type !== 'conjoint') {
+        
+        if (stateToSave.type === 'conjoint') {
+            let numTasksRaw = stateToSave.conjointNumTasks;
+            let numTasksVal = Number(numTasksRaw);
+            console.log(`[QEP SAVE] Conjoint - numTasksRaw: "${numTasksRaw}", numTasksVal (after Number()): ${numTasksVal}`);
+            if (isNaN(numTasksVal) || numTasksVal < 1) {
+                console.log(`[QEP SAVE] Conjoint - numTasksVal is invalid (${numTasksVal}), defaulting to 5.`);
+                numTasksVal = 5; 
+            }
+            stateToSave.conjointNumTasks = numTasksVal;
+
+            let profilesRaw = stateToSave.conjointProfilesPerTask;
+            let profilesVal = Number(profilesRaw);
+            console.log(`[QEP SAVE] Conjoint - profilesRaw: "${profilesRaw}", profilesVal (after Number()): ${profilesVal}`);
+            if (isNaN(profilesVal) || profilesVal < 2) {
+                console.log(`[QEP SAVE] Conjoint - profilesVal is invalid (${profilesVal}), defaulting to 3.`);
+                profilesVal = 3; 
+            }
+            stateToSave.conjointProfilesPerTask = profilesVal;
+            console.log(`[QEP SAVE] Conjoint - Sanitized: conjointNumTasks=${stateToSave.conjointNumTasks}, conjointProfilesPerTask=${stateToSave.conjointProfilesPerTask}`);
+        } else { 
             delete stateToSave.conjointNumTasks;
+            delete stateToSave.conjointProfilesPerTask;
             delete stateToSave.conjointIncludeNoneOption;
-        } else { // Ensure they are numbers if type is conjoint
-            stateToSave.conjointNumTasks = Number(stateToSave.conjointNumTasks) || 5;
-            stateToSave.conjointProfilesPerTask = Number(stateToSave.conjointProfilesPerTask) || 3;
-            // conjointIncludeNoneOption is already boolean
+            delete stateToSave.conjointAttributes;
         }
 
-        if (stateToSave.type === 'checkbox') { const minInputString = String(stateToSave.minAnswersRequired).trim(); const maxInputString = String(stateToSave.limitAnswersMax).trim(); const enforceMaxIsCheckedInUI = stateToSave.limitAnswers === true; let minToSave = null; if (minInputString !== '' && !isNaN(Number(minInputString))) { const minNum = Number(minInputString); if (minNum >= 0 && Number.isInteger(minNum)) { minToSave = minNum; } } stateToSave.minAnswersRequired = minToSave; let maxToSave = null; let limitAnswersBooleanToSave = false; if (maxInputString !== '' && !isNaN(Number(maxInputString))) { const maxNum = Number(maxInputString); if (maxNum >= 1 && Number.isInteger(maxNum)) { if (enforceMaxIsCheckedInUI) { maxToSave = maxNum; limitAnswersBooleanToSave = true; } } } stateToSave.limitAnswersMax = maxToSave; stateToSave.limitAnswers = limitAnswersBooleanToSave; }
-        else { stateToSave.limitAnswers = false; stateToSave.limitAnswersMax = null; stateToSave.minAnswersRequired = null; }
-        console.log("[QEP v11.3 handleSave] State prepared for validation:", JSON.stringify(stateToSave, null, 2));
-        if (validate(stateToSave)) {
-            console.log("[QEP v11.3 handleSave] Validation passed. Preparing payload.");
+        if (stateToSave.type === 'checkbox') { 
+            const minInputString = String(stateToSave.minAnswersRequired).trim(); 
+            const maxInputString = String(stateToSave.limitAnswersMax).trim(); 
+            const enforceMaxIsCheckedInUI = stateToSave.limitAnswers === true; 
+            let minToSave = null; 
+            if (minInputString !== '' && !isNaN(Number(minInputString))) { const minNum = Number(minInputString); if (minNum >= 0 && Number.isInteger(minNum)) { minToSave = minNum; } } 
+            stateToSave.minAnswersRequired = minToSave; 
+            let maxToSave = null; 
+            let limitAnswersBooleanToSave = false; 
+            if (maxInputString !== '' && !isNaN(Number(maxInputString))) { const maxNum = Number(maxInputString); if (maxNum >= 1 && Number.isInteger(maxNum)) { if (enforceMaxIsCheckedInUI) { maxToSave = maxNum; limitAnswersBooleanToSave = true; } } } 
+            stateToSave.limitAnswersMax = maxToSave; 
+            stateToSave.limitAnswers = limitAnswersBooleanToSave; 
+        } else { 
+            stateToSave.limitAnswers = false; 
+            stateToSave.limitAnswersMax = null; 
+            stateToSave.minAnswersRequired = null; 
+        }
+        
+        console.log("[QEP SAVE] State prepared for validation. conjointNumTasks:", stateToSave.conjointNumTasks);
+        if (validate(stateToSave)) { 
+            console.log("[QEP SAVE] Validation passed. Final conjointNumTasks before sending:", stateToSave.conjointNumTasks);
             let payload = { ...stateToSave };
-            if (mode === 'edit') delete payload.survey;
+            if (mode === 'edit') delete payload.survey; 
+
             if (payload.type === 'slider') { payload.sliderMin = Number(payload.sliderMin); payload.sliderMax = Number(payload.sliderMax); payload.sliderStep = Number(payload.sliderStep); }
             if (payload.type === 'maxdiff') payload.maxDiffItemsPerSet = Number(payload.maxDiffItemsPerSet);
-            if (payload.type === 'conjoint') {
-                 payload.conjointProfilesPerTask = Number(payload.conjointProfilesPerTask);
-                 payload.conjointNumTasks = Number(payload.conjointNumTasks); // Ensure number
-                 // payload.conjointIncludeNoneOption is already boolean
-            }
             if (payload.type === 'textarea') payload.rows = Number(payload.rows);
+            
             if (payload.minAnswersRequired === null) delete payload.minAnswersRequired;
             if (payload.limitAnswersMax === null) delete payload.limitAnswersMax;
-            if (payload.limitAnswers === false) delete payload.limitAnswers;
+            if (payload.limitAnswers === false) delete payload.limitAnswers; 
             if (payload.heatmapMaxClicks === null) delete payload.heatmapMaxClicks;
             if (payload.pipeOptionsFromQuestionId === null || payload.pipeOptionsFromQuestionId === '') delete payload.pipeOptionsFromQuestionId;
             if (payload.repeatForEachOptionFromQuestionId === null || payload.repeatForEachOptionFromQuestionId === '') delete payload.repeatForEachOptionFromQuestionId;
-            console.log("[QEP v11.3 handleSave] Final payload for onSave:", JSON.stringify(payload, null, 2));
+            
+            console.log("[QEP SAVE] Final payload for onSave:", JSON.stringify(payload, null, 2));
             onSave(payload);
         } else {
-            console.log("[QEP v11.3 handleSave] Validation failed. Current errors:", errors);
+            console.log("[QEP SAVE] Validation failed. Current errors:", JSON.stringify(errors, null, 2));
             const currentErrors = errors; const firstErrorKey = Object.keys(currentErrors)[0];
-            const errorKeyToFocus = currentErrors.answerRequirements ? 'minAnswersRequired' : (currentErrors.conjoint ? 'conjointProfilesPerTask' : firstErrorKey); // Prioritize conjoint if that group has error
+            const errorKeyToFocus = currentErrors.answerRequirements ? 'minAnswersRequired' : (currentErrors.conjoint ? 'conjointNumTasks' : firstErrorKey); 
             if (errorKeyToFocus) { let firstInvalidElement = document.querySelector(`[name="${errorKeyToFocus}"], #${errorKeyToFocus}, .${styles.isInvalid}`); if (errorKeyToFocus === 'options' || errorKeyToFocus === 'cardsToSort') firstInvalidElement = document.querySelector(`.${styles.dynamicListContainer} input[name^="options"], .${styles.dynamicListContainer} input[name^="cardsToSort"]`); if (errorKeyToFocus === 'matrixRows') firstInvalidElement = document.querySelector(`.${styles.dynamicListContainer} input[name^="matrixRows"]`); if (errorKeyToFocus === 'matrixColumns') firstInvalidElement = document.querySelector(`.${styles.dynamicListContainer} input[name^="matrixColumns"]`); if (firstInvalidElement && typeof firstInvalidElement.focus === 'function') { firstInvalidElement.focus({ preventScroll: true }); if (typeof firstInvalidElement.scrollIntoView === 'function') { firstInvalidElement.scrollIntoView({ behavior: 'smooth', block: 'center' }); } } }
-            const contentErrors = ['text', 'options', 'matrixRows', 'matrixColumns', 'slider', 'imageUrl', 'maxDiffItemsPerSet', 'conjointAttributes', 'cardsToSort', 'cardSortCategories', 'rows', 'conjoint']; // Added conjoint to content errors
+            const contentErrors = ['text', 'options', 'matrixRows', 'matrixColumns', 'slider', 'imageUrl', 'maxDiffItemsPerSet', 'conjointAttributes', 'cardsToSort', 'cardSortCategories', 'rows', 'conjoint']; 
             const logicErrors = ['hideByDefault', 'showOnlyToAdmin', 'isDisabled', 'randomizationAlwaysInclude', 'randomizationPinPosition', 'hideAfterAnswering', 'randomizeOptions']; const pipingErrors = ['pipeOptionsFromQuestionId', 'repeatForEachOptionFromQuestionId']; const validationErrors = ['requiredSetting', 'answerRequirements', 'textValidation', 'answerFormatCapitalization', 'limitAnswers', 'limitAnswersMax', 'minAnswersRequired'];
             if (logicErrors.some(key => currentErrors[key])) setActiveTab('logic'); else if (pipingErrors.some(key => currentErrors[key])) setActiveTab('piping'); else if (validationErrors.some(key => currentErrors[key])) setActiveTab('validation'); else if (contentErrors.some(key => currentErrors[key])) setActiveTab('content'); else setActiveTab('content');
         }
@@ -315,7 +358,6 @@ function QuestionEditPanel({
                                     <label htmlFor="conjointProfilesPerTask" className={styles.formLabel}>Profiles per Task:</label>
                                     <input type="number" id="conjointProfilesPerTask" name="conjointProfilesPerTask" value={questionState.conjointProfilesPerTask} onChange={handleNumberChange} className={`${styles.formControl} ${errors.conjoint ? styles.isInvalid : ''}`} min="2" step="1"/>
                                 </div>
-                                {/* +++ NEW CONJOINT CBC FIELDS +++ */}
                                 <div className={styles.formGroup}>
                                     <label htmlFor="conjointNumTasks" className={styles.formLabel}>Number of Tasks:</label>
                                     <input type="number" id="conjointNumTasks" name="conjointNumTasks" value={questionState.conjointNumTasks} onChange={handleNumberChange} className={`${styles.formControl} ${errors.conjoint ? styles.isInvalid : ''}`} min="1" step="1"/>
@@ -324,7 +366,6 @@ function QuestionEditPanel({
                                     <input className={styles.formCheckInput} type="checkbox" id="conjointIncludeNoneOption" name="conjointIncludeNoneOption" checked={!!questionState.conjointIncludeNoneOption} onChange={handleChange} />
                                     <label className={styles.formCheckLabel} htmlFor="conjointIncludeNoneOption"> Include "None of these" option in tasks </label>
                                 </div>
-                                {/* +++ END NEW CONJOINT CBC FIELDS +++ */}
                             </>
                         )}
                         {questionState.type === CARD_SORT_TYPE && ( <>{renderDynamicList('options', 'Card Items', 'Card', 'cardsToSort', 1, '+ Add Card Item')}{renderDynamicList('cardSortCategories', 'Predefined Categories (Optional)', 'Category', 'cardSortCategories', 0, '+ Add Category')}<div className={styles.formCheck}><input className={styles.formCheckInput} type="checkbox" id="cardSortAllowUserCategories" name="cardSortAllowUserCategories" checked={!!questionState.cardSortAllowUserCategories} onChange={handleChange} /><label className={styles.formCheckLabel} htmlFor="cardSortAllowUserCategories"> Allow user categories </label></div></> )}
@@ -341,4 +382,4 @@ function QuestionEditPanel({
 }
 
 export default QuestionEditPanel;
-// ----- END OF COMPLETE UPDATED FILE (v11.3 - Added Conjoint CBC Fields) -----
+// ----- END OF COMPLETE MODIFIED FILE (v11.5 - Enhanced Conjoint Save Logging) -----
