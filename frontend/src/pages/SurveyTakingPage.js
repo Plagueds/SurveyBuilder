@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext7 - Fix "Other" Validation Order & "undefined" string) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext8 - Handle Collector Settings for Multiple Responses) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -43,18 +43,23 @@ const isAnswerEmpty = (value, questionType) => {
 };
 const shuffleArray = (array) => { const newArray = [...array]; for (let i = newArray.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [newArray[i], newArray[j]] = [newArray[j], newArray[i]]; } return newArray; };
 
-// eslint-disable-next-line no-unused-vars
-const evaluateCondition = (condition, allAnswers, questionsById) => { console.warn("[SurveyTakingPage] evaluateCondition is a placeholder."); return true; };
-// eslint-disable-next-line no-unused-vars
-const evaluateGroup = (group, allAnswers, questionsById) => { console.warn("[SurveyTakingPage] evaluateGroup is a placeholder."); return true; };
-const evaluateRule = (rule, allAnswers, questionsById) => { console.warn("[SurveyTakingPage] evaluateRule is a placeholder."); return { action: null }; };
+// Placeholder for actual logic evaluation - replace with your real implementation
+const evaluateRule = (rule, allAnswers, questionsById) => { 
+    // console.warn("[SurveyTakingPage] evaluateRule is a placeholder.", {rule, allAnswers, questionsById}); 
+    // Basic example: if rule.conditionQuestionId exists and its answer matches rule.conditionValue, trigger action
+    if (rule && rule.conditionQuestionId && allAnswers[rule.conditionQuestionId] === rule.conditionValue) {
+        return { action: { type: rule.actionType, ...rule.actionDetails } };
+    }
+    return { action: null }; 
+};
+
 
 function SurveyTakingPage() {
     const { surveyId, collectorId: routeCollectorId } = useParams();
     const navigate = useNavigate();
-    const location = useLocation();
+    const location = useLocation(); // Used to potentially pass collector settings directly
 
-    const [survey, setSurvey] = useState(null);
+    const [survey, setSurvey] = useState(null); // Will also hold collectorSettings after fetch
     const [originalQuestions, setOriginalQuestions] = useState([]);
     const [currentAnswers, setCurrentAnswers] = useState({});
     const [isLoading, setIsLoading] = useState(true);
@@ -71,11 +76,15 @@ function SurveyTakingPage() {
     const [visitedPath, setVisitedPath] = useState([]);
     const [isDisqualified, setIsDisqualified] = useState(false);
     const [disqualificationMessage, setDisqualificationMessage] = useState('');
-    const [hasAlreadyResponded, setHasAlreadyResponded] = useState(false);
+    
+    // --- MODIFIED: State for collector settings and response status ---
     const [currentCollectorId, setCurrentCollectorId] = useState(null);
+    const [collectorSettings, setCollectorSettings] = useState(null); // Store fetched collector settings
+    const [hasAlreadyResponded, setHasAlreadyResponded] = useState(false);
+    // --- END MODIFICATION ---
 
-    const [recaptchaEnabled, setRecaptchaEnabled] = useState(false);
-    const [recaptchaSiteKey, setRecaptchaSiteKey] = useState('');
+    const [recaptchaEnabled, setRecaptchaEnabled] = useState(false); // Derived from collectorSettings
+    const [recaptchaSiteKey, setRecaptchaSiteKey] = useState(''); // Derived from collectorSettings or ENV
     const [recaptchaToken, setRecaptchaToken] = useState(null);
     const recaptchaRef = useRef(null);
 
@@ -101,44 +110,47 @@ function SurveyTakingPage() {
         return false;
     }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
 
+    // Effect to set initial collector ID from route or location state
     useEffect(() => {
-        const collectorSettings = location.state?.collectorSettings || {};
         const effectiveCollectorId = location.state?.collectorId || routeCollectorId;
         setCurrentCollectorId(effectiveCollectorId);
-        if (collectorSettings.allowMultipleResponses === false && effectiveCollectorId) {
-            if (localStorage.getItem(`survey_${effectiveCollectorId}_submitted`) === 'true') {
-                setHasAlreadyResponded(true); setIsLoading(false); return;
-            }
-        }
-        setHasAlreadyResponded(false);
-        setRecaptchaEnabled(Boolean(collectorSettings.enableRecaptcha));
-        if (collectorSettings.enableRecaptcha && collectorSettings.recaptchaSiteKey) {
-            setRecaptchaSiteKey(collectorSettings.recaptchaSiteKey);
-        } else {
-            const envSiteKey = process.env.REACT_APP_RECAPTCHA_SITE_KEY;
-            if (envSiteKey) {
-                setRecaptchaSiteKey(envSiteKey);
-                if (collectorSettings.enableRecaptcha === undefined && !collectorSettings.recaptchaSiteKey) setRecaptchaEnabled(true);
-            } else {
-                if (collectorSettings.enableRecaptcha) setRecaptchaEnabled(false);
-            }
-        }
     }, [location.state, routeCollectorId]);
 
+
     const fetchSurvey = useCallback(async (signal) => {
-        const collectorSettings = location.state?.collectorSettings || {};
-        if (collectorSettings.allowMultipleResponses === false && currentCollectorId && localStorage.getItem(`survey_${currentCollectorId}_submitted`) === 'true') {
-            setHasAlreadyResponded(true); setIsLoading(false); return;
-        }
         setIsLoading(true); setError(null); setHiddenQuestionIds(new Set()); setIsDisqualified(false); setCurrentVisibleIndex(0); setVisitedPath([]); setRecaptchaToken(null);
+        
         if (!surveyId) { setError("Survey ID is missing."); setIsLoading(false); return; }
+        if (!currentCollectorId) { setError("Collector ID is missing for survey taking."); setIsLoading(false); return; }
+
         try {
-            const options = { forTaking: 'true', signal };
-            if (currentCollectorId) { options.collectorId = currentCollectorId; }
+            const options = { forTaking: 'true', signal, collectorId: currentCollectorId };
             const responsePayload = await surveyApiFunctions.getSurveyById(surveyId, options);
+            
             if (!responsePayload || !responsePayload.success || !responsePayload.data) throw new Error(responsePayload?.message || "Failed to retrieve survey data.");
             const surveyData = responsePayload.data;
             if (!surveyData || !Array.isArray(surveyData.questions)) throw new Error("Survey data is malformed (missing or invalid 'questions' field).");
+            
+            // --- MODIFIED: Handle collector settings from fetched survey data ---
+            const fetchedCollectorSettings = surveyData.collectorSettings || {};
+            setCollectorSettings(fetchedCollectorSettings);
+
+            if (fetchedCollectorSettings.allowMultipleResponses === false) {
+                if (localStorage.getItem(`survey_${currentCollectorId}_submitted`) === 'true') {
+                    setHasAlreadyResponded(true); setIsLoading(false); return; // Stop further processing
+                }
+            }
+            setHasAlreadyResponded(false); // Ensure it's reset if not blocked
+
+            setRecaptchaEnabled(Boolean(fetchedCollectorSettings.enableRecaptcha));
+            if (fetchedCollectorSettings.enableRecaptcha) {
+                setRecaptchaSiteKey(fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY || '');
+                if (!fetchedCollectorSettings.recaptchaSiteKey && !process.env.REACT_APP_RECAPTCHA_SITE_KEY) {
+                    console.warn("reCAPTCHA enabled by collector but no site key found (collector or ENV).");
+                    setRecaptchaEnabled(false); // Disable if no key
+                }
+            }
+            // --- END MODIFICATION ---
             
             setSurvey(surveyData);
             const fetchedQuestions = surveyData.questions || [];
@@ -182,15 +194,23 @@ function SurveyTakingPage() {
             if (err.name === 'AbortError') { console.log('[SurveyTakingPage] Fetch survey aborted.'); }
             else { const errorMessage = err.response?.data?.message || err.message || "Could not load survey."; setError(errorMessage); toast.error(`Error: ${errorMessage}`); }
         } finally { setIsLoading(false); }
-    }, [surveyId, currentCollectorId, location.state]);
+    }, [surveyId, currentCollectorId]); // Removed location.state as dependency, using currentCollectorId
 
+    // Effect to fetch survey data when currentCollectorId is set
     useEffect(() => {
-        if (!hasAlreadyResponded && currentCollectorId !== null) {
+        if (currentCollectorId) { // Only fetch if collectorId is known
             const controller = new AbortController();
             fetchSurvey(controller.signal);
             return () => { controller.abort(); };
+        } else if (routeCollectorId === undefined && !location.state?.collectorId) {
+            // Handle case where collectorId might be missing entirely if not passed via route or state
+            // This might indicate a direct access attempt without a collector context
+            setIsLoading(false);
+            setError("Collector information is missing. Cannot load survey.");
+            console.error("Collector ID is undefined. Survey cannot be loaded.");
         }
-    }, [fetchSurvey, hasAlreadyResponded, currentCollectorId]);
+    }, [fetchSurvey, currentCollectorId, routeCollectorId, location.state]);
+
 
     useEffect(() => { if (isLoading || !originalQuestions || originalQuestions.length === 0) { if(visibleQuestionIndices.length > 0) setVisibleQuestionIndices([]); return; } const newVisibleOriginalIndices = questionsInCurrentOrder.map(question => question ? questionIdToOriginalIndexMap[question._id] : undefined).filter(originalIndex => { if (originalIndex === undefined) return false; const question = originalQuestions[originalIndex]; return question && !hiddenQuestionIds.has(question._id); }); setVisibleQuestionIndices(prevIndices => { if (JSON.stringify(prevIndices) !== JSON.stringify(newVisibleOriginalIndices)) { return newVisibleOriginalIndices; } return prevIndices; }); }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices.length]);
     useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0) setVisitedPath([]); return; } const currentPointsToValidQuestion = currentVisibleIndex < visibleQuestionIndices.length; if (!currentPointsToValidQuestion && currentVisibleIndex !== visibleQuestionIndices.length) { for (let i = visitedPath.length - 1; i >= 0; i--) { const pathOriginalIndex = visitedPath[i]; const pathVisibleIndex = visibleQuestionIndices.indexOf(pathOriginalIndex); if (pathVisibleIndex !== -1) { setCurrentVisibleIndex(pathVisibleIndex); return; } } setCurrentVisibleIndex(0); } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, visitedPath]);
@@ -231,81 +251,47 @@ function SurveyTakingPage() {
     }, []);
 
     const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabled = false) => {
-        console.log(`[VALIDATE_Q] Q_ID: ${question?._id}, Type: ${question?.type}, Required: ${question?.requiredSetting}`);
-        console.log(`[VALIDATE_Q]   Answer:`, JSON.stringify(answer));
-        console.log(`[VALIDATE_Q]   OtherInputValue (raw from state): "${otherInputValues[question?._id]}" (type: ${typeof otherInputValues[question?._id]})`);
-        console.log(`[VALIDATE_Q]   addOtherOption: ${question?.addOtherOption}, requireOtherIfSelected: ${question?.requireOtherIfSelected}`);
-
-        if (!question) { console.log("[VALIDATE_Q] No question object. VALID."); return true; }
-        if (isDisabled) { console.log("[VALIDATE_Q] Question is disabled. VALID."); return true; }
-
-        // *** MODIFICATION: "Other" text validation moved BEFORE general required check ***
+        if (!question) return true; 
+        if (isDisabled) return true; 
         if (question.addOtherOption && question.requireOtherIfSelected) {
             const isOtherSelectedForMC = (question.type === 'multiple-choice' || question.type === 'dropdown') && answer === OTHER_VALUE_INTERNAL;
             const isOtherSelectedForCheckbox = question.type === 'checkbox' && ensureArray(answer).includes(OTHER_VALUE_INTERNAL);
             const isOtherSelected = isOtherSelectedForMC || isOtherSelectedForCheckbox;
-
-            console.log(`[VALIDATE_Q]   'Other' Check: isOtherSelectedForMC=${isOtherSelectedForMC}, isOtherSelectedForCheckbox=${isOtherSelectedForCheckbox}, Final isOtherSelected=${isOtherSelected}`);
-            
             if (isOtherSelected) {
                 const otherTextValue = otherInputValues[question._id];
-                // Handle both primitive undefined and string "undefined" for otherTextValue
                 const isOtherTextEmpty = otherTextValue === undefined || otherTextValue === "undefined" || (typeof otherTextValue === 'string' && otherTextValue.trim() === '');
-                
-                console.log(`[VALIDATE_Q]   'Other' is selected. Raw otherTextValue: "${otherTextValue}", isOtherTextEmpty: ${isOtherTextEmpty}`);
                 if (isOtherTextEmpty) {
-                    console.log("[VALIDATE_Q] 'Other' selected, text required, but text is effectively empty. INVALID.");
                     toast.error(`Please provide text for the "Other" option in question: "${question.text}"`);
                     return false;
                 }
             }
         }
-
-        // General "required" check
-        if (question.requiredSetting === 'required' && isAnswerEmpty(answer, question.type)) {
-            console.log("[VALIDATE_Q] Required and answer is empty. INVALID.");
-            return false;
-        }
-        
-        // If not strictly required, and not an "Other" violation, it's valid from a requiredness perspective
-        if (question.requiredSetting !== 'required' && isAnswerEmpty(answer, question.type)) {
-             console.log("[VALIDATE_Q] Answer empty, but not strictly required (and no 'Other' violation). VALID for now.");
-             return true;
-        }
-        
-        // Checkbox specific min/max (if answer is not empty)
-        if (question.type === 'checkbox' && !isAnswerEmpty(answer, question.type)) { // Only apply if an answer is given
+        if (question.requiredSetting === 'required' && isAnswerEmpty(answer, question.type)) return false;
+        if (question.type === 'checkbox' && !isAnswerEmpty(answer, question.type)) {
             const naIsSelected = ensureArray(answer).includes(NA_VALUE_INTERNAL);
-            if (naIsSelected) { console.log("[VALIDATE_Q] Checkbox N/A selected. VALID."); return true; }
-
+            if (naIsSelected) return true; 
             const selectedOptions = ensureArray(answer).filter(val => val !== NA_VALUE_INTERNAL);
             const selectedCount = selectedOptions.length;
-            
             if (question.minAnswersRequired && selectedCount < question.minAnswersRequired) {
-                console.log(`[VALIDATE_Q] Checkbox: Min required ${question.minAnswersRequired}, selected ${selectedCount}. INVALID.`);
                 toast.error(`Please select at least ${question.minAnswersRequired} options for "${question.text}".`);
                 return false;
             }
             if (question.limitAnswers && question.limitAnswersMax && selectedCount > question.limitAnswersMax) {
-                console.log(`[VALIDATE_Q] Checkbox: Max allowed ${question.limitAnswersMax}, selected ${selectedCount}. INVALID.`);
                 toast.error(`Please select no more than ${question.limitAnswersMax} options for "${question.text}".`);
                 return false;
             }
         }
-        console.log("[VALIDATE_Q] All checks passed. VALID.");
         return true;
     }, [otherInputValues, OTHER_VALUE_INTERNAL, NA_VALUE_INTERNAL]);
 
     const renderQuestion = useCallback((questionToRenderArg) => {
         if (!questionToRenderArg) return <div className={styles.loading}>Loading question content...</div>;
         if (!questionToRenderArg.type) { console.error("[SurveyTakingPage] renderQuestion: Question object is MISSING 'type' property!", questionToRenderArg); return <div>Error: Question data is missing 'type'. Cannot render.</div>; }
-
         const question = questionToRenderArg;
         const value = currentAnswers[question._id];
-        const otherText = otherInputValues[question._id] || ''; // Ensure it defaults to '' if undefined
+        const otherText = otherInputValues[question._id] || '';
         const isDisabled = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
         const commonProps = { question, currentAnswer: value, onAnswerChange: handleInputChange, onCheckboxChange: handleCheckboxChange, otherValue: otherText, onOtherTextChange: handleOtherInputChange, disabled: isDisabled, optionsOrder: randomizedOptionOrders[question._id], isPreviewMode: false };
-        
         switch (question.type) {
             case 'text': return <ShortTextQuestion {...commonProps} />;
             case 'textarea': return <TextAreaQuestion {...commonProps} />;
@@ -326,38 +312,25 @@ function SurveyTakingPage() {
     }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled]);
 
     const handleNext = useCallback(() => {
-        console.log("[HANDLE_NEXT] Triggered.");
-        if (isDisqualified || isLoading) { console.log("[HANDLE_NEXT] Disqualified or Loading, returning."); return; }
-        
+        if (isDisqualified || isLoading) return; 
         const currentOriginalIndex = visibleQuestionIndices[currentVisibleIndex];
         const question = originalQuestions[currentOriginalIndex];
         const isDisabledBySetting = evaluateDisabled(currentOriginalIndex);
-
-        console.log(`[HANDLE_NEXT] Validating Q_ID: ${question?._id}, Text: "${question?.text?.substring(0,20)}..."`);
         const isQuestionValid = validateQuestion(question, currentAnswers[question._id], false, isDisabledBySetting);
-        
         if (!isQuestionValid) {
-            console.log(`[HANDLE_NEXT] Validation FAILED for Q_ID: ${question?._id}. Halting navigation.`);
-            // Specific toasts are handled inside validateQuestion.
-            // General "required" failure (if not caught by specific toasts) can be handled here.
             if (question && question.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[question._id], question.type)) {
                  toast.error(`Please answer the current question: "${question.text}"`);
             }
             return; 
         }
-        console.log(`[HANDLE_NEXT] Validation PASSED for Q_ID: ${question?._id}`);
-
         setVisitedPath(prev => [...prev, currentOriginalIndex]);
         const globalAction = evaluateGlobalLogic();
         if (globalAction) { if (globalAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(globalAction.disqualificationMessage || "Disqualified by global logic."); return; } }
         const localAction = evaluateActionLogic(currentOriginalIndex);
         if (localAction) { if (localAction.type === 'jumpToQuestion') { const targetQOriginalIndex = questionIdToOriginalIndexMap[localAction.targetQuestionId]; const targetVisibleIndex = visibleQuestionIndices.indexOf(targetQOriginalIndex); if (targetVisibleIndex !== -1) setCurrentVisibleIndex(targetVisibleIndex); else toast.warn("Jump target question is not visible."); return; } else if (localAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(localAction.disqualificationMessage || "Disqualified by question logic."); return; } else if (localAction.type === 'endSurvey') { setCurrentVisibleIndex(visibleQuestionIndices.length); return; } }
-        
         if (currentVisibleIndex < visibleQuestionIndices.length - 1) {
-            console.log("[HANDLE_NEXT] Moving to next question index.");
             setCurrentVisibleIndex(prev => prev + 1);
         } else {
-            console.log("[HANDLE_NEXT] Reached end of visible questions, moving to submit state.");
             setCurrentVisibleIndex(visibleQuestionIndices.length);
         }
     }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, visitedPath, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap, setIsDisqualified, setDisqualificationMessage]);
@@ -366,21 +339,16 @@ function SurveyTakingPage() {
     
     const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
-        console.log("[HANDLE_SUBMIT] Triggered.");
         setIsSubmitting(true); setError(null);
         if (!currentCollectorId) { toast.error("Collector ID missing."); setError("Collector ID missing."); setIsSubmitting(false); return; }
         if (recaptchaEnabled && !recaptchaToken && recaptchaSiteKey) { toast.error("Please complete reCAPTCHA."); setIsSubmitting(false); return; }
-        
         let firstInvalidVisibleIndex = -1;
-        console.log("[HANDLE_SUBMIT] Starting final validation loop.");
         for (let visIdx = 0; visIdx < visibleQuestionIndices.length; visIdx++) {
             const originalIdx = visibleQuestionIndices[visIdx];
             const q = originalQuestions[originalIdx];
             const isDisabled = evaluateDisabled(originalIdx);
-            console.log(`[HANDLE_SUBMIT] Validating Q_ID ${q?._id} at visible index ${visIdx}`);
             if (q && !validateQuestion(q, currentAnswers[q._id], false, isDisabled)) {
                 firstInvalidVisibleIndex = visIdx;
-                console.log(`[HANDLE_SUBMIT] Validation FAILED for Q_ID ${q._id} at visible index ${visIdx}. Halting submission.`);
                 break;
             }
         }
@@ -393,8 +361,6 @@ function SurveyTakingPage() {
             setIsSubmitting(false);
             return;
         }
-        console.log("[HANDLE_SUBMIT] All questions validated successfully for submission.");
-
         const answersToSubmit = Object.entries(currentAnswers)
             .filter(([questionId, ]) => { const question = questionsById[questionId]; return question && visibleQuestionIndices.includes(questionIdToOriginalIndexMap[question._id]); })
             .map(([questionId, answerValue]) => {
@@ -408,20 +374,21 @@ function SurveyTakingPage() {
                 }
                 return { questionId, questionType: question.type, answerValue, otherText: textForOther, questionText: question.text || question.title };
             });
-
         if (answersToSubmit.every(ans => isAnswerEmpty(ans.answerValue, ans.questionType) && !ans.otherText) && originalQuestions.length > 0 && visibleQuestionIndices.length > 0) {
             const anyRequiredVisibleAndUnanswered = visibleQuestionIndices.some(idx => { const q = originalQuestions[idx]; return q?.requiredSetting === 'required' && !evaluateDisabled(idx) && isAnswerEmpty(currentAnswers[q._id], q.type); });
             if (anyRequiredVisibleAndUnanswered) { toast.info("It seems some required questions were missed. Please review."); setIsSubmitting(false); return; }
         }
-
         const payload = { answers: answersToSubmit, sessionId, collectorId: currentCollectorId, recaptchaToken: recaptchaEnabled && recaptchaSiteKey ? recaptchaToken : undefined, startedAt: surveyStartedAt, };
-        console.log("[HANDLE_SUBMIT] Submitting payload:", JSON.stringify(payload, null, 2));
-
         try {
             const result = await surveyApiFunctions.submitSurveyAnswers(surveyId, payload);
             toast.success(result.message || "Survey submitted successfully!");
-            const collectorSettings = location.state?.collectorSettings || {};
-            if (collectorSettings.allowMultipleResponses === false && currentCollectorId) { localStorage.setItem(`survey_${currentCollectorId}_submitted`, 'true'); }
+            
+            // --- MODIFIED: Set localStorage item if multiple responses not allowed ---
+            if (collectorSettings && collectorSettings.allowMultipleResponses === false && currentCollectorId) {
+                localStorage.setItem(`survey_${currentCollectorId}_submitted`, 'true');
+            }
+            // --- END MODIFICATION ---
+
             if (result.action?.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(result.action.disqualificationMessage || "Disqualified."); }
             else { navigate(result.redirectUrl || '/thank-you', { state: { responseId: result.responseId } }); }
         } catch (errCatch) {
@@ -430,7 +397,7 @@ function SurveyTakingPage() {
             setError(errorMessage); toast.error(`Failed: ${errorMessage}`);
             if (recaptchaEnabled && recaptchaRef.current && recaptchaSiteKey) { recaptchaRef.current.reset(); setRecaptchaToken(null); }
         } finally { setIsSubmitting(false); }
-    }, [currentCollectorId, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, recaptchaRef, questionIdToOriginalIndexMap, surveyStartedAt, location.state, OTHER_VALUE_INTERNAL, isDisqualified]);
+    }, [currentCollectorId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, recaptchaRef, questionIdToOriginalIndexMap, surveyStartedAt, OTHER_VALUE_INTERNAL, isDisqualified]);
 
     if (hasAlreadyResponded) { return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> <div className={styles.alreadyRespondedBox}> <h2>Already Responded</h2> <p>Our records indicate that you have already completed this survey.</p> <p>Multiple submissions are not permitted for this link.</p> <button onClick={() => navigate('/')} className={styles.navButton}>Go to Homepage</button> </div> </div> ); }
     if (isLoading && !survey) return <div className={styles.loading}>Loading survey...</div>;
@@ -445,4 +412,4 @@ function SurveyTakingPage() {
     return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>} {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>} {isLoading && survey ? <div className={styles.loading}>Loading question...</div> : <div className={`${styles.questionBox} ${isCurrentQuestionDisabled ? styles.disabled : ''}`}> {finalIsSubmitState ? ( <div className={styles.submitPrompt}> <p>End of survey.</p> <p>Click "Submit" to record responses.</p> </div> ) : finalCurrentQToRender ? ( renderQuestion(finalCurrentQToRender) ) : ( originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified ? <div className={styles.submitPrompt}><p>No questions visible. Submit if applicable.</p></div> : (isLoading ? <div className={styles.loading}>Preparing...</div> : <div className={styles.loading}>Survey empty or issue.</div>) )} </div> } {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && ( <div className={styles.recaptchaContainer}> <ReCAPTCHA ref={recaptchaRef} sitekey={recaptchaSiteKey} onChange={(token) => setRecaptchaToken(token)} onExpired={() => setRecaptchaToken(null)} onErrored={() => { toast.error("reCAPTCHA failed. Refresh."); setRecaptchaToken(null); }} /> </div> )} <div className={styles.surveyNavigationArea}> <button onClick={handlePrevious} className={styles.navButton} disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) }> Previous </button> {finalIsSubmitState || (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified && !isLoading) ? ( <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} > {isSubmitting ? 'Submitting...' : 'Submit'} </button> ) : ( <button onClick={handleNext} className={styles.navButton} disabled={isDisqualified || isSubmitting || isLoading || !finalCurrentQToRender } > Next </button> )} </div> <div className={styles.progressIndicator}> {!finalIsSubmitState && finalCurrentQToRender ? (visibleQuestionIndices.length > 0 ? `Question ${currentVisibleIndex + 1} of ${visibleQuestionIndices.length}` : 'Loading...') : (finalIsSubmitState ? `End (${visibleQuestionIndices.length} questions shown)`: 'Initializing...')} </div> </div> );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext7 - Fix "Other" Validation Order & "undefined" string) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext8 - Handle Collector Settings for Multiple Responses) -----
