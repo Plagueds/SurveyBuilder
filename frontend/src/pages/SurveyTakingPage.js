@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext8 - Handle Collector Settings for Multiple Responses) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext9 - Add reCAPTCHA Debug Logs) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -43,10 +43,7 @@ const isAnswerEmpty = (value, questionType) => {
 };
 const shuffleArray = (array) => { const newArray = [...array]; for (let i = newArray.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [newArray[i], newArray[j]] = [newArray[j], newArray[i]]; } return newArray; };
 
-// Placeholder for actual logic evaluation - replace with your real implementation
 const evaluateRule = (rule, allAnswers, questionsById) => { 
-    // console.warn("[SurveyTakingPage] evaluateRule is a placeholder.", {rule, allAnswers, questionsById}); 
-    // Basic example: if rule.conditionQuestionId exists and its answer matches rule.conditionValue, trigger action
     if (rule && rule.conditionQuestionId && allAnswers[rule.conditionQuestionId] === rule.conditionValue) {
         return { action: { type: rule.actionType, ...rule.actionDetails } };
     }
@@ -57,9 +54,9 @@ const evaluateRule = (rule, allAnswers, questionsById) => {
 function SurveyTakingPage() {
     const { surveyId, collectorId: routeCollectorId } = useParams();
     const navigate = useNavigate();
-    const location = useLocation(); // Used to potentially pass collector settings directly
+    const location = useLocation(); 
 
-    const [survey, setSurvey] = useState(null); // Will also hold collectorSettings after fetch
+    const [survey, setSurvey] = useState(null); 
     const [originalQuestions, setOriginalQuestions] = useState([]);
     const [currentAnswers, setCurrentAnswers] = useState({});
     const [isLoading, setIsLoading] = useState(true);
@@ -77,14 +74,12 @@ function SurveyTakingPage() {
     const [isDisqualified, setIsDisqualified] = useState(false);
     const [disqualificationMessage, setDisqualificationMessage] = useState('');
     
-    // --- MODIFIED: State for collector settings and response status ---
     const [currentCollectorId, setCurrentCollectorId] = useState(null);
-    const [collectorSettings, setCollectorSettings] = useState(null); // Store fetched collector settings
+    const [collectorSettings, setCollectorSettings] = useState(null); 
     const [hasAlreadyResponded, setHasAlreadyResponded] = useState(false);
-    // --- END MODIFICATION ---
-
-    const [recaptchaEnabled, setRecaptchaEnabled] = useState(false); // Derived from collectorSettings
-    const [recaptchaSiteKey, setRecaptchaSiteKey] = useState(''); // Derived from collectorSettings or ENV
+    
+    const [recaptchaEnabled, setRecaptchaEnabled] = useState(false); 
+    const [recaptchaSiteKey, setRecaptchaSiteKey] = useState(''); 
     const [recaptchaToken, setRecaptchaToken] = useState(null);
     const recaptchaRef = useRef(null);
 
@@ -110,7 +105,6 @@ function SurveyTakingPage() {
         return false;
     }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
 
-    // Effect to set initial collector ID from route or location state
     useEffect(() => {
         const effectiveCollectorId = location.state?.collectorId || routeCollectorId;
         setCurrentCollectorId(effectiveCollectorId);
@@ -131,26 +125,35 @@ function SurveyTakingPage() {
             const surveyData = responsePayload.data;
             if (!surveyData || !Array.isArray(surveyData.questions)) throw new Error("Survey data is malformed (missing or invalid 'questions' field).");
             
-            // --- MODIFIED: Handle collector settings from fetched survey data ---
             const fetchedCollectorSettings = surveyData.collectorSettings || {};
+            // --- ADDED DEBUG LOG ---
+            console.log("[SurveyTakingPage fetchSurvey] Raw fetchedCollectorSettings from API:", JSON.stringify(fetchedCollectorSettings));
             setCollectorSettings(fetchedCollectorSettings);
 
             if (fetchedCollectorSettings.allowMultipleResponses === false) {
                 if (localStorage.getItem(`survey_${currentCollectorId}_submitted`) === 'true') {
-                    setHasAlreadyResponded(true); setIsLoading(false); return; // Stop further processing
+                    setHasAlreadyResponded(true); setIsLoading(false); return; 
                 }
             }
-            setHasAlreadyResponded(false); // Ensure it's reset if not blocked
+            setHasAlreadyResponded(false); 
 
-            setRecaptchaEnabled(Boolean(fetchedCollectorSettings.enableRecaptcha));
-            if (fetchedCollectorSettings.enableRecaptcha) {
-                setRecaptchaSiteKey(fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY || '');
-                if (!fetchedCollectorSettings.recaptchaSiteKey && !process.env.REACT_APP_RECAPTCHA_SITE_KEY) {
-                    console.warn("reCAPTCHA enabled by collector but no site key found (collector or ENV).");
-                    setRecaptchaEnabled(false); // Disable if no key
+            const enableRecaptchaFlag = Boolean(fetchedCollectorSettings.enableRecaptcha);
+            let siteKeyToUse = '';
+
+            if (enableRecaptchaFlag) {
+                siteKeyToUse = fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY || '';
+                if (!siteKeyToUse) {
+                    console.warn("[SurveyTakingPage fetchSurvey] reCAPTCHA enabled by collector but NO site key found (collector or ENV). Disabling reCAPTCHA for this session.");
+                    setRecaptchaEnabled(false); // Explicitly disable if key is missing
+                } else {
+                    setRecaptchaEnabled(true);
                 }
+            } else {
+                setRecaptchaEnabled(false);
             }
-            // --- END MODIFICATION ---
+            setRecaptchaSiteKey(siteKeyToUse);
+            // --- ADDED DEBUG LOG ---
+            console.log(`[SurveyTakingPage fetchSurvey] Derived states: recaptchaEnabled=${enableRecaptchaFlag}, siteKeyToUse (becomes recaptchaSiteKey state)=${siteKeyToUse}`);
             
             setSurvey(surveyData);
             const fetchedQuestions = surveyData.questions || [];
@@ -194,17 +197,14 @@ function SurveyTakingPage() {
             if (err.name === 'AbortError') { console.log('[SurveyTakingPage] Fetch survey aborted.'); }
             else { const errorMessage = err.response?.data?.message || err.message || "Could not load survey."; setError(errorMessage); toast.error(`Error: ${errorMessage}`); }
         } finally { setIsLoading(false); }
-    }, [surveyId, currentCollectorId]); // Removed location.state as dependency, using currentCollectorId
+    }, [surveyId, currentCollectorId]); 
 
-    // Effect to fetch survey data when currentCollectorId is set
     useEffect(() => {
-        if (currentCollectorId) { // Only fetch if collectorId is known
+        if (currentCollectorId) { 
             const controller = new AbortController();
             fetchSurvey(controller.signal);
             return () => { controller.abort(); };
         } else if (routeCollectorId === undefined && !location.state?.collectorId) {
-            // Handle case where collectorId might be missing entirely if not passed via route or state
-            // This might indicate a direct access attempt without a collector context
             setIsLoading(false);
             setError("Collector information is missing. Cannot load survey.");
             console.error("Collector ID is undefined. Survey cannot be loaded.");
@@ -341,7 +341,15 @@ function SurveyTakingPage() {
         e.preventDefault();
         setIsSubmitting(true); setError(null);
         if (!currentCollectorId) { toast.error("Collector ID missing."); setError("Collector ID missing."); setIsSubmitting(false); return; }
-        if (recaptchaEnabled && !recaptchaToken && recaptchaSiteKey) { toast.error("Please complete reCAPTCHA."); setIsSubmitting(false); return; }
+        
+        // --- MODIFIED: Use the state variables directly ---
+        if (recaptchaEnabled && !recaptchaToken && recaptchaSiteKey) { 
+            toast.error("Please complete reCAPTCHA."); 
+            setIsSubmitting(false); 
+            return; 
+        }
+        // --- END MODIFICATION ---
+
         let firstInvalidVisibleIndex = -1;
         for (let visIdx = 0; visIdx < visibleQuestionIndices.length; visIdx++) {
             const originalIdx = visibleQuestionIndices[visIdx];
@@ -383,12 +391,10 @@ function SurveyTakingPage() {
             const result = await surveyApiFunctions.submitSurveyAnswers(surveyId, payload);
             toast.success(result.message || "Survey submitted successfully!");
             
-            // --- MODIFIED: Set localStorage item if multiple responses not allowed ---
             if (collectorSettings && collectorSettings.allowMultipleResponses === false && currentCollectorId) {
                 localStorage.setItem(`survey_${currentCollectorId}_submitted`, 'true');
             }
-            // --- END MODIFICATION ---
-
+            
             if (result.action?.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(result.action.disqualificationMessage || "Disqualified."); }
             else { navigate(result.redirectUrl || '/thank-you', { state: { responseId: result.responseId } }); }
         } catch (errCatch) {
@@ -399,6 +405,17 @@ function SurveyTakingPage() {
         } finally { setIsSubmitting(false); }
     }, [currentCollectorId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, recaptchaRef, questionIdToOriginalIndexMap, surveyStartedAt, OTHER_VALUE_INTERNAL, isDisqualified]);
 
+    // --- ADDED DEBUG LOG in RENDER ---
+    if (process.env.NODE_ENV === 'development') { // Only log in development
+        console.log("[SurveyTakingPage RENDER] States relevant to reCAPTCHA:", {
+            finalIsSubmitState: isSubmitStateDerived,
+            recaptchaEnabledState: recaptchaEnabled,
+            recaptchaSiteKeyState: recaptchaSiteKey,
+            collectorSettingsState: collectorSettings
+        });
+    }
+    // --- END ADDED DEBUG LOG ---
+
     if (hasAlreadyResponded) { return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> <div className={styles.alreadyRespondedBox}> <h2>Already Responded</h2> <p>Our records indicate that you have already completed this survey.</p> <p>Multiple submissions are not permitted for this link.</p> <button onClick={() => navigate('/')} className={styles.navButton}>Go to Homepage</button> </div> </div> ); }
     if (isLoading && !survey) return <div className={styles.loading}>Loading survey...</div>;
     if (error && !survey && !hasAlreadyResponded) return <div className={styles.errorContainer}><h2>Error Loading Survey</h2><p>{error}</p><button onClick={() => { const controller = new AbortController(); fetchSurvey(controller.signal); }} className={styles.navButton}>Retry</button></div>;
@@ -406,10 +423,10 @@ function SurveyTakingPage() {
     if (isDisqualified) return ( <div className={styles.surveyContainer}><h1 className={styles.surveyTitle}>{survey?.title||'Survey'}</h1><div className={styles.disqualifiedBox}><h2>Survey Ended</h2><p>{disqualificationMessage || "You do not qualify."}</p></div></div> );
     
     const finalCurrentQToRender = currentQToRenderMemoized;
-    const finalIsSubmitState = isSubmitStateDerived;
+    const finalIsSubmitState = isSubmitStateDerived; // Use the memoized one
     const isCurrentQuestionDisabled = finalCurrentQToRender ? evaluateDisabled(questionIdToOriginalIndexMap[finalCurrentQToRender._id]) : false;
     
     return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>} {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>} {isLoading && survey ? <div className={styles.loading}>Loading question...</div> : <div className={`${styles.questionBox} ${isCurrentQuestionDisabled ? styles.disabled : ''}`}> {finalIsSubmitState ? ( <div className={styles.submitPrompt}> <p>End of survey.</p> <p>Click "Submit" to record responses.</p> </div> ) : finalCurrentQToRender ? ( renderQuestion(finalCurrentQToRender) ) : ( originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified ? <div className={styles.submitPrompt}><p>No questions visible. Submit if applicable.</p></div> : (isLoading ? <div className={styles.loading}>Preparing...</div> : <div className={styles.loading}>Survey empty or issue.</div>) )} </div> } {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && ( <div className={styles.recaptchaContainer}> <ReCAPTCHA ref={recaptchaRef} sitekey={recaptchaSiteKey} onChange={(token) => setRecaptchaToken(token)} onExpired={() => setRecaptchaToken(null)} onErrored={() => { toast.error("reCAPTCHA failed. Refresh."); setRecaptchaToken(null); }} /> </div> )} <div className={styles.surveyNavigationArea}> <button onClick={handlePrevious} className={styles.navButton} disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) }> Previous </button> {finalIsSubmitState || (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified && !isLoading) ? ( <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} > {isSubmitting ? 'Submitting...' : 'Submit'} </button> ) : ( <button onClick={handleNext} className={styles.navButton} disabled={isDisqualified || isSubmitting || isLoading || !finalCurrentQToRender } > Next </button> )} </div> <div className={styles.progressIndicator}> {!finalIsSubmitState && finalCurrentQToRender ? (visibleQuestionIndices.length > 0 ? `Question ${currentVisibleIndex + 1} of ${visibleQuestionIndices.length}` : 'Loading...') : (finalIsSubmitState ? `End (${visibleQuestionIndices.length} questions shown)`: 'Initializing...')} </div> </div> );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext8 - Handle Collector Settings for Multiple Responses) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext9 - Add reCAPTCHA Debug Logs) -----
