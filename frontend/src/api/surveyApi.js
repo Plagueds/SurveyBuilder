@@ -1,15 +1,11 @@
 // frontend/src/api/surveyApi.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext2 - Added updateSurvey and fixed export) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext3 - Changed updateSurvey to PATCH) -----
 import axios from 'axios';
 
-// ... (baseURL setup and interceptors - NO CHANGES HERE) ...
-// This is expected to be the FULL BASE URL for your /api routes.
-// In development (e.g., from .env): REACT_APP_API_BASE_URL=http://localhost:3001/api
-// In production (e.g., in Netlify): REACT_APP_API_BASE_URL=https://surveybuilderapi.onrender.com/api
+// ... (baseURL setup and interceptors - NO CHANGES HERE FROM vNext2) ...
 const envApiBaseUrl = process.env.REACT_APP_API_BASE_URL;
-
-let effectiveApiRoutesBaseUrl; // For /api routes, e.g., http://localhost:3001/api
-let effectivePublicAccessRootUrl; // For /s routes, e.g., http://localhost:3001
+let effectiveApiRoutesBaseUrl;
+let effectivePublicAccessRootUrl;
 
 if (envApiBaseUrl) {
     effectiveApiRoutesBaseUrl = envApiBaseUrl;
@@ -23,7 +19,7 @@ if (envApiBaseUrl) {
             "Ensure it's a valid URL (e.g., https://domain.com/api). " +
             "Falling back for public access root URL.", e
         );
-        effectivePublicAccessRootUrl = 'https://surveybuilderapi.onrender.com'; // Hardcoded production fallback
+        effectivePublicAccessRootUrl = 'https://surveybuilderapi.onrender.com';
     }
 } else {
     console.warn(
@@ -35,10 +31,8 @@ if (envApiBaseUrl) {
     effectiveApiRoutesBaseUrl = 'http://localhost:3001/api';
     effectivePublicAccessRootUrl = 'http://localhost:3001';
 }
-
 console.log(`[surveyApi] Effective API Routes Base URL: ${effectiveApiRoutesBaseUrl}`);
 console.log(`[surveyApi] Effective Public Access Root URL: ${effectivePublicAccessRootUrl}`);
-
 
 const apiClient = axios.create({
     baseURL: effectiveApiRoutesBaseUrl,
@@ -68,10 +62,6 @@ apiClient.interceptors.response.use(
                 console.warn('[surveyApi] Unauthorized (401) response. Token might be invalid or expired. Logging out.');
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
-                // Consider a more robust way to redirect, e.g., using useNavigate in a context/hook
-                // if (window.location.pathname !== '/login') {
-                //     window.location.href = '/login'; 
-                // }
             }
         }
         return Promise.reject(error);
@@ -123,30 +113,24 @@ export const getSurveyById = async (surveyId, options = {}) => {
     }
 };
 
-// +++ ADDED updateSurvey function +++
 export const updateSurvey = async (surveyId, surveyData, options = {}) => {
     try {
-        // Assuming your backend updateSurvey controller uses PUT for full updates
-        // or PATCH if it handles partial updates.
-        // The backend controller you provided doesn't specify HTTP method, but PUT is common for such updates.
-        const response = await apiClient.put(`/surveys/${surveyId}`, surveyData, { signal: options.signal });
+        // --- MODIFIED: Changed from PUT to PATCH to match backend route ---
+        const response = await apiClient.patch(`/surveys/${surveyId}`, surveyData, { signal: options.signal });
         return response.data;
     } catch (error) {
         return handleApiError(error, `updateSurvey (${surveyId})`);
     }
 };
-// +++ END ADDED updateSurvey function +++
 
-
+// This function might be redundant if your `updateSurvey` with PATCH handles all updates.
+// If it's for a different specific structure update endpoint, ensure that endpoint exists.
+// For now, assuming it might be different or you'll decide if it's needed.
 export const updateSurveyStructure = async (surveyId, surveyStructureData, options = {}) => {
     try {
-        // This seems more specific, perhaps only for question order or major structural changes.
-        // If `updateSurvey` handles everything, you might not need this one, or it targets a different backend endpoint/logic.
-        // For now, I'll assume it's distinct.
-        const response = await apiClient.patch(`/surveys/${surveyId}/structure`, surveyStructureData, { signal: options.signal }); // Example: different endpoint or method
-        // If your backend `updateSurvey` handles all survey updates (including structure, title, logic etc.)
-        // then this function `updateSurveyStructure` might be redundant or should call the same endpoint as `updateSurvey`.
-        // Let's assume for now your backend's `updateSurvey` (the one in surveyController.js) is hit by PUT /surveys/:surveyId
+        // Assuming this also uses PATCH if it's hitting the same controller,
+        // or it might be a different endpoint like /surveys/:surveyId/structure
+        const response = await apiClient.patch(`/surveys/${surveyId}/structure`, surveyStructureData, { signal: options.signal });
         return response.data;
     } catch (error) {
         return handleApiError(error, `updateSurveyStructure (${surveyId})`);
@@ -163,7 +147,6 @@ export const deleteSurvey = async (surveyId, options = {}) => {
 };
 
 // --- Question Endpoints ---
-// ... (no changes to question endpoints needed for this issue)
 export const createQuestion = async (questionData, options = {}) => {
     try {
         const response = await apiClient.post('/questions', questionData, { signal: options.signal });
@@ -191,9 +174,7 @@ export const deleteQuestionById = async (questionId, options = {}) => {
     }
 };
 
-
 // --- Survey Submission and Results Endpoints ---
-// ... (no changes here needed for this issue)
 export const submitSurveyAnswers = async (surveyId, submissionData, options = {}) => {
     try {
         const response = await apiClient.post(`/surveys/${surveyId}/submit`, submissionData, { signal: options.signal });
@@ -245,7 +226,6 @@ export const exportSurveyResults = async (surveyId, options = {}) => {
 };
 
 // --- Auth Endpoints ---
-// ... (no changes here needed for this issue)
 export const loginUser = async (credentials, options = {}) => {
     try {
         const response = await apiClient.post('/auth/login', credentials, { signal: options.signal });
@@ -287,9 +267,7 @@ export const getMe = async (options = {}) => {
     }
 };
 
-
 // --- Collector Endpoints ---
-// ... (no changes here needed for this issue)
 export const getCollectorsForSurvey = async (surveyId, options = {}) => {
     try {
         const { signal, ...queryParams } = options;
@@ -328,7 +306,6 @@ export const deleteCollector = async (surveyId, collectorId, options = {}) => {
 };
 
 // --- Public Survey Access Endpoint ---
-// ... (no changes here needed for this issue)
 export const accessPublicSurvey = async (accessIdentifier, password = null, options = {}) => {
     try {
         const payload = password ? { password } : {};
@@ -349,11 +326,9 @@ export const accessPublicSurvey = async (accessIdentifier, password = null, opti
     }
 };
 
-
-// --- MODIFIED: Add updateSurvey to the exported object ---
 const surveyApiFunctions = {
     getAllSurveys, createSurvey, getSurveyById, 
-    updateSurvey, // <<< ADDED HERE
+    updateSurvey, // Stays as updateSurvey
     updateSurveyStructure, 
     deleteSurvey,
     createQuestion, updateQuestionContent, deleteQuestionById,
@@ -364,4 +339,4 @@ const surveyApiFunctions = {
 };
 
 export default surveyApiFunctions;
-// ----- END OF COMPLETE MODIFIED FILE (vNext2 - Added updateSurvey and fixed export) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext3 - Changed updateSurvey to PATCH) -----
