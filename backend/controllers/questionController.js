@@ -1,5 +1,5 @@
 // backend/controllers/questionController.js
-// ----- START OF COMPLETE MODIFIED FILE (v9.5 - Standardized API Responses) -----
+// ----- START OF COMPLETE MODIFIED FILE (v9.6 - Fix Conjoint Update & Standardize) -----
 const mongoose = require('mongoose');
 const Question = require('../models/Question');
 const Answer = require('../models/Answer');
@@ -21,9 +21,8 @@ const hasDuplicateOptions = (options) => {
 
 // --- Controller Functions ---
 
-// GET All Questions (Standardized response for consistency, though not strictly required by current frontend)
 exports.getAllQuestions = async (req, res) => {
-    console.log("getAllQuestions: Fetching all questions.");
+    // console.log("getAllQuestions: Fetching all questions.");
     try {
         const questionsWithCounts = await Question.aggregate([
             { $sort: { createdAt: -1 } },
@@ -31,28 +30,25 @@ exports.getAllQuestions = async (req, res) => {
             { $addFields: { answerCount: { $size: '$relatedAnswers' } } },
             { $project: { relatedAnswers: 0 } }
         ]);
-        console.log(`getAllQuestions: Found ${questionsWithCounts.length} questions.`);
-        // MODIFIED: Standardized success response
+        // console.log(`getAllQuestions: Found ${questionsWithCounts.length} questions.`);
         res.status(200).json({ success: true, count: questionsWithCounts.length, data: questionsWithCounts });
     } catch (error) {
         console.error("Error fetching all questions:", error);
-        // MODIFIED: Standardized error response
         res.status(500).json({ success: false, message: "Error fetching questions" });
     }
 };
 
-// POST Create Question
 exports.createQuestion = async (req, res) => {
-    console.log("--- Backend Controller: createQuestion: Received request body ---");
-    // console.log(JSON.stringify(req.body, null, 2)); // Keep for detailed debugging if needed
-    console.log("---------------------------------------------------------------");
+    // console.log("--- Backend Controller: createQuestion: Received request body ---");
+    // console.log(JSON.stringify(req.body, null, 2)); 
+    // console.log("---------------------------------------------------------------");
 
     const {
-        text, type, required, survey, addOtherOption, requireOtherIfSelected,
+        text, type, survey, addOtherOption, requireOtherIfSelected,
         addNAOption, options, matrixRows, matrixColumns, matrixType, sliderMin,
         sliderMax, sliderStep, sliderMinLabel, sliderMaxLabel, imageUrl,
-        heatmapMaxClicks,
-        maxDiffItemsPerSet, conjointAttributes, conjointProfilesPerTask,
+        heatmapMaxClicks, conjointNumTasks, // Added conjointNumTasks here
+        maxDiffItemsPerSet, conjointAttributes, conjointProfilesPerTask, conjointIncludeNoneOption, // Added conjointIncludeNoneOption
         cardSortCategories, cardSortAllowUserCategories,
         skipLogic, enableDisplayLogic, hideByDefault, showOnlyToAdmin, isDisabled,
         randomizationAlwaysInclude, randomizationPinPosition, hideAfterAnswering,
@@ -148,22 +144,21 @@ exports.createQuestion = async (req, res) => {
              case 'conjoint':
                  if (conjointAttributes !== undefined) questionData.conjointAttributes = conjointAttributes;
                  if (conjointProfilesPerTask !== undefined) questionData.conjointProfilesPerTask = Number(conjointProfilesPerTask);
+                 // *** ADDED conjointNumTasks and conjointIncludeNoneOption for CREATE ***
+                 if (conjointNumTasks !== undefined) questionData.conjointNumTasks = Number(conjointNumTasks);
+                 if (conjointIncludeNoneOption !== undefined) questionData.conjointIncludeNoneOption = !!conjointIncludeNoneOption;
                  break;
              default: break;
         }
 
-        // console.log("--- Backend Controller: createQuestion: Data prepared for Mongoose model ---");
-        // console.log(JSON.stringify(questionData, null, 2));
-
         const newQuestion = new Question(questionData);
         const savedQuestion = await newQuestion.save();
-        console.log("createQuestion: Successfully created question:", savedQuestion._id);
+        // console.log("createQuestion: Successfully created question:", savedQuestion._id);
 
         if (validSurveyId) {
              await Survey.findByIdAndUpdate(validSurveyId, { $addToSet: { questions: savedQuestion._id } });
-             console.log(`createQuestion: Added question ${savedQuestion._id} to survey ${validSurveyId}`);
+             // console.log(`createQuestion: Added question ${savedQuestion._id} to survey ${validSurveyId}`);
         }
-        // MODIFIED: Standardized success response
         res.status(201).json({ success: true, data: savedQuestion });
 
     } catch (error) {
@@ -171,101 +166,102 @@ exports.createQuestion = async (req, res) => {
         if (error.name === 'ValidationError' || error.name === 'CastError') {
              const messages = error.errors ? Object.values(error.errors).map(val => val.message) : [error.message];
              const field = error.errors ? Object.keys(error.errors)[0] : (error.path || 'unknown');
-             // MODIFIED: Standardized error response
              return res.status(400).json({ success: false, message: "Validation Error: " + messages.join('. '), field: field, errors: error.errors });
         }
-        // MODIFIED: Standardized error response
         res.status(500).json({ success: false, message: "Error creating question" });
     }
 };
 
 
-// GET Question By ID (Standardized response for consistency)
 exports.getQuestionById = async (req, res) => {
-    console.log(`getQuestionById: Fetching question with ID: ${req.params.id}`);
+    // console.log(`getQuestionById: Fetching question with ID: ${req.params.id}`);
     try {
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            console.warn(`getQuestionById: Invalid ID format: ${id}`);
-            // MODIFIED: Standardized error response
+            // console.warn(`getQuestionById: Invalid ID format: ${id}`);
             return res.status(400).json({ success: false, message: "Invalid Question ID format" });
         }
         const question = await Question.findById(id);
         if (!question) {
-            console.warn(`getQuestionById: Question not found with ID: ${id}`);
-            // MODIFIED: Standardized error response
+            // console.warn(`getQuestionById: Question not found with ID: ${id}`);
             return res.status(404).json({ success: false, message: "Question not found" });
         }
-        console.log(`getQuestionById: Found question: ${id}`);
-        // MODIFIED: Standardized success response
+        // console.log(`getQuestionById: Found question: ${id}`);
         res.status(200).json({ success: true, data: question });
     } catch (error) {
         console.error(`Error fetching question by ID ${req.params.id}:`, error);
-        // MODIFIED: Standardized error response
         res.status(500).json({ success: false, message: "Error fetching question" });
     }
 };
 
-// PATCH Update Question
 exports.updateQuestion = async (req, res) => {
     console.log(`\n--- Entering updateQuestion for ID: ${req.params.id} ---`);
     // console.log('>>> updateQuestion: Received Request Body:', JSON.stringify(req.body, null, 2));
     try {
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            // MODIFIED: Standardized error response
             return res.status(400).json({ success: false, message: "Invalid Question ID format" });
         }
 
         const questionToUpdate = await Question.findById(id);
         if (!questionToUpdate) {
-            // MODIFIED: Standardized error response
             return res.status(404).json({ success: false, message: 'Question not found' });
         }
-        // console.log(`>>> updateQuestion: Found document (ID: ${id}). Current type: ${questionToUpdate.type}`);
-
-        const allowedFields = Object.keys(Question.schema.paths);
+        
         const updatesFromBody = req.body;
         let validationError = null;
 
-        for (const field of allowedFields) {
-            if (updatesFromBody[field] !== undefined) {
-                // console.log(`>>> updateQuestion: Processing update for field: ${field}`);
+        // Iterate over all paths in the schema to apply updates
+        for (const field in Question.schema.paths) {
+            if (field === '_id' || field === 'survey' || field === 'createdAt' || field === 'updatedAt' || field === '__v') {
+                continue; // Skip non-updatable fields
+            }
+
+            if (updatesFromBody.hasOwnProperty(field)) { // Check if the field is present in the request body
                 let value = updatesFromBody[field];
-                if (field === 'survey' || field === '_id') continue;
-                if ((field === 'pipeOptionsFromQuestionId' || field === 'repeatForEachOptionFromQuestionId') && value === '') value = null;
-                if ((field === 'limitAnswersMax' || field === 'minAnswersRequired' || field === 'heatmapMaxClicks') && value === '') value = null;
-                if (typeof Question.schema.paths[field].instance === 'Boolean') value = Boolean(value);
-                if (typeof Question.schema.paths[field].instance === 'Number' && value !== null) {
-                     const numValue = Number(value);
-                     if (isNaN(numValue)) { console.warn(`>>> updateQuestion: Invalid number format for field ${field}: ${value}`); continue; }
-                     value = numValue;
+
+                // Specific transformations or cleanups
+                if ((field === 'pipeOptionsFromQuestionId' || field === 'repeatForEachOptionFromQuestionId') && value === '') {
+                    value = null;
                 }
+                if ((field === 'limitAnswersMax' || field === 'minAnswersRequired' || field === 'heatmapMaxClicks') && (value === '' || value === null)) {
+                    value = null; // Ensure empty strings become null for these numeric optional fields
+                } else if (Question.schema.paths[field].instance === 'Number' && value !== null && value !== undefined) {
+                    const numValue = Number(value);
+                    if (isNaN(numValue)) {
+                        console.warn(`>>> updateQuestion: Invalid number format for field ${field}: "${value}", skipping update for this field.`);
+                        continue; // Skip this field if it's not a valid number
+                    }
+                    value = numValue;
+                } else if (Question.schema.paths[field].instance === 'Boolean') {
+                    value = Boolean(value);
+                }
+
+
                 if (field === 'options') {
                     const typeToCheck = updatesFromBody.type || questionToUpdate.type;
                     if (OPTION_BASED_TYPES.includes(typeToCheck)) {
-                        if (hasDuplicateOptions(value)) { validationError = { status: 400, message: 'Validation Error: Options must be unique.', field: 'options' }; break; }
+                        if (hasDuplicateOptions(value)) {
+                            validationError = { status: 400, message: 'Validation Error: Options must be unique.', field: 'options' };
+                            break; 
+                        }
                         value = Array.isArray(value) ? value.map(opt => String(opt || '').trim()).filter(opt => opt) : [];
-                    } else { value = []; }
-                }
-                if (field === 'skipLogic') {
-                     if (!Array.isArray(value)) { console.warn(`>>> updateQuestion: Invalid format for skipLogic (not an array)`); continue; }
-                     // Basic check, more complex validation could be added
-                     value.forEach(rule => { if (!rule || typeof rule.action !== 'string') { console.warn(`>>> updateQuestion: Invalid rule structure in skipLogic`); } });
+                    } else {
+                        value = []; // Default to empty array if not an option-based type
+                    }
                 }
                 questionToUpdate[field] = value;
-                // console.log(`>>> updateQuestion: Assigned value to ${field}:`, value);
             }
         }
 
+
         if (validationError) {
              console.error(">>> updateQuestion: Validation error during field processing:", validationError);
-             // MODIFIED: Standardized error response
              return res.status(validationError.status).json({ success: false, message: validationError.message, field: validationError.field });
         }
-
-        const finalType = questionToUpdate.type;
-        // console.log(`>>> updateQuestion: Final type for unsetting logic: ${finalType}`);
+        
+        // Unset fields not relevant to the question type
+        const finalType = questionToUpdate.type; // Use the potentially updated type
         const keepFieldsMap = {
             'text': ['textValidation', 'answerFormatCapitalization'],
             'textarea': ['textValidation', 'rows', 'answerFormatCapitalization'],
@@ -277,44 +273,53 @@ exports.updateQuestion = async (req, res) => {
             'ranking': ['options'],
             'heatmap': ['imageUrl', 'heatmapMaxClicks'],
             'maxdiff': ['options', 'maxDiffItemsPerSet'],
-            'conjoint': ['conjointAttributes', 'conjointProfilesPerTask'],
+            // *** CORRECTED CONJOINT FIELDS TO KEEP ***
+            'conjoint': ['conjointAttributes', 'conjointProfilesPerTask', 'conjointNumTasks', 'conjointIncludeNoneOption'],
             'cardsort': ['options', 'cardSortCategories', 'cardSortAllowUserCategories'],
         };
-        const fieldsToKeep = [
-             '_id', 'survey', 'text', 'type', 'createdAt', 'updatedAt', '__v',
+
+        const alwaysKeepFields = [
+             '_id', 'survey', 'text', 'type', 'createdAt', 'updatedAt', '__v', 'order', // Added 'order'
              'skipLogic', 'enableDisplayLogic', 'displayLogic',
              'hideByDefault', 'showOnlyToAdmin', 'isDisabled',
              'randomizationAlwaysInclude', 'randomizationPinPosition', 'hideAfterAnswering',
              'pipeOptionsFromQuestionId', 'repeatForEachOptionFromQuestionId',
              'requiredSetting', 'conditionalRequireLogic',
-             ...(keepFieldsMap[finalType] || [])
         ];
-        const allSchemaFields = Object.keys(Question.schema.paths);
-        allSchemaFields.forEach(field => {
-            if (!fieldsToKeep.includes(field)) {
-                if (questionToUpdate[field] !== undefined) {
-                    questionToUpdate[field] = undefined;
+        
+        const fieldsToKeepForType = keepFieldsMap[finalType] || [];
+        const allFieldsToKeep = [...new Set([...alwaysKeepFields, ...fieldsToKeepForType])];
+
+        for (const schemaField in Question.schema.paths) {
+            if (!allFieldsToKeep.includes(schemaField)) {
+                if (questionToUpdate[schemaField] !== undefined) {
+                    questionToUpdate[schemaField] = undefined; // Mongoose handles unsetting fields set to undefined
                 }
             }
-        });
+        }
+        
+        // Ensure 'requireOtherIfSelected' is false if 'addOtherOption' is false
+        if (finalType === 'multiple-choice' || finalType === 'checkbox') {
+            if (!questionToUpdate.addOtherOption) {
+                questionToUpdate.requireOtherIfSelected = false;
+            }
+        }
+
 
         if (!questionToUpdate.text || !questionToUpdate.text.trim()) {
-            // MODIFIED: Standardized error response
             return res.status(400).json({ success: false, message: "Question text cannot be empty.", field: 'text' });
         }
 
-        // console.log(`>>> updateQuestion: Document state BEFORE save() (ID: ${id}):`, questionToUpdate.toObject());
-        await questionToUpdate.save();
+        // console.log(`>>> updateQuestion: Document state BEFORE save() (ID: ${id}):`, JSON.stringify(questionToUpdate.toObject(), null, 2));
+        await questionToUpdate.save(); // This will run all schema validations
         // console.log(`>>> updateQuestion: Save() operation completed for ID: ${id}.`);
 
-        const finalUpdatedQuestion = await Question.findById(id);
+        const finalUpdatedQuestion = await Question.findById(id); // Re-fetch to be sure
         if (!finalUpdatedQuestion) {
              console.error(`!!! updateQuestion: CRITICAL - Failed to re-fetch question ${id} after successful save!`);
-             // MODIFIED: Standardized error response
              return res.status(500).json({ success: false, message: "Error retrieving updated question data after save." });
         }
         // console.log(`>>> updateQuestion: Re-fetched document AFTER save() (ID: ${id}):`, finalUpdatedQuestion.toObject());
-        // MODIFIED: Standardized success response
         res.status(200).json({ success: true, data: finalUpdatedQuestion });
 
     } catch (error) {
@@ -323,65 +328,54 @@ exports.updateQuestion = async (req, res) => {
             // console.error("Validation/Cast Errors:", JSON.stringify(error.errors || { [error.path]: error }, null, 2));
             const messages = error.errors ? Object.values(error.errors).map(val => val.message) : [error.message];
             const field = error.errors ? Object.keys(error.errors)[0] : (error.path || 'unknown');
-            // MODIFIED: Standardized error response
             return res.status(400).json({ success: false, message: `Validation Error: ${messages.join('. ')}`, field: field, errors: error.errors });
         }
         // console.error("Full Error Object:", error);
-        // MODIFIED: Standardized error response
         res.status(500).json({ success: false, message: "Error updating question" });
     }
 };
 
-// DELETE Question
 exports.deleteQuestion = async (req, res) => {
-    console.log(`deleteQuestion: Attempting to delete question with ID: ${req.params.id}`);
+    // console.log(`deleteQuestion: Attempting to delete question with ID: ${req.params.id}`);
     try {
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            console.warn(`deleteQuestion: Invalid ID format: ${id}`);
-            // MODIFIED: Standardized error response
+            // console.warn(`deleteQuestion: Invalid ID format: ${id}`);
             return res.status(400).json({ success: false, message: "Invalid Question ID format" });
         }
         const questionToDelete = await Question.findById(id);
         if (!questionToDelete) {
-            console.warn(`deleteQuestion: Question not found with ID: ${id}`);
-            // MODIFIED: Standardized error response
+            // console.warn(`deleteQuestion: Question not found with ID: ${id}`);
             return res.status(404).json({ success: false, message: "Question not found" });
         }
         const surveyId = questionToDelete.survey;
         const deletionResult = await Question.deleteOne({ _id: id });
         if (deletionResult.deletedCount === 0) {
-            console.warn(`deleteQuestion: Question not found during deletion attempt (race condition?): ${id}`);
-            // MODIFIED: Standardized error response
+            // console.warn(`deleteQuestion: Question not found during deletion attempt (race condition?): ${id}`);
             return res.status(404).json({ success: false, message: "Question not found during deletion" });
         }
-        console.log(`deleteQuestion: Successfully deleted question document: ${id}`);
+        // console.log(`deleteQuestion: Successfully deleted question document: ${id}`);
         const answerDeletionResult = await Answer.deleteMany({ questionId: id });
-        console.log(`deleteQuestion: Deleted ${answerDeletionResult.deletedCount} answers associated with question ${id}`);
+        // console.log(`deleteQuestion: Deleted ${answerDeletionResult.deletedCount} answers associated with question ${id}`);
         if (surveyId) {
-            console.log(`deleteQuestion: Removing question ${id} from survey ${surveyId}'s questions array.`);
+            // console.log(`deleteQuestion: Removing question ${id} from survey ${surveyId}'s questions array.`);
             const surveyUpdateResult = await Survey.findByIdAndUpdate(surveyId, { $pull: { questions: id } }, { new: true } );
-            if (surveyUpdateResult) { console.log(`deleteQuestion: Successfully removed question from survey ${surveyId}.`); }
-            else { console.warn(`deleteQuestion: Survey ${surveyId} not found when trying to remove question ${id}.`); }
+            // if (surveyUpdateResult) { console.log(`deleteQuestion: Successfully removed question from survey ${surveyId}.`); }
+            // else { console.warn(`deleteQuestion: Survey ${surveyId} not found when trying to remove question ${id}.`); }
         }
-        // MODIFIED: Standardized success response
         res.status(200).json({ success: true, message: "Question and associated answers deleted successfully" });
     } catch (error) {
         console.error(`Error deleting question ${req.params.id}:`, error);
-        // MODIFIED: Standardized error response
         res.status(500).json({ success: false, message: "Error deleting question" });
     }
 };
 
-// POST Add Answer (Standardized response for consistency)
 exports.addAnswer = async (req, res) => {
-    // console.log("addAnswer: Received request body:", req.body);
     try {
         const { questionId, surveyId, sessionId, value } = req.body;
         if (!mongoose.Types.ObjectId.isValid(questionId)) {
             return res.status(400).json({ success: false, message: "Invalid Question ID format", field: "questionId" });
         }
-        // Corrected surveyId validation
         if (surveyId && !mongoose.Types.ObjectId.isValid(surveyId)) {
             return res.status(400).json({ success: false, message: "Invalid Survey ID format", field: "surveyId" });
         }
@@ -389,7 +383,7 @@ exports.addAnswer = async (req, res) => {
             return res.status(400).json({ success: false, message: "Session ID is required", field: "sessionId" });
         }
         if (value === undefined || value === null) {
-            console.warn("addAnswer: Received potentially empty answer value for question", questionId);
+            // console.warn("addAnswer: Received potentially empty answer value for question", questionId);
         }
 
         const questionExists = await Question.findById(questionId);
@@ -401,39 +395,30 @@ exports.addAnswer = async (req, res) => {
             if (!surveyExists) {
                 return res.status(404).json({ success: false, message: "Survey not found" });
             }
-            // This is a warning, not a blocking error, so it's fine as is.
-            // if (!surveyExists.questions.includes(questionId)) console.warn(`addAnswer: Question ${questionId} does not belong to survey ${surveyId}. Allowing answer anyway.`);
         }
 
         const newAnswer = new Answer({ questionId, surveyId: surveyId || null, sessionId, value });
         const savedAnswer = await newAnswer.save();
-        console.log("addAnswer: Successfully saved answer:", savedAnswer._id);
-        // MODIFIED: Standardized success response
+        // console.log("addAnswer: Successfully saved answer:", savedAnswer._id);
         res.status(201).json({ success: true, data: savedAnswer });
     } catch (error) {
         console.error("Error adding answer:", error);
         if (error.name === 'ValidationError') {
-            // MODIFIED: Standardized error response
             return res.status(400).json({ success: false, message: "Validation Error: " + error.message, errors: error.errors });
         }
-        // MODIFIED: Standardized error response
         res.status(500).json({ success: false, message: "Error adding answer" });
     }
 };
 
-// GET All Answers (Standardized response for consistency)
 exports.getAllAnswers = async (req, res) => {
-    console.log("getAllAnswers: Fetching all answers.");
+    // console.log("getAllAnswers: Fetching all answers.");
     try {
         const answers = await Answer.find().sort({ createdAt: -1 });
-        console.log(`getAllAnswers: Found ${answers.length} answers.`);
-        // MODIFIED: Standardized success response
+        // console.log(`getAllAnswers: Found ${answers.length} answers.`);
         res.status(200).json({ success: true, count: answers.length, data: answers });
     } catch (error) {
         console.error("Error fetching all answers:", error);
-        // MODIFIED: Standardized error response
         res.status(500).json({ success: false, message: "Error fetching answers" });
     }
 };
-
-// ----- END OF COMPLETE MODIFIED FILE (v9.5 - Standardized API Responses) -----
+// ----- END OF COMPLETE MODIFIED FILE (v9.6 - Fix Conjoint Update & Standardize) -----
