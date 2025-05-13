@@ -1,12 +1,12 @@
 // frontend/src/components/logic/HeatmapAreaSelectorModal.js
-// ----- START OF MODIFIED FILE (v2.2 - Refined Y-coordinate calculation) -----
+// ----- START OF UPDATED FILE (v2.3 - Added debug logs to save handler) -----
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 const HeatmapAreaSelectorModal = ({
     isOpen,
     onClose,
-    onSaveAreas,
+    onSaveAreas, // This prop is called to pass data out
     imageUrl,
     initialAreas = [],
     styles
@@ -17,12 +17,11 @@ const HeatmapAreaSelectorModal = ({
     const [currentDrawing, setCurrentDrawing] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [startPoint, setStartPoint] = useState({ x: 0, y: 0 });
-    // imageRenderedSize will store: width, height (of the img element's box), naturalWidth, naturalHeight (of the image file)
     const [imageRenderedSize, setImageRenderedSize] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
     const [error, setError] = useState('');
 
     const imageRef = useRef(null);
-    const drawingCanvasRef = useRef(null); // This is the div.heatmapImageContainer
+    const drawingCanvasRef = useRef(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -48,7 +47,7 @@ const HeatmapAreaSelectorModal = ({
                 naturalHeight: imageRef.current.naturalHeight
             });
         }
-    }, []); // No dependencies, this function itself is stable
+    }, []);
 
     useEffect(() => {
         const imgElement = imageRef.current;
@@ -66,48 +65,28 @@ const HeatmapAreaSelectorModal = ({
             if (imgElement) imgElement.removeEventListener('load', handleLoad);
             window.removeEventListener('resize', updateImageRenderedSize);
         };
-    }, [isOpen, updateImageRenderedSize]); // updateImageRenderedSize is stable
+    }, [isOpen, updateImageRenderedSize]);
 
     const getMousePositionOnImage = useCallback((event) => {
-        // Ensure image is loaded and its container ref is available
         if (!drawingCanvasRef.current || !imageRef.current || !imageRef.current.complete || imageRef.current.naturalWidth === 0) {
             return { x: 0, y: 0, valid: false };
         }
-
-        const canvasContainer = drawingCanvasRef.current; // The div with the border
-        const rect = canvasContainer.getBoundingClientRect(); // Bounding box of this bordered container
-
-        // Mouse position relative to the viewport
-        const clientX = event.clientX;
-        const clientY = event.clientY;
-
-        // Calculate mouse position relative to the *content area* of the drawingCanvasRef.
-        // rect.left/top are coordinates of the border-box.
-        // clientLeft/Top are the widths of the left/top borders.
-        // Subtracting them gives coordinates relative to the padding-box edge (or content-box if no padding).
-        let x = clientX - rect.left - canvasContainer.clientLeft;
-        let y = clientY - rect.top - canvasContainer.clientTop;
-
-        // The imageRenderedSize.width/height are from imageRef.current.offsetWidth/Height.
-        // Due to the CSS (inline-block container, block image), these should match the
-        // content dimensions of canvasContainer.
-        // We clamp to these dimensions to ensure coordinates are within the image bounds.
+        const canvasContainer = drawingCanvasRef.current;
+        const rect = canvasContainer.getBoundingClientRect();
+        let x = event.clientX - rect.left - canvasContainer.clientLeft;
+        let y = event.clientY - rect.top - canvasContainer.clientTop;
         x = Math.max(0, Math.min(x, imageRenderedSize.width));
         y = Math.max(0, Math.min(y, imageRenderedSize.height));
-        
-        return { x, y, valid: true }; // These are pixel coordinates on the image
-    }, [imageRenderedSize]); // Depends on the whole imageRenderedSize object
+        return { x, y, valid: true };
+    }, [imageRenderedSize]);
 
     const handleMouseDown = (event) => {
         if (event.button !== 0 || !imageRenderedSize.width || !imageRenderedSize.height) return;
         event.preventDefault();
-
         const pos = getMousePositionOnImage(event);
         if (!pos.valid) return;
-
         setIsDrawing(true);
         setStartPoint({ x: pos.x, y: pos.y });
-
         setCurrentDrawing({
             x: pos.x / imageRenderedSize.width,
             y: pos.y / imageRenderedSize.height,
@@ -120,15 +99,12 @@ const HeatmapAreaSelectorModal = ({
     const handleMouseMove = (event) => {
         if (!isDrawing || !imageRenderedSize.width || !imageRenderedSize.height) return;
         event.preventDefault();
-
         const currentPos = getMousePositionOnImage(event);
         if (!currentPos.valid) return;
-
         const rectX = Math.min(startPoint.x, currentPos.x);
         const rectY = Math.min(startPoint.y, currentPos.y);
         const rectWidth = Math.abs(currentPos.x - startPoint.x);
         const rectHeight = Math.abs(currentPos.y - startPoint.y);
-
         setCurrentDrawing({
             x: Math.max(0, Math.min(1, rectX / imageRenderedSize.width)),
             y: Math.max(0, Math.min(1, rectY / imageRenderedSize.height)),
@@ -142,7 +118,7 @@ const HeatmapAreaSelectorModal = ({
         event.preventDefault();
         setIsDrawing(false);
         if (currentDrawing && (currentDrawing.width < 0.001 || currentDrawing.height < 0.001)) {
-            setCurrentDrawing(null); // Discard tiny drawings
+            setCurrentDrawing(null);
         }
     };
 
@@ -161,13 +137,11 @@ const HeatmapAreaSelectorModal = ({
         if (!currentDrawing || currentDrawing.width === 0 || currentDrawing.height === 0) { setError("Please draw an area on the image."); return; }
         const nameExists = areas.some(a => a.name.toLowerCase() === editingAreaName.trim().toLowerCase() && a.id !== selectedAreaId);
         if (nameExists) { setError(`An area with the name "${editingAreaName.trim()}" already exists.`); return; }
-
         const areaData = {
             name: editingAreaName.trim(),
             x: Number(currentDrawing.x), y: Number(currentDrawing.y),
             width: Number(currentDrawing.width), height: Number(currentDrawing.height),
         };
-
         if (selectedAreaId) {
             setAreas(areas.map(a => a.id === selectedAreaId ? { ...a, ...areaData } : a));
         } else {
@@ -188,13 +162,27 @@ const HeatmapAreaSelectorModal = ({
     };
 
     const handleMainSaveAllAreas = () => {
-        if (areas.some(a => !a.name || a.name.trim() === '')) { setError("All defined areas must have a name."); return; }
+        // +++ DEBUG LOG +++
+        console.log("[HeatmapModal v2.3] handleMainSaveAllAreas called."); 
+        
+        if (areas.some(a => !a.name || a.name.trim() === '')) { 
+            setError("All defined areas must have a name."); 
+            console.warn("[HeatmapModal v2.3] Save aborted: Some areas have no name."); // DEBUG
+            return; 
+        }
         const finalAreasToSave = areas.map(a => ({
             id: a.id, name: a.name,
             x: Number(a.x), y: Number(a.y),
             width: Number(a.width), height: Number(a.height),
         }));
-        onSaveAreas(finalAreasToSave);
+
+        // +++ DEBUG LOG +++
+        console.log("[HeatmapModal v2.3] Calling onSaveAreas with:", JSON.stringify(finalAreasToSave));
+        if (typeof onSaveAreas === 'function') {
+            onSaveAreas(finalAreasToSave);
+        } else {
+            console.error("[HeatmapModal v2.3] onSaveAreas is not a function! Type:", typeof onSaveAreas); // DEBUG
+        }
     };
 
     if (!isOpen) return null;
@@ -322,4 +310,4 @@ const HeatmapAreaSelectorModal = ({
 };
 
 export default HeatmapAreaSelectorModal;
-// ----- END OF MODIFIED FILE (v2.2) -----
+// ----- END OF UPDATED FILE (v2.3 - Added debug logs to save handler) -----
