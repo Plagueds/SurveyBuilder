@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyResultsPage.js
-// ----- START OF COMPLETE MODIFIED FILE (v3.6 - Fix Checkbox Results & MC Other Display) -----
+// ----- START OF COMPLETE MODIFIED FILE (v3.7 - Fix CardSort Unassigned & MC Other Logging) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Bar, Pie } from 'react-chartjs-2';
@@ -9,10 +9,11 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, RadialLinearScale);
 
-const CARD_SORT_UNASSIGNED_ID = '__UNASSIGNED__';
+// *** MODIFIED: Standardize Card Sort Unassigned ID ***
+const CARD_SORT_UNASSIGNED_ID = '__UNASSIGNED_CARDS__'; // Was '__UNASSIGNED__'
 const NA_KEY = '__NA__';
 const OTHER_KEY_INTERNAL = '__OTHER__';
-const OTHER_DISPLAY_LABEL = 'Other'; // Used for grouping in charts/tables
+const OTHER_DISPLAY_LABEL = 'Other'; 
 const NA_DISPLAY_LABEL = 'Not Applicable';
 
 const CHART_COLORS = [ '#0d6efd', '#6f42c1', '#d63384', '#dc3545', '#fd7e14', '#ffc107', '#198754', '#20c997', '#0dcaf0', '#6c757d', '#343a40', '#adb5bd', '#ff6384', '#36a2eb', '#cc65fe', '#ffce56', '#4bc0c0', '#9966ff', '#ff9f40' ];
@@ -23,8 +24,8 @@ const createHistogramData = (values, minVal, maxVal, numBins = 10) => { if (!val
 const safeJsonParse = (value, defaultValue = null) => { if (typeof value !== 'string' || !value.trim()) { return defaultValue; } try { const parsed = JSON.parse(value); return parsed; } catch (e) { console.warn("[safeJsonParse] Failed for value:", value, e); return defaultValue; } };
 const ensureArrayFromAnswer = (value) => {
     if (Array.isArray(value)) return value;
-    if (typeof value === 'string') return value.split('||').filter(Boolean); // Handle legacy "||" separated
-    if (value !== null && value !== undefined) return [String(value)]; // Convert single non-array to array of string
+    if (typeof value === 'string') return value.split('||').filter(Boolean); 
+    if (value !== null && value !== undefined) return [String(value)]; 
     return [];
 };
 
@@ -39,7 +40,7 @@ function SurveyResultsPage() {
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
     const processAllAnswers = useCallback((surveyDefinition, allRawAnswersFromDb) => {
-        console.log("[ResultsPage v3.6] Processing raw answers...", { numAnswers: allRawAnswersFromDb.length });
+        console.log("[ResultsPage v3.7] Processing raw answers...", { numAnswers: allRawAnswersFromDb.length });
         if (!surveyDefinition || !surveyDefinition.questions || !allRawAnswersFromDb || !Array.isArray(allRawAnswersFromDb)) {
             return {};
         }
@@ -49,7 +50,7 @@ function SurveyResultsPage() {
 
         surveyDefinition.questions.forEach(question => {
             if (!question || !question._id || !question.type) {
-                console.warn("[ResultsPage v3.6] Skipping invalid question object in surveyDefinition:", question);
+                console.warn("[ResultsPage v3.7] Skipping invalid question object in surveyDefinition:", question);
                 return; 
             }
             const questionId = question._id;
@@ -64,33 +65,43 @@ function SurveyResultsPage() {
                 switch (questionType) {
                     case 'multiple-choice': case 'dropdown': case 'checkbox':
                         const tempCounts = {};
+                        // console.log(`[ResultsPage v3.7 QID ${questionId} Type ${questionType}] Start processing answers. Num answers: ${questionAnswersFromDb.length}`);
                         questionAnswersFromDb.forEach(ansFromDb => {
-                            // *** MODIFIED: Use ensureArrayFromAnswer for robust checkbox processing ***
+                            // console.log(`[ResultsPage v3.7 QID ${questionId}] Processing ansFromDb:`, ansFromDb);
                             const mainValues = questionType === 'checkbox' 
                                 ? ensureArrayFromAnswer(ansFromDb.answerValue) 
-                                : [ansFromDb.answerValue]; // MC/Dropdown are single value
+                                : [ansFromDb.answerValue]; 
 
                             mainValues.forEach(val => {
                                 if (val === null || val === undefined || String(val).trim() === '') return;
-                                const stringVal = String(val); // Ensure we work with strings for keys
+                                const stringVal = String(val); 
 
                                 if (stringVal === NA_KEY) { tempCounts[NA_KEY] = (tempCounts[NA_KEY] || 0) + 1; }
                                 else if (stringVal === OTHER_KEY_INTERNAL) { 
                                     tempCounts[OTHER_KEY_INTERNAL] = (tempCounts[OTHER_KEY_INTERNAL] || 0) + 1; 
+                                    // *** ADDED LOGGING for MC "Other" debugging ***
+                                    if (questionType === 'multiple-choice') {
+                                        console.log(`[ResultsPage v3.7 MC Other QID ${questionId}] ansValue is OTHER. otherText: "${ansFromDb.otherText}"`);
+                                    }
                                     if (ansFromDb.otherText && ansFromDb.otherText.trim()) { 
                                         const writeInText = ansFromDb.otherText.trim(); 
                                         stats.writeIns[writeInText] = (stats.writeIns[writeInText] || 0) + 1; 
+                                        if (questionType === 'multiple-choice') {
+                                            console.log(`[ResultsPage v3.7 MC Other QID ${questionId}] Added to stats.writeIns: {"${writeInText}": ${stats.writeIns[writeInText]}}`);
+                                        }
+                                    } else if (questionType === 'multiple-choice') {
+                                         console.log(`[ResultsPage v3.7 MC Other QID ${questionId}] otherText is empty or null.`);
                                     }
                                 } else if (question.options && question.options.map(o => String(o.value !== undefined ? o.value : o)).includes(stringVal)) {
                                      tempCounts[stringVal] = (tempCounts[stringVal] || 0) + 1;
                                 } else { 
-                                    // console.warn(`[ResultsPage v3.6 QID ${questionId}] Unexpected value "${stringVal}" for ${questionType}. Not in options.`);
+                                    // console.warn(`[ResultsPage v3.7 QID ${questionId}] Unexpected value "${stringVal}" for ${questionType}. Not in options.`);
                                 }
                             });
                         });
                         stats.counts = tempCounts;
+                        // console.log(`[ResultsPage v3.7 QID ${questionId} Type ${questionType}] Final stats.counts:`, stats.counts, "Final stats.writeIns:", stats.writeIns);
                         break;
-                    // ... (rest of the cases remain the same as v3.5)
                     case 'rating': case 'nps': case 'slider': 
                         const numericValues = questionAnswersFromDb.map(ans => parseFloat(ans.answerValue)).filter(val => !isNaN(val)); 
                         if (numericValues.length > 0) { 
@@ -168,6 +179,7 @@ function SurveyResultsPage() {
                         break;
                     case 'cardsort': 
                         stats.cardPlacementsByCard = {}; 
+                        // Initialize with the corrected unassigned ID
                         stats.cardPlacementsByCategory = { [CARD_SORT_UNASSIGNED_ID]: {} }; 
                         (question.cardSortCategories || []).forEach(catName => { stats.cardPlacementsByCategory[catName] = {}; }); 
                         const foundUserCategoryIds = new Set(); 
@@ -188,16 +200,16 @@ function SurveyResultsPage() {
                                 if (!csOptions.includes(cardId)) return; 
                                 if (!stats.cardPlacementsByCard[cardId]) stats.cardPlacementsByCard[cardId] = {}; 
                                 stats.cardPlacementsByCard[cardId][categoryId] = (stats.cardPlacementsByCard[cardId][categoryId] || 0) + 1; 
+                                
+                                // Ensure category exists before assigning, especially for __UNASSIGNED_CARDS__
                                 if (!stats.cardPlacementsByCategory[categoryId]) { 
-                                    if (foundUserCategoryIds.has(categoryId)) { /* ok */ } 
-                                    else if (categoryId !== CARD_SORT_UNASSIGNED_ID && !(question.cardSortCategories || []).includes(categoryId)) { return; } 
-                                    if (!stats.cardPlacementsByCategory[categoryId]) { stats.cardPlacementsByCategory[categoryId] = {}; } 
+                                    stats.cardPlacementsByCategory[categoryId] = {}; 
                                 } 
                                 stats.cardPlacementsByCategory[categoryId][cardId] = (stats.cardPlacementsByCategory[categoryId][cardId] || 0) + 1; 
                             }); 
                         }); 
                         break;
-                    default: console.warn(`[ResultsPage v3.6 QID ${questionId}] No processing logic defined for question type: ${questionType}`);
+                    default: console.warn(`[ResultsPage v3.7 QID ${questionId}] No processing logic defined for question type: ${questionType}`);
                 }
             } catch (processingError) { console.error(`Error processing answers for question ${questionId} (${questionType}):`, processingError); stats.processingError = processingError.message || "An unknown error occurred during processing."; }
             results[questionId] = { stats };
@@ -254,8 +266,12 @@ function SurveyResultsPage() {
                 let chartItems = []; let tableItems = []; let writeInDetails = [];
                 
                 const getOptionDisplayLabel = (optValue) => {
-                    const optionObject = (options || []).find(o => (typeof o === 'object' && o.value === optValue) || (typeof o === 'string' && o === optValue));
-                    return typeof optionObject === 'object' ? optionObject.text : optionObject;
+                    const optionObject = (options || []).find(o => {
+                        // Handle options being strings or objects {text, value}
+                        const valueToCompare = typeof o === 'object' && o !== null && o.value !== undefined ? o.value : o;
+                        return String(valueToCompare) === String(optValue);
+                    });
+                    return typeof optionObject === 'object' && optionObject !== null ? optionObject.text : optionObject;
                 };
 
                 Object.entries(counts).forEach(([key, count]) => {
@@ -263,17 +279,16 @@ function SurveyResultsPage() {
                         let displayLabel = key;
                         let itemType = 'predefined';
                         if (key === OTHER_KEY_INTERNAL) {
-                            displayLabel = OTHER_DISPLAY_LABEL; // Group label for chart/table
+                            displayLabel = OTHER_DISPLAY_LABEL; 
                             itemType = 'other_group';
                         } else if (key === NA_KEY) {
                             displayLabel = NA_DISPLAY_LABEL;
                             itemType = 'na';
                         } else {
-                            displayLabel = getOptionDisplayLabel(key) || key; // Fallback to key if not found
+                            displayLabel = getOptionDisplayLabel(key) || key; 
                         }
                         const item = { key, displayLabel, count, type: itemType };
                         chartItems.push(item);
-                        // For table, if it's OTHER_KEY_INTERNAL, show "details below"
                         if (key === OTHER_KEY_INTERNAL) {
                             tableItems.push({ ...item, displayLabel: `${OTHER_DISPLAY_LABEL} (details below)`});
                         } else {
@@ -282,9 +297,11 @@ function SurveyResultsPage() {
                     }
                 });
 
-                if (counts[OTHER_KEY_INTERNAL] > 0) {
+                // This condition ensures writeInDetails are populated only if there was an "Other" group counted
+                if (counts[OTHER_KEY_INTERNAL] > 0 && Object.keys(writeIns).length > 0) {
                     writeInDetails = Object.entries(writeIns).map(([writeInText, count]) => ({ text: writeInText, count })).sort((a, b) => b.count - a.count);
                 }
+
 
                 const sortOrder = { 'predefined': 1, 'other_group': 2, 'na': 3 };
                 chartItems.sort((a, b) => (sortOrder[a.type] || 99) - (sortOrder[b.type] || 99) || b.count - a.count);
@@ -309,22 +326,21 @@ function SurveyResultsPage() {
                 
                 return ( <div style={styles.resultContainer}> {chartItems.length > 0 && <div style={isPieChart ? styles.chartContainerPie : styles.chartContainerBar}>{isPieChart ? <Pie options={currentChartOptions} data={chartData} /> : <Bar options={currentChartOptions} data={chartData} />}</div>} {tableItems.length > 0 && <table style={styles.resultsTable}><thead><tr><th style={styles.resultsTableTh}>Value</th><th style={styles.resultsTableTh}>Percent</th><th style={styles.resultsTableTh}>Responses</th></tr></thead><tbody>{tableItems.map((item, i) => (<tr key={`${item.type}-${item.key}`}><td>{item.displayLabel}</td><td>{calculatePercentage(item.count, totalForTablePercent)}<div style={styles.percentBarContainer}><div style={{...styles.percentBar, width: calculatePercentage(item.count, totalForTablePercent), backgroundColor: getSolidChartColor(i)}}></div></div></td><td>{item.count}</td></tr>))}</tbody>{(type === 'multiple-choice' || type === 'dropdown') && <tfoot><tr><td colSpan="2" style={{textAlign: 'right'}}>Total:</td><td>{totalForTablePercent}</td></tr></tfoot>}{type === 'checkbox' && <tfoot><tr><td colSpan="2" style={{textAlign: 'right'}}>Total Respondents:</td><td>{qRespondents}</td></tr></tfoot>}</table>} {writeInDetails.length > 0 && <div style={styles.writeInContainer}><strong style={styles.writeInHeader}>"{OTHER_DISPLAY_LABEL}" Write-in Responses:</strong><ul style={styles.writeInList}>{writeInDetails.map((detail, index) => (<li key={index} style={styles.writeInItem}>"{detail.text}" <span style={styles.writeInCount}>({detail.count})</span></li>))}</ul></div>} </div> );
             }
-            // ... (rest of the cases from v3.5, ensuring they are present)
             case 'rating': { const ratingLabels = (options.length > 0 ? options.map((_, i) => String(i + 1)) : [1, 2, 3, 4, 5].map(String)); const ratingCounts = ratingLabels.map(score => stats.counts?.[String(score)] || 0); const avgRating = stats.average !== null && stats.average !== undefined ? Number(stats.average).toFixed(2) : 'N/A'; const backgroundColors = ratingLabels.map((_, i) => getChartColor(i, 0.8)); const borderColors = ratingLabels.map((_, i) => getSolidChartColor(i)); if (ratingCounts.some(v => typeof v !== 'number' || isNaN(v))) { return <p style={styles.noAnswerText}>Chart data incomplete for rating.</p>; } const chartDataRating = { labels: ratingLabels, datasets: [{ label: '# Responses', data: ratingCounts, backgroundColor: backgroundColors, borderColor: borderColors, borderWidth: 1 }] }; return ( <div style={styles.resultContainer}><p style={styles.summaryStat}>Average Rating: {avgRating}</p><div style={styles.chartContainerBar}><Bar options={defaultBarChartOptions} data={chartDataRating} /></div></div> ); }
             case 'nps': { const { promoters = 0, passives = 0, detractors = 0, npsScore = 0 } = stats; const totalNPSResponses = qRespondents; const promoterPercent = calculatePercentage(promoters, totalNPSResponses); const passivePercent = calculatePercentage(passives, totalNPSResponses); const detractorPercent = calculatePercentage(detractors, totalNPSResponses); const npsScoreLabels = Object.keys(stats.counts || {}).map(k => parseInt(k)).sort((a, b) => a - b).map(String); const npsScoreCounts = npsScoreLabels.map(score => stats.counts?.[score] || 0); const npsBackgroundColors = npsScoreLabels.map(score => { const s = parseInt(score); if (s >= 9) return styles.npsPromoterColor?.backgroundColor || getSolidChartColor(2); if (s >= 7) return styles.npsPassiveColor?.backgroundColor || getSolidChartColor(1); return styles.npsDetractorColor?.backgroundColor || getSolidChartColor(0); }); if (npsScoreCounts.some(v => typeof v !== 'number' || isNaN(v))) { return <p style={styles.noAnswerText}>NPS score distribution data incomplete.</p>; } const chartDataNpsScores = { labels: npsScoreLabels, datasets: [{ label: '# Responses', data: npsScoreCounts, backgroundColor: npsBackgroundColors, borderWidth: 1 }] }; const npsBarOptions = { ...defaultBarChartOptions, plugins: { ...defaultBarChartOptions.plugins, legend: { display: false } } }; return ( <div style={styles.resultContainer}><div style={styles.npsScoreContainer}><span style={styles.npsScoreLabel}>NPS® Score: {Number(npsScore).toFixed(0)}</span><div style={styles.npsCombinedBar}><div title={`Detractors: ${detractorPercent}`} style={{ ...styles.npsBarSegment, width: detractorPercent, backgroundColor: styles.npsDetractorColor?.backgroundColor }}></div><div title={`Passives: ${passivePercent}`} style={{ ...styles.npsBarSegment, width: passivePercent, backgroundColor: styles.npsPassiveColor?.backgroundColor }}></div><div title={`Promoters: ${promoterPercent}`} style={{ ...styles.npsBarSegment, width: promoterPercent, backgroundColor: styles.npsPromoterColor?.backgroundColor }}></div></div></div><table style={{...styles.resultsTable, marginTop: '20px', width: 'auto', minWidth: '400px', display: 'inline-table', marginRight: '30px'}}><tbody><tr><td style={{...styles.resultsTableCellValue, backgroundColor: styles.npsPromoterColor?.backgroundColor, color: styles.npsPromoterColor?.color || 'white' }}>Promoters (9-10)</td><td>{promoterPercent}<div style={styles.percentBarContainer}><div style={{...styles.percentBar, width: promoterPercent, backgroundColor: styles.npsPromoterColor?.backgroundColor }}></div></div></td><td>{promoters}</td></tr><tr><td style={{...styles.resultsTableCellValue, backgroundColor: styles.npsPassiveColor?.backgroundColor, color: styles.npsPassiveColor?.color || '#212529' }}>Passives (7-8)</td><td>{passivePercent}<div style={styles.percentBarContainer}><div style={{...styles.percentBar, width: passivePercent, backgroundColor: styles.npsPassiveColor?.backgroundColor }}></div></div></td><td>{passives}</td></tr><tr><td style={{...styles.resultsTableCellValue, backgroundColor: styles.npsDetractorColor?.backgroundColor, color: styles.npsDetractorColor?.color || 'white' }}>Detractors (0-6)</td><td>{detractorPercent}<div style={styles.percentBarContainer}><div style={{...styles.percentBar, width: detractorPercent, backgroundColor: styles.npsDetractorColor?.backgroundColor }}></div></div></td><td>{detractors}</td></tr></tbody><tfoot><tr><td colSpan="2" style={{textAlign: 'right'}}>Total Responses:</td><td>{totalNPSResponses}</td></tr></tfoot></table><div style={{...styles.chartContainerBar, height: '200px', marginTop: '20px'}}><p style={styles.infoText}>Score Distribution:</p><Bar options={npsBarOptions} data={chartDataNpsScores} /></div></div> ); }
             case 'slider': { const sliderValues = stats.values || []; const avgSlider = stats.average !== null && stats.average !== undefined ? Number(stats.average).toFixed(2) : 'N/A'; const minQVal = sliderMin !== undefined && sliderMin !== null ? parseFloat(sliderMin) : null; const maxQVal = sliderMax !== undefined && sliderMax !== null ? parseFloat(sliderMax) : null; const histData = createHistogramData(sliderValues, minQVal, maxQVal, 10); const backgroundColors = histData.labels.map((_, i) => getChartColor(i, 0.8)); const borderColors = histData.labels.map((_, i) => getSolidChartColor(i)); if (histData.data.some(v => typeof v !== 'number' || isNaN(v))) { return <p style={styles.noAnswerText}>Slider histogram data incomplete.</p>; } const chartDataSlider = { labels: histData.labels, datasets: [{ label: '# Responses', data: histData.data, backgroundColor: backgroundColors, borderColor: borderColors, borderWidth: 1, barPercentage: 1.0, categoryPercentage: 1.0, }] }; const sliderBarOptions = { ...defaultBarChartOptions, plugins: { ...defaultBarChartOptions.plugins, legend: { display: false } }, scales: { x: { grid: { display: false }, title: { display: true, text: `Range (${minQVal ?? 'Auto'}-${maxQVal ?? 'Auto'})`} }, y: { ticks: { precision: 0 }, title: { display: true, text: 'Frequency' } } } }; return ( <div style={styles.resultContainer}><p style={styles.summaryStat}>Average: {avgSlider} (Min: {stats.min ?? 'N/A'}, Max: {stats.max ?? 'N/A'})</p>{histData.labels.length > 0 && <div style={styles.chartContainerBar}><Bar options={sliderBarOptions} data={chartDataSlider} /></div>}</div> ); }
-            case 'text': case 'textarea': { const textResponses = stats.responses || []; if (textResponses.length === 0 && qRespondents > 0) { return <p style={styles.noAnswerText}>All responses were empty.</p>; } if (textResponses.length === 0 && qRespondents === 0) { return <p style={styles.noAnswerText}>No responses for this question.</p>; } const itemStyleBase = styles.textResponseItem || { padding: '8px 12px', borderBottom: '1px dotted #dee2e6' }; if (!styles.textResponseItem) { console.warn("[ResultsPage v3.6] styles.textResponseItem is undefined! Using fallback style. QID:", questionId); } return ( <ul style={styles.textResponseList || { listStyle: 'none', padding: 0 }}> {textResponses.map((response, index, arr) => { const currentItemStyle = { ...itemStyleBase }; if (index === arr.length - 1) { currentItemStyle.borderBottom = 'none'; } else { currentItemStyle.borderBottom = itemStyleBase.borderBottom || '1px dotted #dee2e6'; } return ( <li key={index} style={currentItemStyle}> {response || <i>(Empty)</i>} </li> ); })} </ul> ); }
+            case 'text': case 'textarea': { const textResponses = stats.responses || []; if (textResponses.length === 0 && qRespondents > 0) { return <p style={styles.noAnswerText}>All responses were empty.</p>; } if (textResponses.length === 0 && qRespondents === 0) { return <p style={styles.noAnswerText}>No responses for this question.</p>; } const itemStyleBase = styles.textResponseItem || { padding: '8px 12px', borderBottom: '1px dotted #dee2e6' }; if (!styles.textResponseItem) { console.warn("[ResultsPage v3.7] styles.textResponseItem is undefined! Using fallback style. QID:", questionId); } return ( <ul style={styles.textResponseList || { listStyle: 'none', padding: 0 }}> {textResponses.map((response, index, arr) => { const currentItemStyle = { ...itemStyleBase }; if (index === arr.length - 1) { currentItemStyle.borderBottom = 'none'; } else { currentItemStyle.borderBottom = itemStyleBase.borderBottom || '1px dotted #dee2e6'; } return ( <li key={index} style={currentItemStyle}> {response || <i>(Empty)</i>} </li> ); })} </ul> ); }
             case 'matrix': return ( <table style={styles.resultsTable}><thead><tr><th style={styles.resultsTableTh}></th>{(matrixColumns || []).map(col => <th key={col} style={styles.resultsTableTh}>{col}</th>)}<th style={styles.resultsTableTh}>Row Total</th>{matrixType === 'rating' && <th style={styles.resultsTableTh}>Avg. Rating</th>}</tr></thead><tbody>{(matrixRows || []).map(row => { const rowData = stats.rows?.[row]; const rowCounts = rowData?.counts || {}; const rowTotal = rowData?.total || 0; const rowAverage = rowData?.average !== null && rowData?.average !== undefined ? Number(rowData.average).toFixed(2) : 'N/A'; return ( <tr key={row}><td style={styles.rowHeader}>{row}</td>{(matrixColumns || []).map(col => <td key={col} style={styles.resultsTableCell}>{rowCounts[String(col)] || 0}</td>)}<td style={{...styles.resultsTableCell, fontWeight: 'bold'}}>{rowTotal}</td>{matrixType === 'rating' && <td style={styles.resultsTableCell}>{rowAverage}</td>}</tr> ); })}</tbody></table> );
             case 'ranking': { const rankOptions = options || []; const rankStats = rankOptions.map(opt => { const avgData = stats.averageRanks?.[opt]; const countsData = stats.rankCounts?.[opt] || {}; const avgRank = avgData?.average ? parseFloat(avgData.average).toFixed(2) : Infinity; const totalRankings = avgData?.count || 0; let score = 0; const N = rankOptions.length; for (let rank = 1; rank <= N; rank++) { score += (N - rank) * (countsData[rank] || 0); } return { option: opt, avgRank, score, totalRankings, counts: countsData }; }).sort((a, b) => (a.avgRank === Infinity ? 1 : (b.avgRank === Infinity ? -1 : a.avgRank - b.avgRank))); return ( <div style={styles.resultContainer}><table style={{...styles.resultsTable, tableLayout: 'fixed'}}><thead><tr><th style={{...styles.resultsTableTh, width: '25%'}}>Item</th><th style={{...styles.resultsTableTh, width: '10%'}}>Avg. Rank</th><th style={{...styles.resultsTableTh, width: '35%'}}>Rank Distribution</th><th style={{...styles.resultsTableTh, width: '15%'}}>Score</th><th style={{...styles.resultsTableTh, width: '15%'}}># Ranked</th></tr></thead><tbody>{rankStats.map((item, index) => { const rankDistributionData = []; const N = rankOptions.length; for (let rank = 1; rank <= N; rank++) { rankDistributionData.push(item.counts[rank] || 0); } const maxCountInDist = Math.max(...rankDistributionData, 0); return ( <tr key={item.option}><td style={styles.resultsTableCellValue}>{item.option}</td><td style={styles.resultsTableCellCount}>{item.avgRank === Infinity ? 'N/A' : item.avgRank}</td><td style={styles.resultsTableCell}><div style={styles.rankDistContainer}>{rankDistributionData.map((count, rankIndex) => ( <div key={rankIndex} style={{...styles.rankDistBar, height: maxCountInDist > 0 ? `${(count / maxCountInDist) * 90 + 10}%` : '10%' }} title={`Rank ${rankIndex + 1}: ${count} times`}></div> ))}</div><div style={styles.rankDistLabels}><span>1st</span><span>{N}th</span></div></td><td style={styles.resultsTableCellCount}>{item.score}</td><td style={styles.resultsTableCellCount}>{item.totalRankings}</td></tr> ); })}</tbody></table><p style={styles.infoText}>(Lower Avg. Rank is better. Score uses Borda-like count.)</p></div> );}
             case 'heatmap': { return ( <div style={{ marginTop: '10px' }}><p style={styles.infoText}>Heatmap showing {stats.clicks?.length || 0} clicks from {qRespondents} respondents.</p>{imageUrl ? ( <div style={{ ...styles.heatmapContainer, position: 'relative', display: 'inline-block' }}><img src={imageUrl} alt="Heatmap Base" style={styles.heatmapImage} />{(stats.clicks || []).map((click, index) => ( <div key={index} style={{ position: 'absolute', left: `${click.x * 100}%`, top: `${click.y * 100}%`, width: '8px', height: '8px', backgroundColor: 'rgba(255,0,0,0.5)', borderRadius: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}></div> ))}</div> ) : <p style={styles.noAnswerText}>Image URL missing for heatmap question.</p>}</div> );}
             case 'maxdiff': { const mdScores = (options || []).map(opt => { const most = stats.bestCounts?.[opt] || 0; const worst = stats.worstCounts?.[opt] || 0; return { option: opt, score: most - worst, most, worst }; }).sort((a, b) => b.score - a.score); return ( <div style={styles.resultContainer}><table style={styles.resultsTable}><thead><tr><th style={styles.resultsTableTh}>Item</th><th style={styles.resultsTableTh}>Best Count</th><th style={styles.resultsTableTh}>Worst Count</th><th style={styles.resultsTableTh}>Score (Best-Worst)</th></tr></thead><tbody>{mdScores.map(item => ( <tr key={item.option}><td style={styles.resultsTableCellValue}>{item.option}</td><td style={styles.resultsTableCellCount}>{item.most}</td><td style={styles.resultsTableCellCount}>{item.worst}</td><td style={styles.resultsTableCellCount}>{item.score}</td></tr> ))}</tbody></table></div> );}
             case 'conjoint': { const levelCounts = stats.levelCounts || {}; return ( <div><p style={styles.infoText}>Attribute level counts from chosen profiles ({qRespondents} tasks completed).</p>{Object.entries(levelCounts).map(([attrName, levels]) => ( <div key={attrName} style={{ marginBottom: '15px' }}><strong>{attrName}</strong><table style={{...styles.resultsTable, width: 'auto', minWidth: '300px'}}><thead><tr><th style={styles.resultsTableTh}>Level</th><th style={styles.resultsTableTh}>Count</th></tr></thead><tbody>{Object.entries(levels).sort((a,b) => b[1] - a[1]).map(([levelName, count]) => ( <tr key={levelName}><td style={styles.resultsTableCellValue}>{levelName}</td><td style={styles.resultsTableCellCount}>{count}</td></tr> ))}</tbody></table></div> ))}</div> );}
             case 'cardsort': { const placementsByCategory = stats.cardPlacementsByCategory || {}; const allUserCategoriesFound = stats.userCategoriesFromAnswers || []; const displayCategories = [ { id: CARD_SORT_UNASSIGNED_ID, name: "Unassigned Cards" }, ...(cardSortCategories || []).map(name => ({ id: name, name })), ...allUserCategoriesFound ]; const uniqueDisplayCategoriesMap = new Map(); displayCategories.forEach(cat => { if (cat && cat.id && !uniqueDisplayCategoriesMap.has(cat.id)) { uniqueDisplayCategoriesMap.set(cat.id, cat); } }); const uniqueDisplayCategories = Array.from(uniqueDisplayCategoriesMap.values()); uniqueDisplayCategories.sort((a, b) => { if (a.id === CARD_SORT_UNASSIGNED_ID) return -1; if (b.id === CARD_SORT_UNASSIGNED_ID) return 1; const aIsPredefined = (cardSortCategories || []).includes(a.id); const bIsPredefined = (cardSortCategories || []).includes(b.id); if (aIsPredefined && !bIsPredefined) return -1; if (!aIsPredefined && bIsPredefined) return 1; return (a.name || '').localeCompare(b.name || ''); }); return ( <div style={styles.cardSortResultContainer}><p style={styles.infoText}>Card placements across {qRespondents} respondents.</p>{uniqueDisplayCategories.map(({ id: categoryId, name: categoryName }) => { const cardsInCategory = placementsByCategory[categoryId] || {}; const sortedCards = Object.entries(cardsInCategory).map(([cardId, count]) => ({ card: cardId, count })).sort((a, b) => b.count - a.count || a.card.localeCompare(b.card)); return ( <div key={categoryId} style={styles.cardSortResultCategory}><h4 style={styles.cardSortCategoryTitle}>{categoryName}</h4>{sortedCards.length > 0 ? ( <ul style={styles.cardSortCardList}>{sortedCards.map(({ card, count }, idx, arr) => (<li key={card} style={{...styles.cardSortCardItem, borderBottom: idx === arr.length - 1 ? 'none' : styles.cardSortCardItem.borderBottom}}><span style={styles.cardSortCardName}>{card}</span><span style={styles.cardSortCardCount}>({count} | {calculatePercentage(count, qRespondents)})</span></li>))}</ul> ) : ( <p style={styles.cardSortEmptyCategory}><i>(No cards placed here by respondents)</i></p> )}</div> ); })}</div> ); }
-            default: console.warn(`[ResultsPage v3.6 QID ${questionId} Type ${type}] Unknown question type for results display.`); return <p>Visualization for type '{type}' is not implemented.</p>;
+            default: console.warn(`[ResultsPage v3.7 QID ${questionId} Type ${type}] Unknown question type for results display.`); return <p>Visualization for type '{type}' is not implemented.</p>;
         }
     };
 
-    const styles = { /* PASTE THE FULL STYLES OBJECT FROM v3.3/v3.4/v3.5 HERE */ 
+    const styles = { /* PASTE THE FULL STYLES OBJECT FROM v3.5/v3.6 HERE */ 
         pageContainer: { padding: '20px', maxWidth: '950px', margin: 'auto', fontFamily: 'Arial, sans-serif', color: '#333' }, header: { borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }, surveyTitle: { margin: 0, fontSize: '1.8em', flexGrow: 1 }, respondentCount: { fontSize: '1.1em', fontWeight: 'bold', color: '#6c757d', whiteSpace: 'nowrap' }, questionResultBox: { marginBottom: '40px', padding: '20px', border: '1px solid #dee2e6', borderRadius: '8px', backgroundColor: '#fff' }, questionText: { fontWeight: 'normal', fontSize: '1.3em', marginBottom: '20px', color: '#212529' }, resultContainer: { display: 'flex', flexDirection: 'column', gap: '20px' }, chartContainerPie: { height: '280px', width: '100%', maxWidth: '450px', margin: '0 auto 15px auto', position: 'relative' }, chartContainerBar: { height: '300px', width: '100%', marginBottom: '15px', position: 'relative' }, resultsTable: { width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em', border: '1px solid #dee2e6' }, resultsTableTh: { backgroundColor: '#f8f9fa', fontWeight: '600', padding: '10px 12px', border: '1px solid #dee2e6', textAlign: 'left' }, resultsTableCell: { border: '1px solid #dee2e6', padding: '8px 12px', textAlign: 'center', verticalAlign: 'middle' }, resultsTableCellValue: { textAlign: 'left', padding: '8px 12px', border: '1px solid #dee2e6', verticalAlign: 'middle' }, resultsTableCellPercent: { textAlign: 'left', padding: '8px 12px', border: '1px solid #dee2e6', verticalAlign: 'middle', width: '150px' }, resultsTableCellCount: { textAlign: 'right', padding: '8px 12px', border: '1px solid #dee2e6', verticalAlign: 'middle', fontWeight: '500' }, percentBarContainer: { width: '100%', backgroundColor: '#e9ecef', height: '10px', borderRadius: '3px', marginTop: '4px', overflow: 'hidden' }, percentBar: { height: '100%', transition: 'width 0.3s ease-in-out' }, summaryStat: { fontWeight: 'bold', fontSize: '1.1em', margin: '10px 0', color: '#0d6efd' }, infoText: { fontSize: '0.9em', color: '#6c757d', marginBottom: '10px' }, noAnswerText: { fontStyle: 'italic', color: '#6c757d' }, errorText: { color: '#dc3545', fontWeight: 'bold'}, textResponseList: { listStyle: 'none', padding: 0, maxHeight: '300px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '4px' }, textResponseItem: { padding: '8px 12px', borderBottom: '1px dotted #dee2e6' }, rowHeader: { fontWeight: 'bold', textAlign: 'left', padding: '8px 12px', border: '1px solid #dee2e6', verticalAlign: 'middle', backgroundColor: '#f8f9fa' }, heatmapContainer: { border: '1px solid #dee2e6', display: 'inline-block', maxWidth: '100%' }, heatmapImage: { display: 'block', maxWidth: '100%', height: 'auto' }, cardSortResultContainer: { display: 'flex', flexDirection: 'column', gap: '15px', }, cardSortResultCategory: { border: '1px solid #e0e0e0', borderRadius: '6px', backgroundColor: '#f9f9f9', padding: '15px', }, cardSortCategoryTitle: { margin: '0 0 10px 0', fontSize: '1.1em', fontWeight: 'bold', color: '#444', borderBottom: '1px solid #eee', paddingBottom: '5px', }, cardSortCardList: { listStyle: 'none', padding: 0, margin: 0, }, cardSortCardItem: { display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: '0.95em', borderBottom: '1px dotted #eee' }, cardSortCardName: { color: '#333', }, cardSortCardCount: { color: '#666', fontSize: '0.9em', whiteSpace: 'nowrap', marginLeft: '10px', }, cardSortEmptyCategory: { fontSize: '0.9em', color: '#777', fontStyle: 'italic', padding: '10px 0', }, loadingErrorText: { textAlign: 'center', padding: '40px', fontSize: '1.2em', color: '#dc3545' }, backLink: { display: 'inline-block', marginBottom: '20px', color: '#0d6efd', textDecoration: 'none' }, npsScoreContainer: { marginBottom: '20px' }, npsScoreLabel: { fontSize: '1.2em', fontWeight: 'bold', display: 'block', marginBottom: '10px' }, npsCombinedBar: { display: 'flex', height: '30px', width: '100%', borderRadius: '5px', overflow: 'hidden', border: '1px solid #ccc' }, npsBarSegment: { height: '100%', transition: 'width 0.5s ease-in-out' }, npsPromoterColor: { backgroundColor: '#28a745', color: 'white' }, npsPassiveColor: { backgroundColor: '#ffc107', color: '#212529' }, npsDetractorColor: { backgroundColor: '#dc3545', color: 'white' }, rankDistContainer: { display: 'flex', alignItems: 'flex-end', height: '40px', width: '100%', borderBottom: '1px solid #ccc', padding: '0 5px', boxSizing: 'border-box' }, rankDistBar: { flex: 1, backgroundColor: '#a6d8a8', margin: '0 2%', transition: 'height 0.3s ease' }, rankDistLabels: { display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: '#6c757d', marginTop: '2px', padding: '0 5px' }, writeInContainer: { marginTop: '15px', borderTop: '1px dashed #ccc', paddingTop: '10px' }, writeInHeader: { fontSize: '0.95em', color: '#333', marginBottom: '5px', display: 'block' }, writeInList: { listStyle: 'none', paddingLeft: '15px', maxHeight: '150px', overflowY: 'auto', fontSize: '0.9em' }, writeInItem: { marginBottom: '3px' }, writeInCount: { color: '#6c757d', marginLeft: '5px', fontSize: '0.9em' }, exportLink: { display: 'inline-block', padding: '8px 15px', backgroundColor: '#198754', color: 'white', textDecoration: 'none', borderRadius: '5px', fontSize: '0.9em', fontWeight: 'bold', transition: 'background-color 0.2s ease', whiteSpace: 'nowrap', }, 
     };
 
@@ -337,4 +353,4 @@ function SurveyResultsPage() {
 }
 
 export default SurveyResultsPage;
-// ----- END OF COMPLETE MODIFIED FILE (v3.6 - Fix Checkbox Results & MC Other Display) -----
+// ----- END OF COMPLETE MODIFIED FILE (v3.7 - Fix CardSort Unassigned & MC Other Logging) -----
