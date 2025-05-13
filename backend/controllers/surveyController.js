@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext9 - Fix reCAPTCHA Site Key Fetching) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext10 - Robust Collector Settings Passing) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -13,7 +13,6 @@ const axios = require('axios');
 // --- Helper Function for Conjoint Question Type (used in getSurveyById) ---
 const generateConjointProfiles = (attributes) => {
     if (!attributes || attributes.length === 0) return [];
-    // Placeholder for actual conjoint profile generation logic
     return [];
 };
 
@@ -32,7 +31,7 @@ const formatValueForCsv = (value, questionType, otherTextValue) => {
             if (value === '__OTHER__' && otherTextValue) return `Other: ${otherTextValue}`;
             return String(value);
         case 'checkbox':
-            const answerArray = ensureArrayForCsv(value); // Use helper
+            const answerArray = ensureArrayForCsv(value); 
             if (answerArray.length > 0) {
                 const options = answerArray.filter(v => v !== '__OTHER__').map(v => String(v)).join(CSV_SEPARATOR);
                 const otherIsSelected = answerArray.includes('__OTHER__');
@@ -105,7 +104,7 @@ exports.createSurvey = async (req, res) => {
 
 exports.getSurveyById = async (req, res) => {
     const { surveyId } = req.params;
-    const { forTaking, collectorId } = req.query;
+    const { forTaking, collectorId } = req.query; // collectorId here is the linkId or customSlug
 
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
         return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
@@ -113,20 +112,37 @@ exports.getSurveyById = async (req, res) => {
 
     try {
         let surveyQuery = Survey.findById(surveyId);
-        let collectorForTaking = null; 
+        let actualCollectorDoc = null; // To store the fetched Mongoose collector document
 
         if (forTaking === 'true') {
             surveyQuery = surveyQuery
                 .select('title description welcomeMessage thankYouMessage status questions settings.surveyWide.allowRetakes settings.surveyWide.showProgressBar settings.surveyWide.customCSS globalSkipLogic randomizationLogic')
                 .populate({ path: 'questions', options: { sort: { order: 1 } } });
             
-            if (collectorId && mongoose.Types.ObjectId.isValid(collectorId)) {
-                collectorForTaking = await Collector.findById(collectorId)
-                                        // --- MODIFIED: Added settings.web_link.recaptchaSiteKey ---
-                                        .select('settings.web_link.allowMultipleResponses settings.web_link.anonymousResponses settings.web_link.enableRecaptcha settings.web_link.recaptchaSiteKey') 
-                                        .lean(); 
-            }
+            // If collectorId (linkId/slug) is provided for survey taking, find the actual collector document
+            if (collectorId) {
+                // Try finding by linkId first, then by customSlug if it's not an ObjectId
+                if (mongoose.Types.ObjectId.isValid(collectorId)) { // Should typically not be an ObjectId for public links
+                     actualCollectorDoc = await Collector.findOne({ _id: collectorId, survey: surveyId })
+                        .select('+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey')
+                        .lean(); // Use lean for settings object, but we might need instance for password
+                }
+                if (!actualCollectorDoc) { // If not found by _id or if collectorId wasn't an ObjectId
+                    actualCollectorDoc = await Collector.findOne({ linkId: collectorId, survey: surveyId })
+                        .select('+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey');
+                        // Not using .lean() here if we need instance methods like comparePassword later
+                }
+                if (!actualCollectorDoc) {
+                    actualCollectorDoc = await Collector.findOne({ 'settings.web_link.customSlug': collectorId, survey: surveyId })
+                        .select('+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey');
+                }
 
+                if (!actualCollectorDoc) {
+                    // Do not error out here yet, survey might be accessible without a specific collector (e.g. preview)
+                    // But if collectorId was provided and not found, it's an issue for restricted access.
+                    console.warn(`[getSurveyById] Collector not found for identifier: ${collectorId} and survey ${surveyId}`);
+                }
+            }
         } else { 
             surveyQuery = surveyQuery.populate({ path: 'questions', options: { sort: { order: 1 } } }).populate('collectors');
         }
@@ -141,38 +157,39 @@ exports.getSurveyById = async (req, res) => {
             return res.status(403).json({ success: false, message: 'You are not authorized to view this survey\'s details.' });
         }
 
+        const isOwnerPreviewingDraft = survey.status === 'draft' && req.user && String(survey.createdBy) === String(req.user.id);
+
         if (forTaking === 'true') {
-            const isOwnerPreviewingDraft = survey.status === 'draft' && req.user && String(survey.createdBy) === String(req.user.id);
             if (survey.status !== 'active' && !isOwnerPreviewingDraft) {
                  return res.status(403).json({ success: false, message: 'This survey is not currently active.' });
             }
 
-            if (collectorId) { 
-                if (!mongoose.Types.ObjectId.isValid(collectorId)) return res.status(400).json({ success: false, message: 'Invalid Collector ID.' });
-                
-                const fullCollectorForValidation = (collectorForTaking && String(collectorForTaking._id) === collectorId) 
-                    ? await Collector.findById(collectorId).select('+settings.web_link.password').lean() // Re-fetch with password if it's the same collector
-                    : await Collector.findById(collectorId).select('+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey').lean();
+            if (collectorId && !actualCollectorDoc) { // If a collectorId was given but not found
+                 return res.status(404).json({ success: false, message: 'Collector not found or invalid for this survey.' });
+            }
 
-
-                if (!fullCollectorForValidation || String(fullCollectorForValidation.survey) !== String(survey._id)) return res.status(404).json({ success: false, message: 'Collector not found or invalid for this survey.' });
-                if (fullCollectorForValidation.status !== 'open' && !isOwnerPreviewingDraft) return res.status(403).json({ success: false, message: `Link is ${fullCollectorForValidation.status}.` });
-                
-                if (fullCollectorForValidation.type === 'web_link' && fullCollectorForValidation.settings?.web_link?.password) { // Check if password field exists
+            if (actualCollectorDoc) { // Validate against the found collector
+                if (String(actualCollectorDoc.survey) !== String(survey._id)) { // Should be redundant due to query
+                    return res.status(400).json({ success: false, message: 'Collector does not belong to this survey.' });
+                }
+                if (actualCollectorDoc.status !== 'open' && !isOwnerPreviewingDraft) {
+                    return res.status(403).json({ success: false, message: `Link is ${actualCollectorDoc.status}.` });
+                }
+                if (actualCollectorDoc.type === 'web_link' && actualCollectorDoc.settings?.web_link?.password) {
                     const providedPassword = req.headers['x-survey-password'];
-                    const collectorInstance = new Collector(fullCollectorForValidation); // Create instance to use comparePassword
+                    // actualCollectorDoc should be a Mongoose document instance here to use comparePassword
+                    // If it was .lean(), we'd need to re-fetch or hash manually.
+                    // Let's assume actualCollectorDoc is an instance if password check is needed.
+                    // If actualCollectorDoc came from .lean(), re-fetch for instance method:
+                    const collectorInstance = await Collector.findById(actualCollectorDoc._id).select('+settings.web_link.password');
+
                     const passwordMatch = await collectorInstance.comparePassword(providedPassword);
                     if (!providedPassword || !passwordMatch) {
                          return res.status(401).json({ success: false, message: 'Password required or incorrect.', requiresPassword: true });
                     }
                 }
-                if (!collectorForTaking) { // If not fetched initially, populate it from fullCollectorForValidation
-                    collectorForTaking = { 
-                        settings: { web_link: fullCollectorForValidation.settings?.web_link }
-                    };
-                }
-            } else if (!isOwnerPreviewingDraft && survey.status === 'draft') {
-                return res.status(403).json({ success: false, message: 'Survey is in draft mode.' });
+            } else if (!isOwnerPreviewingDraft && survey.status === 'draft' && !collectorId) { // No collector, survey is draft, not owner
+                return res.status(403).json({ success: false, message: 'Survey is in draft mode and requires a specific collector link for preview.' });
             }
         }
 
@@ -188,20 +205,32 @@ exports.getSurveyById = async (req, res) => {
         }
         
         const surveyResponseData = { ...survey, questions: processedQuestions };
-        if (forTaking === 'true' && collectorForTaking && collectorForTaking.settings?.web_link) {
-            surveyResponseData.collectorSettings = { ...collectorForTaking.settings.web_link }; // Make a copy
-            // Fallback to ENV site key if collector has it enabled but no specific key
-            if (surveyResponseData.collectorSettings.enableRecaptcha && !surveyResponseData.collectorSettings.recaptchaSiteKey && process.env.REACT_APP_RECAPTCHA_SITE_KEY) {
-                surveyResponseData.collectorSettings.recaptchaSiteKey = process.env.REACT_APP_RECAPTCHA_SITE_KEY;
+        
+        // --- MODIFIED: Ensure collectorSettings are correctly populated ---
+        if (forTaking === 'true') {
+            if (actualCollectorDoc && actualCollectorDoc.settings?.web_link) {
+                surveyResponseData.collectorSettings = { ...actualCollectorDoc.settings.web_link }; // Use settings from the found collector
+                // Fallback to ENV site key if collector has it enabled but no specific key
+                if (surveyResponseData.collectorSettings.enableRecaptcha && !surveyResponseData.collectorSettings.recaptchaSiteKey && process.env.REACT_APP_RECAPTCHA_SITE_KEY) {
+                    surveyResponseData.collectorSettings.recaptchaSiteKey = process.env.REACT_APP_RECAPTCHA_SITE_KEY;
+                }
+            } else {
+                // If no specific collector context (e.g. previewing a draft survey without a collector link by owner)
+                // or if collectorId was not provided.
+                // Default to empty or base settings. For reCAPTCHA, it would mean it's likely off unless globally forced.
+                surveyResponseData.collectorSettings = {
+                    allowMultipleResponses: survey.settings?.surveyWide?.allowRetakes !== undefined ? survey.settings.surveyWide.allowRetakes : true, // Example fallback
+                    anonymousResponses: false, // Default to not anonymous
+                    enableRecaptcha: false, // Default to no reCAPTCHA without collector
+                    recaptchaSiteKey: process.env.REACT_APP_RECAPTCHA_SITE_KEY || '' // Fallback ENV key
+                };
             }
-        } else if (forTaking === 'true') {
-             surveyResponseData.collectorSettings = {}; // Ensure it exists
         }
-
+        // --- END MODIFICATION ---
 
         res.status(200).json({ success: true, data: surveyResponseData });
     } catch (error) {
-        console.error(`[Backend - getSurveyById] Error fetching survey ${surveyId}:`, error);
+        console.error(`[Backend - getSurveyById] Error fetching survey ${surveyId} with collectorId ${collectorId}:`, error);
         res.status(500).json({ success: false, message: 'Error fetching survey.' });
     }
 };
@@ -278,7 +307,7 @@ exports.submitSurveyAnswers = async (req, res) => {
     if (!Array.isArray(answersPayload)) return res.status(400).json({ success: false, message: 'Answers must be an array.' });
     const sessionIdToUse = payloadSessionId;
     if (!sessionIdToUse) return res.status(400).json({ success: false, message: 'Session ID required.' });
-    if (!collectorId || !mongoose.Types.ObjectId.isValid(collectorId)) return res.status(400).json({ success: false, message: 'Valid Collector ID required.' });
+    if (!collectorId || !mongoose.Types.ObjectId.isValid(collectorId)) return res.status(400).json({ success: false, message: 'Valid Collector ID required for submission.' }); // Changed message slightly
 
     const mongoSession = await mongoose.startSession(); 
     mongoSession.startTransaction();
@@ -291,8 +320,12 @@ exports.submitSurveyAnswers = async (req, res) => {
             await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Survey not active.' });
         }
         
-        const collector = await Collector.findById(collectorId).select('+settings.web_link.password +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey').session(mongoSession); 
-        if (!collector) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Collector not found.' }); }
+        // For submission, collectorId is the actual ObjectId of the collector document
+        const collector = await Collector.findById(collectorId)
+            .select('+settings.web_link.password +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey')
+            .session(mongoSession); 
+            
+        if (!collector) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Collector not found for submission.' }); } // Changed message
         if (String(collector.survey) !== String(surveyId)) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Collector mismatch.' }); }
         if (collector.status !== 'open' && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: `Link is ${collector.status}.` }); }
         
@@ -305,14 +338,8 @@ exports.submitSurveyAnswers = async (req, res) => {
         
         if (collector.type === 'web_link' && webLinkSettings?.enableRecaptcha && !isOwnerPreviewingDraft) {
             if (!recaptchaToken) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'reCAPTCHA required.' }); }
-            
-            const siteKeyForVerification = webLinkSettings.recaptchaSiteKey || process.env.RECAPTCHA_V2_SITE_KEY_BACKEND_UNUSED; // Site key not used for verification, only secret
             const secretKey = process.env.RECAPTCHA_V2_SECRET_KEY;
-
             if (!secretKey) { console.error("[submitSurveyAnswers] RECAPTCHA_V2_SECRET_KEY not set."); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'reCAPTCHA config error (secret missing).' }); }
-            // if (!siteKeyForVerification) { console.error("[submitSurveyAnswers] reCAPTCHA site key not available (collector or ENV)."); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'reCAPTCHA config error (site key missing).' });}
-
-
             const verificationUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${recaptchaToken}&remoteip=${req.ip}`;
             try {
                 const recaptchaResponse = await axios.post(verificationUrl);
@@ -339,7 +366,7 @@ exports.submitSurveyAnswers = async (req, res) => {
         };
         const responseSetOnInsertData = { 
             survey: surveyId, 
-            collector: collectorId, 
+            collector: collector._id, // Use the ObjectId of the fetched collector
             sessionId: sessionIdToUse, 
             startedAt: (clientStartedAt && !isNaN(new Date(clientStartedAt).getTime())) ? new Date(clientStartedAt) : new Date() 
         };
@@ -366,18 +393,18 @@ exports.submitSurveyAnswers = async (req, res) => {
         }
 
         const updatedResponse = await Response.findOneAndUpdate(
-            { survey: surveyId, collector: collectorId, sessionId: sessionIdToUse }, 
+            { survey: surveyId, collector: collector._id, sessionId: sessionIdToUse }, 
             { $set: responseUpdateData, $setOnInsert: responseSetOnInsertData }, 
             { new: true, upsert: true, runValidators: true, session: mongoSession }
         );
         
         if (!isOwnerPreviewingDraft) {
-            const collectorUpdateResult = await Collector.updateOne({ _id: collectorId }, { $inc: { responseCount: 1 } }, { session: mongoSession });
+            const collectorUpdateResult = await Collector.updateOne({ _id: collector._id }, { $inc: { responseCount: 1 } }, { session: mongoSession });
             if (collectorUpdateResult.modifiedCount > 0) { 
-                const updatedCollector = await Collector.findById(collectorId).session(mongoSession);
-                if (webLinkSettings?.maxResponses && updatedCollector.responseCount >= webLinkSettings.maxResponses) {
-                    updatedCollector.status = 'completed_quota';
-                    await updatedCollector.save({ session: mongoSession });
+                const updatedCollectorAfterInc = await Collector.findById(collector._id).session(mongoSession); // Re-fetch to check count
+                if (webLinkSettings?.maxResponses && updatedCollectorAfterInc.responseCount >= webLinkSettings.maxResponses) {
+                    updatedCollectorAfterInc.status = 'completed_quota';
+                    await updatedCollectorAfterInc.save({ session: mongoSession });
                 }
             }
         }
@@ -538,4 +565,4 @@ exports.exportSurveyResults = async (req, res) => {
         if (!res.headersSent) res.status(500).json({ success: false, message: 'Error exporting results.' });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (vNext9 - Fix reCAPTCHA Site Key Fetching) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext10 - Robust Collector Settings Passing) -----
