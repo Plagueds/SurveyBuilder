@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext13 - Fix IP Address Conflict) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext14 - Implement IP Filtering Logic) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -9,6 +9,19 @@ const Collector = require('../models/Collector');
 const Response = require('../models/Response');
 const { evaluateAllLogic } = require('../utils/logicEvaluator');
 const axios = require('axios');
+const ipRangeCheck = require('ip-range-check'); // <<<--- ADDED FOR IP FILTERING
+
+// --- Helper Function to get IP Address (moved to be reusable) ---
+const getIpAddress = (request) => {
+    const xForwardedFor = request.headers['x-forwarded-for'];
+    if (xForwardedFor) {
+        // Can be a comma-separated list, take the first one (client IP)
+        return Array.isArray(xForwardedFor) ? xForwardedFor[0].split(',').shift()?.trim() : xForwardedFor.split(',').shift()?.trim();
+    }
+    // Fallback to req.ip (Express specific) or req.connection.remoteAddress
+    return request.ip || request.connection?.remoteAddress;
+};
+
 
 // --- Helper Function for Conjoint Question Type (used in getSurveyById) ---
 const generateConjointProfiles = (attributes) => {
@@ -123,7 +136,8 @@ exports.getSurveyById = async (req, res) => {
             
             if (collectorId) {
                 console.log(`[getSurveyById Bkend] Attempting to find collector by identifier: ${collectorId} for survey ${surveyId}`);
-                const selectFields = '+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey';
+                // --- MODIFIED: Added ipAllowlist and ipBlocklist to selectFields ---
+                const selectFields = '+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist';
                 
                 if (mongoose.Types.ObjectId.isValid(collectorId)) {
                     console.log(`[getSurveyById Bkend] Identifier ${collectorId} is a valid ObjectId. Querying by _id.`);
@@ -178,6 +192,40 @@ exports.getSurveyById = async (req, res) => {
                 if (actualCollectorDoc.status !== 'open' && !effectiveIsOwnerPreviewing) {
                     return res.status(403).json({ success: false, message: `Link is ${actualCollectorDoc.status}.` });
                 }
+
+                // --- IP FILTERING LOGIC START ---
+                if (actualCollectorDoc.settings?.web_link && !effectiveIsOwnerPreviewing) {
+                    const respondentIp = getIpAddress(req);
+                    console.log(`[getSurveyById Bkend] Respondent IP: ${respondentIp}`);
+                    const { ipAllowlist, ipBlocklist } = actualCollectorDoc.settings.web_link;
+
+                    if (respondentIp) { // Proceed only if IP is available
+                        // Check Allowlist: If allowlist has entries, IP must be in it.
+                        if (ipAllowlist && ipAllowlist.length > 0) {
+                            const isAllowed = ipAllowlist.some(allowedIpOrRange => ipRangeCheck(respondentIp, allowedIpOrRange));
+                            if (!isAllowed) {
+                                console.warn(`[getSurveyById Bkend] IP ${respondentIp} NOT in allowlist for collector ${actualCollectorDoc._id}. Access denied.`);
+                                return res.status(403).json({ success: false, message: 'Access to this survey is restricted from your current IP address (not in allowlist).' });
+                            }
+                            console.log(`[getSurveyById Bkend] IP ${respondentIp} is in allowlist.`);
+                        }
+
+                        // Check Blocklist: If blocklist has entries, IP must NOT be in it.
+                        if (ipBlocklist && ipBlocklist.length > 0) {
+                            const isBlocked = ipBlocklist.some(blockedIpOrRange => ipRangeCheck(respondentIp, blockedIpOrRange));
+                            if (isBlocked) {
+                                console.warn(`[getSurveyById Bkend] IP ${respondentIp} IS in blocklist for collector ${actualCollectorDoc._id}. Access denied.`);
+                                return res.status(403).json({ success: false, message: 'Access to this survey is restricted from your current IP address (in blocklist).' });
+                            }
+                            console.log(`[getSurveyById Bkend] IP ${respondentIp} is NOT in blocklist.`);
+                        }
+                    } else {
+                        console.warn(`[getSurveyById Bkend] Could not determine respondent IP for collector ${actualCollectorDoc._id}. IP filtering skipped.`);
+                    }
+                }
+                // --- IP FILTERING LOGIC END ---
+
+
                 if (actualCollectorDoc.type === 'web_link' && actualCollectorDoc.settings?.web_link?.password) {
                     const providedPassword = req.headers['x-survey-password'];
                     const passwordMatch = await actualCollectorDoc.comparePassword(providedPassword);
@@ -222,7 +270,9 @@ exports.getSurveyById = async (req, res) => {
                     allowMultipleResponses: survey.settings?.surveyWide?.allowRetakes !== undefined ? survey.settings.surveyWide.allowRetakes : true,
                     anonymousResponses: false, 
                     enableRecaptcha: false, 
-                    recaptchaSiteKey: process.env.REACT_APP_RECAPTCHA_SITE_KEY || '' 
+                    recaptchaSiteKey: process.env.REACT_APP_RECAPTCHA_SITE_KEY || '',
+                    ipAllowlist: [], // Default empty for frontend
+                    ipBlocklist: []  // Default empty for frontend
                 };
                 surveyResponseData.actualCollectorObjectId = null;
             }
@@ -319,8 +369,9 @@ exports.submitSurveyAnswers = async (req, res) => {
             await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Survey not active.' });
         }
         
+        // --- MODIFIED: Added ipAllowlist and ipBlocklist to selectFields for collector ---
         const collector = await Collector.findById(collectorId)
-            .select('+settings.web_link.password +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey')
+            .select('+settings.web_link.password +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist')
             .session(mongoSession); 
             
         if (!collector) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Collector not found for submission.' }); } 
@@ -330,6 +381,27 @@ exports.submitSurveyAnswers = async (req, res) => {
         const now = new Date(); 
         const webLinkSettings = collector.settings?.web_link;
 
+        // --- IP FILTERING LOGIC (Double Check before submission, though getSurveyById should handle primary blocking) ---
+        if (webLinkSettings && !isOwnerPreviewingDraft) {
+            const respondentIp = getIpAddress(req);
+            if (respondentIp) {
+                if (webLinkSettings.ipAllowlist && webLinkSettings.ipAllowlist.length > 0) {
+                    if (!webLinkSettings.ipAllowlist.some(ip => ipRangeCheck(respondentIp, ip))) {
+                        await mongoSession.abortTransaction(); mongoSession.endSession();
+                        return res.status(403).json({ success: false, message: 'Submission restricted from your IP address (not in allowlist).' });
+                    }
+                }
+                if (webLinkSettings.ipBlocklist && webLinkSettings.ipBlocklist.length > 0) {
+                    if (webLinkSettings.ipBlocklist.some(ip => ipRangeCheck(respondentIp, ip))) {
+                        await mongoSession.abortTransaction(); mongoSession.endSession();
+                        return res.status(403).json({ success: false, message: 'Submission restricted from your IP address (in blocklist).' });
+                    }
+                }
+            }
+        }
+        // --- END IP FILTERING LOGIC (Double Check) ---
+
+
         if (webLinkSettings?.openDate && new Date(webLinkSettings.openDate) > now && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Survey not yet open.' }); }
         if (webLinkSettings?.closeDate && new Date(webLinkSettings.closeDate) < now && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Survey closed.' }); }
         if (webLinkSettings?.maxResponses && collector.responseCount >= webLinkSettings.maxResponses && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Max responses reached.' }); }
@@ -338,7 +410,7 @@ exports.submitSurveyAnswers = async (req, res) => {
             if (!recaptchaToken) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'reCAPTCHA required.' }); }
             const secretKey = process.env.RECAPTCHA_V2_SECRET_KEY;
             if (!secretKey) { console.error("[submitSurveyAnswers] RECAPTCHA_V2_SECRET_KEY not set."); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'reCAPTCHA config error (secret missing).' }); }
-            const verificationUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${recaptchaToken}&remoteip=${req.ip}`;
+            const verificationUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${recaptchaToken}&remoteip=${getIpAddress(req)}`; // Use getIpAddress
             try {
                 const recaptchaResponse = await axios.post(verificationUrl);
                 if (!recaptchaResponse.data.success) { console.warn('[submitSurveyAnswers] reCAPTCHA failed:', recaptchaResponse.data['error-codes']); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed.', errors: recaptchaResponse.data['error-codes'] }); }
@@ -357,12 +429,10 @@ exports.submitSurveyAnswers = async (req, res) => {
             if (bulkWriteResult.hasWriteErrors()) { console.error('[submitSurveyAnswers] BulkWriteError:', bulkWriteResult.getWriteErrors()); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'Error saving answers.' }); }
         }
         
-        // --- MODIFICATION START: IP Address and User Agent handling ---
         const responseUpdateData = { 
             status: 'completed', 
             submittedAt: new Date(), 
             lastActivityAt: new Date() 
-            // ipAddress and userAgent are removed from here if they are only set on insert
         };
         const responseSetOnInsertData = { 
             survey: surveyId, 
@@ -374,20 +444,9 @@ exports.submitSurveyAnswers = async (req, res) => {
         const collectIpAndUserAgent = !(webLinkSettings && webLinkSettings.anonymousResponses === true);
 
         if (collectIpAndUserAgent) {
-            const getIp = (request) => {
-                const xForwardedFor = request.headers['x-forwarded-for'];
-                if (xForwardedFor) {
-                    return Array.isArray(xForwardedFor) ? xForwardedFor[0].split(',').shift() : xForwardedFor.split(',').shift();
-                }
-                return request.ip || request.connection?.remoteAddress;
-            };
-            // Add to $setOnInsert only
-            responseSetOnInsertData.ipAddress = getIp(req); 
+            responseSetOnInsertData.ipAddress = getIpAddress(req); 
             responseSetOnInsertData.userAgent = req.headers['user-agent']; 
         }
-        // No need for an else to set them to undefined in $setOnInsert, as they simply won't be added.
-        // If they were in responseUpdateData ($set), then setting to undefined would remove them.
-        // --- MODIFICATION END ---
 
         const updatedResponse = await Response.findOneAndUpdate(
             { survey: surveyId, collector: collector._id, sessionId: sessionIdToUse }, 
@@ -427,9 +486,8 @@ exports.submitSurveyAnswers = async (req, res) => {
         }
         if (!res.headersSent) {
             if (error.name === 'ValidationError') return res.status(400).json({ success: false, message: 'Validation Error.', details: error.errors });
-            // Check specifically for the conflict error message for ipAddress
             if (error.message && error.message.includes("Updating the path 'ipAddress' would create a conflict")) {
-                 return res.status(409).json({ success: false, message: error.message }); // 409 Conflict
+                 return res.status(409).json({ success: false, message: error.message }); 
             }
             if (error.code === 11000) return res.status(409).json({ success: false, message: 'Duplicate submission or conflict.', details: error.keyValue });
             res.status(500).json({ success: false, message: error.message || 'Error submitting answers.' });
@@ -566,4 +624,4 @@ exports.exportSurveyResults = async (req, res) => {
         if (!res.headersSent) res.status(500).json({ success: false, message: 'Error exporting results.' });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (vNext13 - Fix IP Address Conflict) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext14 - Implement IP Filtering Logic) -----

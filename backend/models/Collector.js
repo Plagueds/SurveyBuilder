@@ -1,5 +1,5 @@
 // backend/models/Collector.js
-// ----- START OF COMPLETE UPDATED FILE (v1.2 - Added reCAPTCHA setting) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.3 - Added IP Filtering fields) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 const { v4: uuidv4 } = require('uuid');
@@ -24,7 +24,34 @@ const webLinkCollectorSettingsSchema = new Schema({
     maxResponses: { type: Number, min: 1, default: null },
     allowMultipleResponses: { type: Boolean, default: false },
     anonymousResponses: { type: Boolean, default: false },
-    enableRecaptcha: { type: Boolean, default: false } // <<<--- ADDED THIS LINE
+    enableRecaptcha: { type: Boolean, default: false },
+    recaptchaSiteKey: { type: String, trim: true, default: '' }, // Added for completeness, though often from ENV
+    
+    // --- NEW IP FILTERING FIELDS ---
+    ipAllowlist: {
+        type: [String], // Array of IP addresses or CIDR ranges
+        default: [],
+        validate: {
+            validator: function(arr) {
+                // Basic validation for IP/CIDR format (can be enhanced)
+                if (!Array.isArray(arr)) return false;
+                return arr.every(ip => typeof ip === 'string' && ip.length > 0);
+            },
+            message: 'IP Allowlist must be an array of valid IP addresses or CIDR ranges.'
+        }
+    },
+    ipBlocklist: {
+        type: [String], // Array of IP addresses or CIDR ranges
+        default: [],
+        validate: {
+            validator: function(arr) {
+                if (!Array.isArray(arr)) return false;
+                return arr.every(ip => typeof ip === 'string' && ip.length > 0);
+            },
+            message: 'IP Blocklist must be an array of valid IP addresses or CIDR ranges.'
+        }
+    }
+    // --- END NEW IP FILTERING FIELDS ---
 });
 
 // --- Main Collector Schema ---
@@ -121,13 +148,14 @@ collectorSchema.methods.comparePassword = async function(enteredPassword) {
     if (this.type !== 'web_link' || !this.settings || !this.settings.web_link || !this.settings.web_link.password) {
         return false;
     }
+    // Fetch the document again including the password field explicitly
     const collectorWithPassword = await mongoose.model('Collector').findById(this._id).select('+settings.web_link.password').exec();
     if (!collectorWithPassword || !collectorWithPassword.settings || !collectorWithPassword.settings.web_link || !collectorWithPassword.settings.web_link.password) {
-        return false;
+        return false; // Should not happen if password was set, but good guard
     }
     return await bcrypt.compare(enteredPassword, collectorWithPassword.settings.web_link.password);
 };
 
 const Collector = mongoose.model('Collector', collectorSchema);
 module.exports = Collector;
-// ----- END OF COMPLETE UPDATED FILE (v1.2 - Added reCAPTCHA setting) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.3 - Added IP Filtering fields) -----

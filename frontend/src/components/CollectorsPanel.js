@@ -1,5 +1,5 @@
 // frontend/src/components/CollectorsPanel.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Display Anonymous Setting) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.3 - Display IP Filter Info) -----
 import React, { useState } from 'react';
 import styles from './CollectorsPanel.module.css';
 import surveyApi from '../api/surveyApi';
@@ -42,7 +42,7 @@ const CollectorsPanel = ({
             await surveyApi.deleteCollector(surveyId, collectorId);
             toast.success(`Collector "${collectorName}" deleted successfully!`);
             if (onCollectorsUpdate) {
-                onCollectorsUpdate(); // Trigger refresh
+                onCollectorsUpdate(); 
             }
         } catch (error) {
             console.error("Error deleting collector:", error);
@@ -87,6 +87,13 @@ const CollectorsPanel = ({
         }
     };
 
+    // --- ADDED: Helper to display IP filter status ---
+    const getIpFilterStatus = (list, type) => {
+        if (Array.isArray(list) && list.length > 0) {
+            return `Active (${list.length} rule${list.length === 1 ? '' : 's'})`;
+        }
+        return 'None';
+    };
 
     return (
         <div className={styles.panelOverlay}>
@@ -132,10 +139,12 @@ const CollectorsPanel = ({
                                             <span>Open Date:</span><span>{formatDate(collector.settings?.web_link?.openDate)}</span>
                                             <span>Close Date:</span><span>{formatDate(collector.settings?.web_link?.closeDate)}</span>
                                             <span>Multiple Responses:</span><span>{collector.settings?.web_link?.allowMultipleResponses ? 'Allowed' : 'Not Allowed'}</span>
-                                            {/* --- ADDED: Display for Anonymous Responses --- */}
                                             <span>Anonymous:</span><span>{collector.settings?.web_link?.anonymousResponses ? 'Yes' : 'No'}</span>
                                             <span>Password:</span><span>{collector.settings?.web_link?.passwordProtectionEnabled || collector.settings?.web_link?.password ? 'Enabled' : 'Disabled'}</span>
                                             <span>reCAPTCHA:</span><span>{collector.settings?.web_link?.enableRecaptcha ? 'Enabled' : 'Disabled'}</span>
+                                            {/* --- ADDED: Display IP Filter Status --- */}
+                                            <span>IP Allowlist:</span><span>{getIpFilterStatus(collector.settings?.web_link?.ipAllowlist, 'Allowlist')}</span>
+                                            <span>IP Blocklist:</span><span>{getIpFilterStatus(collector.settings?.web_link?.ipBlocklist, 'Blocklist')}</span>
                                         </div>
                                         
                                         {collector.type === 'web_link' && (collector.linkId || collector.settings?.web_link?.customSlug) && (
@@ -178,4 +187,4 @@ const CollectorsPanel = ({
 };
 
 export default CollectorsPanel;
-// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Display Anonymous Setting) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.3 - Display IP Filter Info) -----

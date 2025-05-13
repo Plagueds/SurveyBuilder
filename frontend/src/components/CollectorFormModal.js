@@ -1,5 +1,5 @@
 // frontend/src/components/CollectorFormModal.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Added Anonymous Responses toggle) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.3 - Added IP Filtering UI) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import surveyApiFunctions from '../api/surveyApi';
 import { toast } from 'react-toastify';
@@ -17,28 +17,35 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                 web_link: {
                     customSlug: '',
                     allowMultipleResponses: false,
-                    anonymousResponses: false, // <<< ADDED: Default for anonymous
+                    anonymousResponses: false,
                     maxResponses: 0,
                     openDate: '',
                     closeDate: '',
                     passwordProtectionEnabled: false,
                     password: '',
                     enableRecaptcha: false,
+                    recaptchaSiteKey: '', // Usually from ENV, but can be per collector
+                    ipAllowlistString: '', // For textarea input
+                    ipBlocklistString: '', // For textarea input
                 }
             }
         };
 
-        if (isEditMode) {
+        if (isEditMode && existingCollector) {
             const existingWebLinkSettings = existingCollector.settings?.web_link || {};
             const mergedWebLinkSettings = {
                 ...defaults.settings.web_link,
                 ...existingWebLinkSettings,
-                anonymousResponses: Boolean(existingWebLinkSettings.anonymousResponses), // <<< ADDED: Initialize from existing
+                anonymousResponses: Boolean(existingWebLinkSettings.anonymousResponses),
                 maxResponses: existingWebLinkSettings.maxResponses === null || existingWebLinkSettings.maxResponses === undefined ? 0 : existingWebLinkSettings.maxResponses,
                 openDate: existingWebLinkSettings.openDate ? new Date(existingWebLinkSettings.openDate).toISOString().slice(0, 16) : '',
                 closeDate: existingWebLinkSettings.closeDate ? new Date(existingWebLinkSettings.closeDate).toISOString().slice(0, 16) : '',
-                passwordProtectionEnabled: Boolean(existingWebLinkSettings.password), // Password itself is not loaded to form
+                passwordProtectionEnabled: Boolean(existingWebLinkSettings.password),
                 enableRecaptcha: Boolean(existingWebLinkSettings.enableRecaptcha),
+                recaptchaSiteKey: existingWebLinkSettings.recaptchaSiteKey || '',
+                // --- MODIFIED: Populate IP list strings from arrays ---
+                ipAllowlistString: Array.isArray(existingWebLinkSettings.ipAllowlist) ? existingWebLinkSettings.ipAllowlist.join('\n') : '',
+                ipBlocklistString: Array.isArray(existingWebLinkSettings.ipBlocklist) ? existingWebLinkSettings.ipBlocklist.join('\n') : '',
             };
 
             return {
@@ -84,6 +91,7 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     }
                 }
             }));
+            // Clear specific error when field changes
             if (errors[`web_link_${field}`]) {
                 setErrors(prev => ({ ...prev, [`web_link_${field}`]: null }));
             }
@@ -98,12 +106,22 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
         }
     };
 
+    // Helper to parse IP list string (comma or newline separated) into an array
+    const parseIpListString = (ipString) => {
+        if (!ipString || typeof ipString !== 'string') return [];
+        return ipString
+            .split(/[\n,]+/) // Split by newlines or commas
+            .map(ip => ip.trim())
+            .filter(ip => ip.length > 0); // Remove empty strings
+    };
+
+
     const validateForm = () => {
         const newErrors = {};
         if (!formData.name.trim()) {
             newErrors.name = "Collector name is required.";
         }
-        if (formData.settings.web_link.passwordProtectionEnabled && !formData.settings.web_link.password && !isEditMode) { // Only require password for new collectors or if password is being changed
+        if (formData.settings.web_link.passwordProtectionEnabled && !formData.settings.web_link.password && !isEditMode) {
             newErrors.web_link_password = "Password is required when password protection is enabled.";
         }
         if (formData.settings.web_link.passwordProtectionEnabled && formData.settings.web_link.password && formData.settings.web_link.password.length < 6) {
@@ -120,6 +138,17 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
         if (isNaN(maxResponsesNum) || maxResponsesNum < 0) {
             newErrors.web_link_maxResponses = "Max responses must be a non-negative number.";
         }
+        
+        // Basic validation for IP lists (more robust validation can be added for IP/CIDR formats if needed)
+        const allowlist = parseIpListString(formData.settings.web_link.ipAllowlistString);
+        if (allowlist.some(ip => ip.includes(' '))) { // Example simple validation
+            newErrors.web_link_ipAllowlistString = "IPs in allowlist should not contain spaces.";
+        }
+        const blocklist = parseIpListString(formData.settings.web_link.ipBlocklistString);
+        if (blocklist.some(ip => ip.includes(' '))) {
+            newErrors.web_link_ipBlocklistString = "IPs in blocklist should not contain spaces.";
+        }
+
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -136,29 +165,37 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
         const parsedMaxResponses = parseInt(formData.settings.web_link.maxResponses, 10);
         const maxResponsesToSend = (isNaN(parsedMaxResponses) || parsedMaxResponses <= 0) ? null : parsedMaxResponses;
 
+        // --- MODIFIED: Prepare IP lists for payload ---
+        const ipAllowlistArray = parseIpListString(formData.settings.web_link.ipAllowlistString);
+        const ipBlocklistArray = parseIpListString(formData.settings.web_link.ipBlocklistString);
+
         const payload = {
             name: formData.name,
             type: formData.type,
             status: formData.status,
             settings: {
                 web_link: {
-                    ...formData.settings.web_link, // Includes enableRecaptcha, anonymousResponses, allowMultipleResponses
+                    ...formData.settings.web_link,
                     customSlug: formData.settings.web_link.customSlug || undefined,
                     openDate: formData.settings.web_link.openDate ? new Date(formData.settings.web_link.openDate).toISOString() : null,
                     closeDate: formData.settings.web_link.closeDate ? new Date(formData.settings.web_link.closeDate).toISOString() : null,
                     maxResponses: maxResponsesToSend,
-                    // Password handling: send only if enabled and provided, or if explicitly cleared in edit mode
                     password: formData.settings.web_link.passwordProtectionEnabled && formData.settings.web_link.password 
                                 ? formData.settings.web_link.password 
                                 : undefined,
+                    // --- ADDED: Send parsed IP lists ---
+                    ipAllowlist: ipAllowlistArray,
+                    ipBlocklist: ipBlocklistArray,
                 }
             }
         };
         
-        // If password protection is disabled, ensure password is not sent (or sent as null/undefined to be cleared)
         if (!formData.settings.web_link.passwordProtectionEnabled) {
-             payload.settings.web_link.password = null; // Explicitly set to null to clear it on backend if it was set
+             payload.settings.web_link.password = null; 
         }
+        // Remove the temporary string versions from the payload
+        delete payload.settings.web_link.ipAllowlistString;
+        delete payload.settings.web_link.ipBlocklistString;
 
 
         try {
@@ -169,12 +206,12 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                 await surveyApiFunctions.createCollector(surveyId, payload);
                 toast.success("Collector created successfully!");
             }
-            onSave(); // This will trigger a refresh of collectors in the parent
+            onSave(); 
         } catch (error) {
             console.error("Error saving collector:", error.response?.data || error.message);
             const errorData = error.response?.data;
             let errorMessage = `Failed to save collector: ${errorData?.message || error.message || 'Unknown server error'}`;
-            if (errorData && errorData.errors) { // Handle Mongoose validation errors
+            if (errorData && errorData.errors) { 
                 const backendErrors = {};
                  Object.entries(errorData.errors).forEach(([key, value]) => {
                     const fieldKey = key.replace('settings.web_link.', 'web_link_');
@@ -209,6 +246,7 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     <button onClick={onClose} className={styles.closeButton} disabled={isSaving}>&times;</button>
                 </div>
                 <form onSubmit={handleSubmit} className={styles.modalBody}>
+                    {/* ... other form groups (name, type, status) ... */}
                     <div className={styles.formGroup}>
                         <label htmlFor="name">Collector Name</label>
                         <input type="text" id="name" name="name" value={formData.name} onChange={handleChange} className={errors.name ? styles.inputError : ""} disabled={isSaving}/>
@@ -218,7 +256,6 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                         <label htmlFor="type">Collector Type</label>
                         <select id="type" name="type" value={formData.type} onChange={handleChange} disabled={isSaving || isEditMode}>
                             <option value="web_link">Web Link</option>
-                            {/* Add other types later: <option value="email_invitation">Email Invitation</option> */}
                         </select>
                         {renderError("type")}
                     </div>
@@ -235,6 +272,7 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     {formData.type === 'web_link' && (
                         <fieldset className={styles.settingsFieldset}>
                             <legend>Web Link Settings</legend>
+                            {/* ... other web link settings (customSlug, dates, maxResponses, toggles) ... */}
                             <div className={styles.formGroup}>
                                 <label htmlFor="settings.web_link.customSlug">Custom URL Slug (Optional)</label>
                                 <input type="text" id="settings.web_link.customSlug" name="settings.web_link.customSlug" value={formData.settings.web_link.customSlug} onChange={handleChange} placeholder="e.g., my-survey-event" className={errors.web_link_customSlug ? styles.inputError : ""} disabled={isSaving} />
@@ -262,22 +300,45 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                                 <small className={styles.fieldDescription}>If unchecked, uses browser storage to attempt to prevent multiple submissions from the same browser.</small>
                                 {renderError("web_link_allowMultipleResponses")}
                             </div>
-
-                            {/* --- ADDED: Anonymous Responses Checkbox --- */}
                             <div className={styles.formGroupCheckbox}>
-                                <input
-                                    type="checkbox"
-                                    id="settings.web_link.anonymousResponses"
-                                    name="settings.web_link.anonymousResponses"
-                                    checked={formData.settings.web_link.anonymousResponses}
-                                    onChange={handleChange}
-                                    disabled={isSaving}
-                                />
+                                <input type="checkbox" id="settings.web_link.anonymousResponses" name="settings.web_link.anonymousResponses" checked={formData.settings.web_link.anonymousResponses} onChange={handleChange} disabled={isSaving}/>
                                 <label htmlFor="settings.web_link.anonymousResponses">Collect Anonymous Responses</label>
                                 <small className={styles.fieldDescription}>If checked, respondent's IP address and browser details will not be stored.</small>
                                 {renderError("web_link_anonymousResponses")}
                             </div>
-                            {/* --- END: Anonymous Responses Checkbox --- */}
+
+                            {/* --- IP FILTERING FIELDS START --- */}
+                            <div className={styles.formGroup}>
+                                <label htmlFor="settings.web_link.ipAllowlistString">IP Allowlist (Optional)</label>
+                                <textarea
+                                    id="settings.web_link.ipAllowlistString"
+                                    name="settings.web_link.ipAllowlistString"
+                                    value={formData.settings.web_link.ipAllowlistString}
+                                    onChange={handleChange}
+                                    rows="3"
+                                    placeholder="Enter one IP address or CIDR range per line (e.g., 192.168.1.100 or 10.0.0.0/24)"
+                                    className={errors.web_link_ipAllowlistString ? styles.inputError : ""}
+                                    disabled={isSaving}
+                                />
+                                <small className={styles.fieldDescription}>If specified, only these IPs can access the survey. One entry per line or comma-separated.</small>
+                                {renderError("web_link_ipAllowlistString")}
+                            </div>
+                            <div className={styles.formGroup}>
+                                <label htmlFor="settings.web_link.ipBlocklistString">IP Blocklist (Optional)</label>
+                                <textarea
+                                    id="settings.web_link.ipBlocklistString"
+                                    name="settings.web_link.ipBlocklistString"
+                                    value={formData.settings.web_link.ipBlocklistString}
+                                    onChange={handleChange}
+                                    rows="3"
+                                    placeholder="Enter one IP address or CIDR range per line (e.g., 1.2.3.4 or 2001:db8::/32)"
+                                    className={errors.web_link_ipBlocklistString ? styles.inputError : ""}
+                                    disabled={isSaving}
+                                />
+                                <small className={styles.fieldDescription}>If specified, these IPs will be blocked. One entry per line or comma-separated. Allowlist takes precedence.</small>
+                                {renderError("web_link_ipBlocklistString")}
+                            </div>
+                            {/* --- IP FILTERING FIELDS END --- */}
 
                             <div className={styles.formGroupCheckbox}>
                                 <input type="checkbox" id="settings.web_link.passwordProtectionEnabled" name="settings.web_link.passwordProtectionEnabled" checked={formData.settings.web_link.passwordProtectionEnabled} onChange={handleChange} disabled={isSaving} />
@@ -296,6 +357,11 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                                 <label htmlFor="settings.web_link.enableRecaptcha">Enable reCAPTCHA (Bot Protection)</label>
                                 <small className={styles.fieldDescription}>Helps prevent automated submissions.</small>
                                 {renderError("web_link_enableRecaptcha")}
+                            </div>
+                            <div className={styles.formGroup}> {/* Optional: Field for reCAPTCHA Site Key if you want it configurable per collector */}
+                                <label htmlFor="settings.web_link.recaptchaSiteKey">reCAPTCHA Site Key (Optional)</label>
+                                <input type="text" id="settings.web_link.recaptchaSiteKey" name="settings.web_link.recaptchaSiteKey" value={formData.settings.web_link.recaptchaSiteKey} onChange={handleChange} placeholder="Overrides global key if set" disabled={isSaving}/>
+                                <small className={styles.fieldDescription}>Leave blank to use the site-wide reCAPTCHA key.</small>
                             </div>
                         </fieldset>
                     )}
@@ -316,4 +382,4 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
 };
 
 export default CollectorFormModal;
-// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Added Anonymous Responses toggle) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.3 - Added IP Filtering UI) -----
