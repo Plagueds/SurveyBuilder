@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext4 - Debugging Unsupported Type) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext5 - Improved "Other" Validation Message) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -90,7 +90,6 @@ function SurveyTakingPage() {
         if (isLoading || !survey || visibleQuestionIndices.length === 0 || currentVisibleIndex < 0 || currentVisibleIndex >= visibleQuestionIndices.length) return null;
         const currentOriginalIdx = visibleQuestionIndices[currentVisibleIndex];
         const questionToRender = originalQuestions[currentOriginalIdx] || null;
-        // ++ NEW LOGGING ++
         if (questionToRender) {
             console.log(`[SurveyTakingPage] currentQToRenderMemoized - Preparing to render Q_ID: ${questionToRender._id}, Type: ${questionToRender.type}, Text: "${questionToRender.text?.substring(0,30)}..."`);
         } else {
@@ -146,7 +145,7 @@ function SurveyTakingPage() {
             const surveyData = responsePayload.data;
             if (!surveyData || !Array.isArray(surveyData.questions)) throw new Error("Survey data is malformed (missing or invalid 'questions' field).");
             
-            console.log("[SurveyTakingPage] Fetched survey data, questions:", JSON.stringify(surveyData.questions, null, 2)); // ++ NEW LOGGING ++
+            console.log("[SurveyTakingPage] Fetched survey data, questions (first 3):", JSON.stringify(surveyData.questions.slice(0,3), null, 2));
 
             setSurvey(surveyData);
             const fetchedQuestions = surveyData.questions || [];
@@ -208,17 +207,14 @@ function SurveyTakingPage() {
     const evaluateGlobalLogic = useCallback(() => { if (!survey || !survey.globalSkipLogic || survey.globalSkipLogic.length === 0) return null; for (const rule of survey.globalSkipLogic) { const result = evaluateRule(rule, currentAnswers, questionsById); if (result?.action) return result.action; } return null; }, [survey, currentAnswers, questionsById]);
 
     const handleInputChange = useCallback((questionId, value) => {
-        console.log(`[SurveyTakingPage] handleInputChange for Q_ID: ${questionId}, New Value:`, value);
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
         const question = questionsById[questionId];
         if (question && question.addOtherOption && value !== OTHER_VALUE_INTERNAL) {
-            console.log(`[SurveyTakingPage] Clearing otherInput for Q_ID: ${questionId} because main answer changed and is not OTHER`);
             setOtherInputValues(prev => ({ ...prev, [questionId]: '' }));
         }
     }, [questionsById, OTHER_VALUE_INTERNAL]);
 
     const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => {
-        console.log(`[SurveyTakingPage] handleCheckboxChange for Q_ID: ${questionId}, Option: ${optionValue}, Checked: ${isChecked}`);
         setCurrentAnswers(prevAnswers => {
             const currentVal = ensureArray(prevAnswers[questionId]);
             let newVal;
@@ -229,43 +225,35 @@ function SurveyTakingPage() {
             } else {
                 newVal = currentVal.filter(v => v !== optionValue);
             }
-            console.log(`[SurveyTakingPage] Checkbox new answer for Q_ID ${questionId}:`, newVal);
             return { ...prevAnswers, [questionId]: newVal };
         });
         const question = questionsById[questionId];
         if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) {
-            console.log(`[SurveyTakingPage] Clearing otherInput for Q_ID: ${questionId} because OTHER checkbox unchecked`);
             setOtherInputValues(prev => ({ ...prev, [questionId]: '' }));
         }
     }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
 
     const handleOtherInputChange = useCallback((questionId, textValue) => {
-        console.log(`[SurveyTakingPage] handleOtherInputChange for Q_ID: ${questionId}, Text: "${textValue}"`);
         setOtherInputValues(prev => ({ ...prev, [questionId]: textValue }));
     }, []);
 
     const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabled = false) => {
-        console.log(`[SurveyTakingPage] validateQuestion for Q_ID: ${question?._id}, Type: ${question?.type}, Text: "${question?.text?.substring(0,20)}..."`);
-        console.log(`[SurveyTakingPage]   > question.requiredSetting: ${question?.requiredSetting}`);
-        console.log(`[SurveyTakingPage]   > question.addOtherOption: ${question?.addOtherOption}`);
-        console.log(`[SurveyTakingPage]   > question.requireOtherIfSelected: ${question?.requireOtherIfSelected}`);
-        console.log(`[SurveyTakingPage]   > answer:`, answer);
-        console.log(`[SurveyTakingPage]   > otherInputValues[${question?._id}]: "${otherInputValues[question?._id]}"`);
+        // console.log(`[SurveyTakingPage] validateQuestion for Q_ID: ${question?._id}, Type: ${question?.type}`); // Basic log
+        // console.log(`  > question.requiredSetting: ${question?.requiredSetting}`);
+        // console.log(`  > question.addOtherOption: ${question?.addOtherOption}, question.requireOtherIfSelected: ${question?.requireOtherIfSelected}`);
+        // console.log(`  > answer:`, answer);
+        // console.log(`  > otherInputValues[${question?._id}]: "${otherInputValues[question?._id]}"`);
 
-        if (!question) { console.log("[SurveyTakingPage]   > Validation: No question object. Returning true."); return true; }
-        if (isDisabled) { console.log("[SurveyTakingPage]   > Validation: Question is disabled. Returning true."); return true; }
+        if (!question) return true; 
+        if (isDisabled) return true;
 
-        if (question.requiredSetting === 'not_required' && !isSoftCheck) {
-            console.log("[SurveyTakingPage]   > Validation: Not required. Returning true.");
-            return true;
-        }
+        if (question.requiredSetting === 'not_required' && !isSoftCheck) return true;
 
         if (isAnswerEmpty(answer, question.type)) {
             if (question.requiredSetting === 'required') {
-                console.log("[SurveyTakingPage]   > Validation FAILED: Required and answer is empty.");
+                // console.log("[SurveyTakingPage]   > Validation FAILED: Required and answer is empty.");
                 return false;
             }
-            console.log("[SurveyTakingPage]   > Validation: Answer is empty, but not strictly required. Returning true for now.");
             return true;
         }
 
@@ -277,7 +265,9 @@ function SurveyTakingPage() {
             if (isOtherSelected) {
                 const otherTextValue = otherInputValues[question._id];
                 if (!otherTextValue || otherTextValue.trim() === '') {
-                    console.log("[SurveyTakingPage]   > Validation FAILED: 'Other' selected, text required, but text is empty.");
+                    // console.log("[SurveyTakingPage]   > Validation FAILED: 'Other' selected, text required, but text is empty.");
+                    // *** MODIFICATION: Add specific toast message here ***
+                    toast.error(`Please provide text for the "Other" option in question: "${question.text}"`);
                     return false;
                 }
             }
@@ -285,38 +275,29 @@ function SurveyTakingPage() {
         
         if (question.type === 'checkbox') {
             const naIsSelected = ensureArray(answer).includes(NA_VALUE_INTERNAL);
-            if (naIsSelected) { console.log("[SurveyTakingPage]   > Validation (Checkbox): N/A selected. Returning true."); return true; }
+            if (naIsSelected) return true;
 
             const selectedOptions = ensureArray(answer).filter(val => val !== NA_VALUE_INTERNAL);
             const selectedCount = selectedOptions.length;
             
             if (question.minAnswersRequired && selectedCount < question.minAnswersRequired) {
-                console.log(`[SurveyTakingPage]   > Validation FAILED (Checkbox): Min required ${question.minAnswersRequired}, selected ${selectedCount}.`);
+                // console.log(`[SurveyTakingPage]   > Validation FAILED (Checkbox): Min required ${question.minAnswersRequired}, selected ${selectedCount}.`);
                 toast.error(`Please select at least ${question.minAnswersRequired} options for "${question.text}".`);
                 return false;
             }
             if (question.limitAnswers && question.limitAnswersMax && selectedCount > question.limitAnswersMax) {
-                console.log(`[SurveyTakingPage]   > Validation FAILED (Checkbox): Max allowed ${question.limitAnswersMax}, selected ${selectedCount}.`);
+                // console.log(`[SurveyTakingPage]   > Validation FAILED (Checkbox): Max allowed ${question.limitAnswersMax}, selected ${selectedCount}.`);
                 toast.error(`Please select no more than ${question.limitAnswersMax} options for "${question.text}".`);
                 return false;
             }
         }
-        console.log("[SurveyTakingPage]   > Validation PASSED.");
+        // console.log("[SurveyTakingPage]   > Validation PASSED.");
         return true;
     }, [otherInputValues, OTHER_VALUE_INTERNAL, NA_VALUE_INTERNAL]);
 
     const renderQuestion = useCallback((questionToRenderArg) => {
-        // ++ NEW LOGGING ++
-        console.log("[SurveyTakingPage] renderQuestion CALLED. Attempting to render question:", JSON.stringify(questionToRenderArg, null, 2));
-
-        if (!questionToRenderArg) {
-            console.log("[SurveyTakingPage] renderQuestion: questionToRenderArg is null or undefined. Rendering loading.");
-            return <div className={styles.loading}>Loading question content...</div>;
-        }
-        if (!questionToRenderArg.type) {
-            console.error("[SurveyTakingPage] renderQuestion: Question object is MISSING 'type' property!", questionToRenderArg);
-            return <div>Error: Question data is missing 'type'. Cannot render.</div>;
-        }
+        if (!questionToRenderArg) return <div className={styles.loading}>Loading question content...</div>;
+        if (!questionToRenderArg.type) { console.error("[SurveyTakingPage] renderQuestion: Question object is MISSING 'type' property!", questionToRenderArg); return <div>Error: Question data is missing 'type'. Cannot render.</div>; }
 
         const question = questionToRenderArg;
         const value = currentAnswers[question._id];
@@ -324,8 +305,6 @@ function SurveyTakingPage() {
         const isDisabled = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
         const commonProps = { question, currentAnswer: value, onAnswerChange: handleInputChange, onCheckboxChange: handleCheckboxChange, otherValue: otherText, onOtherTextChange: handleOtherInputChange, disabled: isDisabled, optionsOrder: randomizedOptionOrders[question._id], isPreviewMode: false };
         
-        console.log(`[SurveyTakingPage] renderQuestion: Attempting to render question type: "${question.type}" for Q_ID: ${question._id}`); // ++ NEW LOGGING ++
-
         switch (question.type) {
             case 'text': return <ShortTextQuestion {...commonProps} />;
             case 'textarea': return <TextAreaQuestion {...commonProps} />;
@@ -341,29 +320,25 @@ function SurveyTakingPage() {
             case 'conjoint': return <ConjointQuestion {...commonProps} />;
             case 'ranking': return <RankingQuestion {...commonProps} />;
             case 'cardsort': return <CardSortQuestion {...commonProps} />;
-            default: 
-                console.warn(`[SurveyTakingPage] renderQuestion: Encountered UNSUPPORTED question type: "${question.type}" for Q_ID: ${question._id}. Question object:`, question);
-                return <div>Unsupported question type: {question.type || "Type is missing"}</div>;
+            default: console.warn(`[SurveyTakingPage] renderQuestion: Encountered UNSUPPORTED question type: "${question.type}" for Q_ID: ${question._id}. Question object:`, question); return <div>Unsupported question type: {question.type || "Type is missing"}</div>;
         }
     }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled]);
 
     const handleNext = useCallback(() => {
-        console.log("[SurveyTakingPage] handleNext triggered.");
-        if (isDisqualified || isLoading) { console.log("[SurveyTakingPage] handleNext: Disqualified or Loading, returning."); return; }
+        if (isDisqualified || isLoading) return; 
         
         const currentOriginalIndex = visibleQuestionIndices[currentVisibleIndex];
         const question = originalQuestions[currentOriginalIndex];
         const isDisabledBySetting = evaluateDisabled(currentOriginalIndex);
 
-        console.log("[SurveyTakingPage] handleNext: Validating Q_ID:", question?._id, "Text:", question?.text?.substring(0,20)+"...");
         if (question && !validateQuestion(question, currentAnswers[question._id], false, isDisabledBySetting)) {
-            console.log("[SurveyTakingPage] handleNext: Validation FAILED for Q_ID:", question._id);
-            if (!(question.type === 'checkbox' && (question.minAnswersRequired || question.limitAnswersMax))) {
-                 toast.error(`Please answer the current question correctly: "${question.text}"`);
+            // Specific toasts are now handled inside validateQuestion for "Other" and checkbox limits.
+            // General "required" failure will show this.
+            if (question.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[question._id], question.type)) {
+                 toast.error(`Please answer the current question: "${question.text}"`);
             }
             return;
         }
-        console.log("[SurveyTakingPage] handleNext: Validation PASSED for Q_ID:", question?._id);
 
         setVisitedPath(prev => [...prev, currentOriginalIndex]);
         const globalAction = evaluateGlobalLogic();
@@ -372,10 +347,8 @@ function SurveyTakingPage() {
         if (localAction) { if (localAction.type === 'jumpToQuestion') { const targetQOriginalIndex = questionIdToOriginalIndexMap[localAction.targetQuestionId]; const targetVisibleIndex = visibleQuestionIndices.indexOf(targetQOriginalIndex); if (targetVisibleIndex !== -1) setCurrentVisibleIndex(targetVisibleIndex); else toast.warn("Jump target question is not visible."); return; } else if (localAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(localAction.disqualificationMessage || "Disqualified by question logic."); return; } else if (localAction.type === 'endSurvey') { setCurrentVisibleIndex(visibleQuestionIndices.length); return; } }
         
         if (currentVisibleIndex < visibleQuestionIndices.length - 1) {
-            console.log("[SurveyTakingPage] handleNext: Moving to next question index.");
             setCurrentVisibleIndex(prev => prev + 1);
         } else {
-            console.log("[SurveyTakingPage] handleNext: Reached end of visible questions, moving to submit state.");
             setCurrentVisibleIndex(visibleQuestionIndices.length);
         }
     }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, visitedPath, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap, setIsDisqualified, setDisqualificationMessage]);
@@ -384,107 +357,63 @@ function SurveyTakingPage() {
     
     const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
-        console.log("[SurveyTakingPage] handleSubmit triggered.");
-        setIsSubmitting(true);
-        setError(null);
+        setIsSubmitting(true); setError(null);
         if (!currentCollectorId) { toast.error("Collector ID missing."); setError("Collector ID missing."); setIsSubmitting(false); return; }
         if (recaptchaEnabled && !recaptchaToken && recaptchaSiteKey) { toast.error("Please complete reCAPTCHA."); setIsSubmitting(false); return; }
         
         let firstInvalidVisibleIndex = -1;
-        console.log("[SurveyTakingPage] handleSubmit: Starting final validation loop.");
         for (let visIdx = 0; visIdx < visibleQuestionIndices.length; visIdx++) {
             const originalIdx = visibleQuestionIndices[visIdx];
             const q = originalQuestions[originalIdx];
             const isDisabled = evaluateDisabled(originalIdx);
-            console.log(`[SurveyTakingPage] handleSubmit: Validating Q_ID ${q?._id} at visible index ${visIdx}`);
             if (q && !validateQuestion(q, currentAnswers[q._id], false, isDisabled)) {
                 firstInvalidVisibleIndex = visIdx;
-                console.log(`[SurveyTakingPage] handleSubmit: Validation FAILED for Q_ID ${q._id} at visible index ${visIdx}`);
                 break;
             }
         }
         if (firstInvalidVisibleIndex !== -1) {
             setCurrentVisibleIndex(firstInvalidVisibleIndex);
-            if (!(originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]].type === 'checkbox' && 
-                  (originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]].minAnswersRequired || originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]].limitAnswersMax))) {
-                toast.error(`Please complete all required questions. Problem with: "${originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]].text}"`);
-            }
+            // Specific toasts are handled in validateQuestion. Generic one for overall submission.
+            const qFailed = originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]];
+            if (qFailed.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[qFailed._id], qFailed.type)) {
+                toast.error(`Please complete all required questions. Problem with: "${qFailed.text}"`);
+            } // Other specific errors (like "Other" text) would have already shown their toast.
             setIsSubmitting(false);
             return;
         }
-        console.log("[SurveyTakingPage] handleSubmit: All questions validated successfully for submission.");
 
         const answersToSubmit = Object.entries(currentAnswers)
-            .filter(([questionId, ]) => {
-                const question = questionsById[questionId];
-                return question && visibleQuestionIndices.includes(questionIdToOriginalIndexMap[question._id]);
-            })
+            .filter(([questionId, ]) => { const question = questionsById[questionId]; return question && visibleQuestionIndices.includes(questionIdToOriginalIndexMap[question._id]); })
             .map(([questionId, answerValue]) => {
                 const question = questionsById[questionId];
                 let textForOther = null;
                 if (question.addOtherOption) {
-                    if (((question.type === 'multiple-choice' || question.type === 'dropdown') && answerValue === OTHER_VALUE_INTERNAL) ||
-                        (question.type === 'checkbox' && ensureArray(answerValue).includes(OTHER_VALUE_INTERNAL))) {
+                    if (((question.type === 'multiple-choice' || question.type === 'dropdown') && answerValue === OTHER_VALUE_INTERNAL) || (question.type === 'checkbox' && ensureArray(answerValue).includes(OTHER_VALUE_INTERNAL))) {
                         textForOther = otherInputValues[questionId]?.trim();
                         if (textForOther === '') textForOther = null; 
                     }
                 }
-                return {
-                    questionId,
-                    questionType: question.type,
-                    answerValue,
-                    otherText: textForOther,
-                    questionText: question.text || question.title
-                };
+                return { questionId, questionType: question.type, answerValue, otherText: textForOther, questionText: question.text || question.title };
             });
 
-        if (answersToSubmit.every(ans => isAnswerEmpty(ans.answerValue, ans.questionType) && !ans.otherText) &&
-            originalQuestions.length > 0 && visibleQuestionIndices.length > 0) {
-            const anyRequiredVisibleAndUnanswered = visibleQuestionIndices.some(idx => {
-                const q = originalQuestions[idx];
-                return q?.requiredSetting === 'required' && !evaluateDisabled(idx) && isAnswerEmpty(currentAnswers[q._id], q.type);
-            });
-            if (anyRequiredVisibleAndUnanswered) {
-                toast.info("It seems some required questions were missed. Please review.");
-                setIsSubmitting(false);
-                return;
-            }
+        if (answersToSubmit.every(ans => isAnswerEmpty(ans.answerValue, ans.questionType) && !ans.otherText) && originalQuestions.length > 0 && visibleQuestionIndices.length > 0) {
+            const anyRequiredVisibleAndUnanswered = visibleQuestionIndices.some(idx => { const q = originalQuestions[idx]; return q?.requiredSetting === 'required' && !evaluateDisabled(idx) && isAnswerEmpty(currentAnswers[q._id], q.type); });
+            if (anyRequiredVisibleAndUnanswered) { toast.info("It seems some required questions were missed. Please review."); setIsSubmitting(false); return; }
         }
 
-        const payload = {
-            answers: answersToSubmit,
-            sessionId,
-            collectorId: currentCollectorId,
-            recaptchaToken: recaptchaEnabled && recaptchaSiteKey ? recaptchaToken : undefined,
-            startedAt: surveyStartedAt,
-        };
-        console.log("[SurveyTakingPage] Submitting payload:", JSON.stringify(payload, null, 2));
-
+        const payload = { answers: answersToSubmit, sessionId, collectorId: currentCollectorId, recaptchaToken: recaptchaEnabled && recaptchaSiteKey ? recaptchaToken : undefined, startedAt: surveyStartedAt, };
         try {
             const result = await surveyApiFunctions.submitSurveyAnswers(surveyId, payload);
             toast.success(result.message || "Survey submitted successfully!");
             const collectorSettings = location.state?.collectorSettings || {};
-            if (collectorSettings.allowMultipleResponses === false && currentCollectorId) {
-                localStorage.setItem(`survey_${currentCollectorId}_submitted`, 'true');
-            }
-            if (result.action?.type === 'disqualifyRespondent') {
-                setIsDisqualified(true);
-                setDisqualificationMessage(result.action.disqualificationMessage || "Disqualified.");
-            } else {
-                navigate(result.redirectUrl || '/thank-you', { state: { responseId: result.responseId } });
-            }
+            if (collectorSettings.allowMultipleResponses === false && currentCollectorId) { localStorage.setItem(`survey_${currentCollectorId}_submitted`, 'true'); }
+            if (result.action?.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(result.action.disqualificationMessage || "Disqualified."); }
+            else { navigate(result.redirectUrl || '/thank-you', { state: { responseId: result.responseId } }); }
         } catch (errCatch) {
             const errorMessage = errCatch.response?.data?.message || errCatch.message || "Submission error.";
-            console.error("[SurveyTakingPage] handleSubmit error:", errCatch.response || errCatch);
-            setError(errorMessage);
-            toast.error(`Failed: ${errorMessage}`);
-            if (recaptchaEnabled && recaptchaRef.current && recaptchaSiteKey) {
-                recaptchaRef.current.reset();
-                setRecaptchaToken(null);
-            }
-        } finally {
-            setIsSubmitting(false);
-        }
+            setError(errorMessage); toast.error(`Failed: ${errorMessage}`);
+            if (recaptchaEnabled && recaptchaRef.current && recaptchaSiteKey) { recaptchaRef.current.reset(); setRecaptchaToken(null); }
+        } finally { setIsSubmitting(false); }
     }, [currentCollectorId, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, recaptchaRef, questionIdToOriginalIndexMap, surveyStartedAt, location.state, OTHER_VALUE_INTERNAL, isDisqualified]);
 
     if (hasAlreadyResponded) { return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> <div className={styles.alreadyRespondedBox}> <h2>Already Responded</h2> <p>Our records indicate that you have already completed this survey.</p> <p>Multiple submissions are not permitted for this link.</p> <button onClick={() => navigate('/')} className={styles.navButton}>Go to Homepage</button> </div> </div> ); }
@@ -500,4 +429,4 @@ function SurveyTakingPage() {
     return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>} {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>} {isLoading && survey ? <div className={styles.loading}>Loading question...</div> : <div className={`${styles.questionBox} ${isCurrentQuestionDisabled ? styles.disabled : ''}`}> {finalIsSubmitState ? ( <div className={styles.submitPrompt}> <p>End of survey.</p> <p>Click "Submit" to record responses.</p> </div> ) : finalCurrentQToRender ? ( renderQuestion(finalCurrentQToRender) ) : ( originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified ? <div className={styles.submitPrompt}><p>No questions visible. Submit if applicable.</p></div> : (isLoading ? <div className={styles.loading}>Preparing...</div> : <div className={styles.loading}>Survey empty or issue.</div>) )} </div> } {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && ( <div className={styles.recaptchaContainer}> <ReCAPTCHA ref={recaptchaRef} sitekey={recaptchaSiteKey} onChange={(token) => setRecaptchaToken(token)} onExpired={() => setRecaptchaToken(null)} onErrored={() => { toast.error("reCAPTCHA failed. Refresh."); setRecaptchaToken(null); }} /> </div> )} <div className={styles.surveyNavigationArea}> <button onClick={handlePrevious} className={styles.navButton} disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) }> Previous </button> {finalIsSubmitState || (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified && !isLoading) ? ( <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} > {isSubmitting ? 'Submitting...' : 'Submit'} </button> ) : ( <button onClick={handleNext} className={styles.navButton} disabled={isDisqualified || isSubmitting || isLoading || !finalCurrentQToRender } > Next </button> )} </div> <div className={styles.progressIndicator}> {!finalIsSubmitState && finalCurrentQToRender ? (visibleQuestionIndices.length > 0 ? `Question ${currentVisibleIndex + 1} of ${visibleQuestionIndices.length}` : 'Loading...') : (finalIsSubmitState ? `End (${visibleQuestionIndices.length} questions shown)`: 'Initializing...')} </div> </div> );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext4 - Debugging Unsupported Type) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext5 - Improved "Other" Validation Message) -----
