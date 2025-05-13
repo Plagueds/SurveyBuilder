@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyBuildPage.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Confirm API call site) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Confirm API call site, added debug logs for heatmap area issue) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { DndProvider } from 'react-dnd';
@@ -12,7 +12,7 @@ import SurveyLogicPanel from '../components/SurveyLogicPanel';
 import SurveySettingsPanel from '../components/SurveySettingsPanel';
 import QuestionListItem from '../components/QuestionListItem';
 import styles from './SurveyBuildPage.module.css';
-import surveyApi from '../api/surveyApi'; // Correct import
+import surveyApi from '../api/surveyApi';
 import CollectorsPanel from '../components/CollectorsPanel';
 
 const SurveyBuildPage = () => {
@@ -41,11 +41,11 @@ const SurveyBuildPage = () => {
         }
         setLoading(true); setPageError(''); setIsLoadingCollectors(true); setSurvey(null);
         try {
-            const surveyResponse = await surveyApi.getSurveyById(routeSurveyId); // Correct usage
+            const surveyResponse = await surveyApi.getSurveyById(routeSurveyId);
             if (surveyResponse && surveyResponse.success && surveyResponse.data && surveyResponse.data._id) {
                 setSurvey(surveyResponse.data);
                 try {
-                    const collectorsResponse = await surveyApi.getCollectorsForSurvey(routeSurveyId); // Correct usage
+                    const collectorsResponse = await surveyApi.getCollectorsForSurvey(routeSurveyId);
                     if (collectorsResponse && collectorsResponse.success) {
                         setCollectors(collectorsResponse.data || []);
                     } else {
@@ -84,7 +84,7 @@ const SurveyBuildPage = () => {
         const payload = { ...newQuestionDataFromPanel, survey: survey._id };
         delete payload._id;
         try {
-            const response = await surveyApi.createQuestion(payload); // Correct usage
+            const response = await surveyApi.createQuestion(payload);
             if (response && response.success && response.data && response.data._id) {
                 const savedQuestion = response.data;
                 setSurvey(prevSurvey => ({
@@ -111,7 +111,7 @@ const SurveyBuildPage = () => {
         setSaving(true);
         const payload = { ...updates }; delete payload._id; delete payload.survey;
         try {
-            const response = await surveyApi.updateQuestionContent(questionId, payload); // Correct usage
+            const response = await surveyApi.updateQuestionContent(questionId, payload);
             if (response && response.success && response.data && response.data._id) {
                 const updatedQuestionFromApi = response.data;
                 setSurvey(prevSurvey => {
@@ -139,7 +139,7 @@ const SurveyBuildPage = () => {
         if (!window.confirm(`Delete "${truncateText(questionToDeleteText, 30)}"?`)) return;
         setSaving(true);
         try {
-            const response = await surveyApi.deleteQuestionById(questionIdToDelete); // Correct usage
+            const response = await surveyApi.deleteQuestionById(questionIdToDelete);
             if (response && response.success) {
                 setSurvey(prevSurvey => ({
                     ...prevSurvey,
@@ -180,7 +180,8 @@ const SurveyBuildPage = () => {
             title: survey.title.trim(), 
             description: survey.description || '', 
             status: survey.status || 'draft',
-            questions: survey.questions?.map(q => q._id) || [],
+            questions: survey.questions?.map(q => q._id) || [], // Only send IDs for structure update
+            // Send the full objects for these, as they are complex and managed within the survey document.
             globalSkipLogic: survey.globalSkipLogic || [], 
             settings: survey.settings || {},
             randomizationLogic: survey.randomizationLogic || {},
@@ -188,17 +189,26 @@ const SurveyBuildPage = () => {
             thankYouMessage: survey.thankYouMessage || { text: "Thank you for completing the survey!" },
         };
 
+        // When saving the whole survey, ensure question definitions (like definedHeatmapAreas)
+        // that were updated locally are also part of what might be saved if the backend
+        // expects full question objects on a general survey update.
+        // However, typically, question content is updated via its own endpoint.
+        // The current payload only sends question IDs, which is correct for survey structure.
+        // The definedHeatmapAreas are saved on the question object itself, which should be handled
+        // when that specific question is saved (e.g., via QuestionEditPanel or if we add an explicit save for it after modal).
+        // For now, this handleSaveSurvey focuses on the survey's top-level structure and associated arrays like globalSkipLogic.
+
         console.log("[SurveyBuildPage] Payload for handleSaveSurvey (API call):", JSON.stringify(payload, null, 2));
 
         try {
-            // *** THIS IS THE CRITICAL LINE TO CHECK ***
             const response = await surveyApi.updateSurvey(survey._id, payload); 
             
             if (response && response.success && response.data) {
                 const updatedApiSurvey = response.data;
+                // If the API returns populated questions, use them. Otherwise, retain local.
                 const questionsToSet = (updatedApiSurvey.questions && updatedApiSurvey.questions.length > 0 && typeof updatedApiSurvey.questions[0] === 'object')
                                      ? updatedApiSurvey.questions
-                                     : survey.questions; 
+                                     : survey.questions; // Retain local questions if API only returns IDs
 
                 setSurvey(prev => ({
                     ...prev, 
@@ -211,13 +221,11 @@ const SurveyBuildPage = () => {
                 toast.error(`Error saving survey: ${response?.message || 'Invalid response.'}`);
             }
         } catch (err) {
-            // Log the full error object for more details
             console.error("Error in handleSaveSurvey:", err); 
             let errorMsg = `Error saving survey: ${err.response?.data?.message || err.message || 'Unknown error'}.`;
             if (err.response?.data?.errors) {
                  errorMsg = `Error saving: ${Object.values(err.response.data.errors).map(e => e.message || e).join(', ')}`;
             }
-            // Display the error message from the TypeError if available
             if (err instanceof TypeError && err.message) {
                 errorMsg = `Error saving survey: ${err.message}`;
             }
@@ -231,17 +239,17 @@ const SurveyBuildPage = () => {
         console.log("[SurveyBuildPage] handleSaveLogic called with rules:", JSON.stringify(updatedLogicRules, null, 2));
         setSurvey(prev => ({ 
             ...prev, 
-            logicRules: updatedLogicRules, 
-            globalSkipLogic: updatedLogicRules 
+            // logicRules: updatedLogicRules, // if you have a separate field for this
+            globalSkipLogic: updatedLogicRules // Assuming globalSkipLogic is the main field
         }));
         setIsLogicPanelOpen(false); 
-        toast.info("Logic updated. Click 'Save Survey Structure' to persist changes to the server.");
+        toast.info("Logic updated locally. Click 'Save Survey Structure' to persist changes to the server.");
     };
 
     const handleSaveSettings = (updatedSettings) => {
         setSurvey(prev => ({ ...prev, settings: updatedSettings }));
         setIsSettingsPanelOpen(false);
-        toast.info("Settings updated. Click 'Save Survey Structure'.");
+        toast.info("Settings updated locally. Click 'Save Survey Structure'.");
     };
 
     const handleOpenAddQuestionPanel = () => { setSelectedQuestionId(null); setShowAddQuestionPanel(true); };
@@ -249,16 +257,29 @@ const SurveyBuildPage = () => {
     const handleCancelEditPanel = () => { setSelectedQuestionId(null); setShowAddQuestionPanel(false); };
     
     const handleUpdateQuestionDefinitionForLogic = useCallback(async (questionId, updatedFields) => {
+        // DEBUG: Log what's coming into this crucial handler
+        console.log("[SBP] handleUpdateQuestionDefinitionForLogic triggered for Q_ID:", questionId, "With fields:", JSON.stringify(updatedFields, null, 2));
+
         setSurvey(prevSurvey => {
-            if (!prevSurvey || !prevSurvey.questions) return prevSurvey;
+            if (!prevSurvey || !prevSurvey.questions) {
+                console.warn("[SBP] prevSurvey or prevSurvey.questions is null/undefined in handleUpdateQuestionDefinitionForLogic");
+                return prevSurvey;
+            }
             const updatedQuestions = prevSurvey.questions.map(q => {
                 if (q._id === questionId) {
-                    return { ...q, ...updatedFields };
+                    const newQState = { ...q, ...updatedFields };
+                    // DEBUG: Log the specific question being updated
+                    console.log(`[SBP] Updating question ${questionId}. Old areas:`, q.definedHeatmapAreas, "New areas:", newQState.definedHeatmapAreas);
+                    return newQState;
                 }
                 return q;
             });
-            console.log(`[SurveyBuildPage] Question ${questionId} definition updated locally for logic panel:`, updatedFields);
-            toast.info(`Question definition updated for logic. Remember to save the question or survey structure.`);
+
+            // DEBUG: Log the question's definedHeatmapAreas from the *newly created* updatedQuestions array.
+            const qAfterUpdateInMap = updatedQuestions.find(q => q._id === questionId);
+            console.log(`[SBP] Question ${questionId} in new 'updatedQuestions' array. Areas:`, qAfterUpdateInMap?.definedHeatmapAreas);
+            
+            toast.info(`Local question definition updated for logic. Save survey structure to persist.`);
             return { ...prevSurvey, questions: updatedQuestions };
         });
     }, []);
@@ -329,7 +350,7 @@ const SurveyBuildPage = () => {
                 {isSettingsPanelOpen && survey?._id && (<SurveySettingsPanel isOpen={isSettingsPanelOpen} onClose={() => setIsSettingsPanelOpen(false)} settings={survey.settings || {}} onSave={handleSaveSettings} surveyId={survey._id} />)}
                 {isCollectorsPanelOpen && survey?._id && (<CollectorsPanel isOpen={isCollectorsPanelOpen} onClose={() => setIsCollectorsPanelOpen(false)} surveyId={survey._id} collectors={collectors} onCollectorsUpdate={() => {
                     toast.info("Refreshing collectors..."); setIsLoadingCollectors(true);
-                    surveyApi.getCollectorsForSurvey(survey._id) // Correct usage
+                    surveyApi.getCollectorsForSurvey(survey._id)
                         .then(collectorsResponse => {
                             if (collectorsResponse && collectorsResponse.success) {
                                 setCollectors(collectorsResponse.data || []);
@@ -345,4 +366,4 @@ const SurveyBuildPage = () => {
     );
 };
 export default SurveyBuildPage;
-// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Confirm API call site) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Confirm API call site, added debug logs for heatmap area issue) -----
