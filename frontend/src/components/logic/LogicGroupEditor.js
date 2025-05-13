@@ -1,5 +1,5 @@
 // frontend/src/components/logic/LogicGroupEditor.js
-// ----- START OF COMPLETE UPDATED FILE (v1.1 - Refined Group Operator Display) -----
+// ----- START OF UPDATED FILE (v1.2 - Pass onUpdateQuestionDefinition) -----
 import React from 'react';
 import LogicConditionEditor from './LogicConditionEditor';
 import { LOGICAL_OPERATORS } from './logicConstants';
@@ -10,11 +10,13 @@ function LogicGroupEditor({
     onUpdateGroup,
     onRemoveGroup,
     availableSourceQuestions,
-    allQuestions,
+    allQuestions, // This is the full list of questions for lookups
     styles,
     truncateText,
     getQuestionTypeLabel,
-    ensureArray
+    ensureArray,
+    // +++ NEW PROP: Accept onUpdateQuestionDefinition +++
+    onUpdateQuestionDefinition
 }) {
     const handleGroupOperatorChange = (e) => {
         onUpdateGroup(groupIndex, { ...group, groupOperator: e.target.value });
@@ -42,7 +44,6 @@ function LogicGroupEditor({
         <div className={styles.logicGroupEditor}>
             <div className={styles.logicGroupHeader}>
                 <span className={styles.logicGroupLabel}>Group {groupIndex + 1}</span>
-                {/* REMOVED the groupOperator select from the header */}
                 <button
                     type="button"
                     onClick={() => onRemoveGroup(groupIndex)}
@@ -54,12 +55,11 @@ function LogicGroupEditor({
             </div>
             <div className={styles.logicConditionsContainer}>
                 {groupConditions.map((condition, condIdx) => (
-                    <React.Fragment key={condition._id || condIdx}> {/* Use condition._id if available */}
-                        {/* Display groupOperator (AND/OR between conditions) only if there's more than one condition AND it's not the first condition */}
+                    <React.Fragment key={condition._id || condIdx}>
                         {condIdx > 0 && groupConditions.length > 1 && (
-                            <div className={styles.logicIntraGroupOperatorContainer}> {/* New container for styling */}
+                            <div className={styles.logicIntraGroupOperatorContainer}>
                                 <select
-                                    value={group.groupOperator || 'AND'} // Default to AND
+                                    value={group.groupOperator || 'AND'}
                                     onChange={handleGroupOperatorChange}
                                     className={styles.formControlSmall}
                                     title={`Combine with previous condition using ${group.groupOperator || 'AND'}`}
@@ -76,11 +76,13 @@ function LogicGroupEditor({
                             onUpdateCondition={updateCondition}
                             onRemoveCondition={removeCondition}
                             availableSourceQuestions={availableSourceQuestions}
-                            allQuestions={allQuestions}
+                            allQuestions={allQuestions} // Pass allQuestions for selectedQuestion lookup
                             styles={styles}
                             truncateText={truncateText}
                             getQuestionTypeLabel={getQuestionTypeLabel}
                             ensureArray={ensureArray}
+                            // +++ PASS THE PROP DOWN +++
+                            onUpdateQuestionDefinition={onUpdateQuestionDefinition}
                         />
                     </React.Fragment>
                 ))}
@@ -98,4 +100,4 @@ function LogicGroupEditor({
 }
 
 export default LogicGroupEditor;
-// ----- END OF COMPLETE UPDATED FILE (v1.1) -----
+// ----- END OF UPDATED FILE (v1.2 - Pass onUpdateQuestionDefinition) -----
