@@ -1,5 +1,5 @@
 // backend/controllers/collectorController.js
-// ----- START OF COMPLETE UPDATED FILE (v1.1 - Handle reCAPTCHA setting) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.2 - Handle IP Filtering Settings) -----
 const mongoose = require('mongoose');
 const Collector = require('../models/Collector');
 const Survey = require('../models/Survey');
@@ -30,15 +30,29 @@ exports.createCollector = async (req, res) => {
         };
 
         if (collectorData.type === 'web_link') {
-            collectorData.settings.web_link = {}; // Initialize web_link settings
+            collectorData.settings.web_link = {}; 
             if (settings && settings.web_link) {
-                // Explicitly copy known and allowed web_link settings
-                const allowedKeys = ['customSlug', 'password', 'openDate', 'closeDate', 'maxResponses', 'allowMultipleResponses', 'anonymousResponses', 'enableRecaptcha'];
+                // --- MODIFIED: Added ipAllowlist, ipBlocklist, recaptchaSiteKey to allowedKeys ---
+                const allowedKeys = [
+                    'customSlug', 'password', 'openDate', 'closeDate', 
+                    'maxResponses', 'allowMultipleResponses', 'anonymousResponses', 
+                    'enableRecaptcha', 'recaptchaSiteKey', 
+                    'ipAllowlist', 'ipBlocklist' 
+                ];
                 for (const key of allowedKeys) {
                     if (settings.web_link.hasOwnProperty(key)) {
                         if (key === 'password' && settings.web_link.password === '') {
-                            collectorData.settings.web_link.password = undefined; // Clear password
-                        } else {
+                            collectorData.settings.web_link.password = undefined; 
+                        } else if (key === 'maxResponses') {
+                            const parsedMax = parseInt(settings.web_link.maxResponses, 10);
+                            collectorData.settings.web_link.maxResponses = (isNaN(parsedMax) || parsedMax <=0) ? null : parsedMax;
+                        } else if (key === 'ipAllowlist' || key === 'ipBlocklist') {
+                            // Ensure they are arrays of strings
+                            collectorData.settings.web_link[key] = Array.isArray(settings.web_link[key]) 
+                                ? settings.web_link[key].filter(ip => typeof ip === 'string' && ip.trim() !== '') 
+                                : [];
+                        }
+                        else {
                             collectorData.settings.web_link[key] = settings.web_link[key];
                         }
                     }
@@ -55,7 +69,7 @@ exports.createCollector = async (req, res) => {
                     }
                 }
             }
-        } else if (collectorData.type) { // For other types in the future
+        } else if (collectorData.type) { 
             if (settings && settings[collectorData.type]) {
                  collectorData.settings[collectorData.type] = { ...settings[collectorData.type] };
             }
@@ -111,12 +125,12 @@ exports.getCollectorsForSurvey = async (req, res) => {
     const { surveyId } = req.params;
     try {
         const collectors = await Collector.find({ survey: surveyId })
-            .select('-settings.web_link.password')
+            .select('-settings.web_link.password') // Password still excluded by default
             .sort({ createdAt: -1 });
         res.status(200).json({
             success: true,
             count: collectors.length,
-            data: collectors
+            data: collectors // ipAllowlist and ipBlocklist will be included here
         });
     } catch (error) {
         console.error(`[collectorController.getCollectorsForSurvey] Error for survey ${surveyId}:`, error);
@@ -164,7 +178,7 @@ exports.updateCollector = async (req, res) => {
 
     try {
         let collector = await Collector.findOne({ _id: collectorId, survey: surveyId })
-                                     .select('+settings.web_link.password')
+                                     .select('+settings.web_link.password') // Ensure password can be loaded if needed
                                      .session(session);
 
         if (!collector) {
@@ -174,28 +188,48 @@ exports.updateCollector = async (req, res) => {
         }
 
         if (name !== undefined) collector.name = name;
-        if (type !== undefined) collector.type = type;
+        if (type !== undefined && type !== collector.type) {
+            // Handle type change - potentially clearing out old settings if type changes significantly
+            // For now, we assume type doesn't change or is handled carefully by frontend
+            collector.type = type;
+        }
         if (status !== undefined) collector.status = status;
 
         if (settings) {
-            const effectiveType = type !== undefined ? type : collector.type;
+            const effectiveType = type !== undefined ? type : collector.type; // Use new type if provided, else existing
             if (effectiveType === 'web_link') {
-                if (!collector.settings.web_link) collector.settings.web_link = {};
+                if (!collector.settings.web_link) collector.settings.web_link = {}; // Initialize if somehow missing
+                
                 if (settings.web_link) {
                     const newWebLinkSettings = settings.web_link;
-                    // Define allowed keys for web_link settings to prevent unwanted fields
-                    const allowedWebLinkKeys = ['customSlug', 'password', 'openDate', 'closeDate', 'maxResponses', 'allowMultipleResponses', 'anonymousResponses', 'enableRecaptcha']; // <<<--- ADD 'enableRecaptcha'
+                    // --- MODIFIED: Added ipAllowlist, ipBlocklist, recaptchaSiteKey to allowedWebLinkKeys ---
+                    const allowedWebLinkKeys = [
+                        'customSlug', 'password', 'openDate', 'closeDate', 
+                        'maxResponses', 'allowMultipleResponses', 'anonymousResponses', 
+                        'enableRecaptcha', 'recaptchaSiteKey',
+                        'ipAllowlist', 'ipBlocklist' 
+                    ];
 
                     for (const key of allowedWebLinkKeys) {
                         if (newWebLinkSettings.hasOwnProperty(key)) {
                              if (key === 'password') {
-                                collector.settings.web_link.password = newWebLinkSettings.password === '' ? undefined : newWebLinkSettings.password;
+                                // Only update password if it's explicitly provided.
+                                // If newWebLinkSettings.password is null or undefined, it means "don't change" or "clear if protection disabled"
+                                // The pre-save hook in Collector.js handles hashing if a new password string is provided.
+                                // If passwordProtectionEnabled is false, frontend sends password as null/undefined.
+                                collector.settings.web_link.password = newWebLinkSettings.password || undefined;
                             } else if (key === 'maxResponses') {
                                 const parsedMax = parseInt(newWebLinkSettings.maxResponses, 10);
                                 collector.settings.web_link.maxResponses = (isNaN(parsedMax) || parsedMax <=0) ? null : parsedMax;
-                            } else if (key === 'enableRecaptcha') { // <<<--- ADD THIS BLOCK
-                                collector.settings.web_link.enableRecaptcha = !!newWebLinkSettings.enableRecaptcha; // Ensure boolean
-                            } else {
+                            } else if (key === 'enableRecaptcha' || key === 'allowMultipleResponses' || key === 'anonymousResponses') {
+                                collector.settings.web_link[key] = !!newWebLinkSettings[key]; // Ensure boolean
+                            } else if (key === 'ipAllowlist' || key === 'ipBlocklist') {
+                                // Ensure they are arrays of strings, filter out empty strings
+                                collector.settings.web_link[key] = Array.isArray(newWebLinkSettings[key]) 
+                                    ? newWebLinkSettings[key].filter(ip => typeof ip === 'string' && ip.trim() !== '') 
+                                    : [];
+                            }
+                            else {
                                 collector.settings.web_link[key] = newWebLinkSettings[key];
                             }
                         }
@@ -204,7 +238,7 @@ exports.updateCollector = async (req, res) => {
                     if (newWebLinkSettings.customSlug && newWebLinkSettings.customSlug !== (collector.settings.web_link && collector.settings.web_link.customSlug)) {
                          const existingSlug = await Collector.findOne({
                             'settings.web_link.customSlug': newWebLinkSettings.customSlug,
-                            _id: { $ne: collectorId }
+                            _id: { $ne: collectorId } // Exclude current collector from check
                         }).session(session);
                         if (existingSlug) {
                             await session.abortTransaction();
@@ -214,9 +248,8 @@ exports.updateCollector = async (req, res) => {
                     }
                 }
             }
-            if (Object.keys(settings).length > 0) {
-                collector.markModified('settings');
-            }
+            // Mark settings as modified to ensure Mongoose detects changes in nested objects
+            collector.markModified('settings'); 
         }
 
         const updatedCollector = await collector.save({ session });
@@ -224,6 +257,7 @@ exports.updateCollector = async (req, res) => {
         session.endSession();
 
         const collectorObject = updatedCollector.toObject();
+        // Remove password before sending back to client
         if (collectorObject.settings && collectorObject.settings.web_link && collectorObject.settings.web_link.password) {
             delete collectorObject.settings.web_link.password;
         }
@@ -239,7 +273,7 @@ exports.updateCollector = async (req, res) => {
             const messages = Object.values(error.errors).map(val => val.message);
             return res.status(400).json({ success: false, message: messages.join('. '), errors: error.errors });
         }
-        if (error.code === 11000) {
+        if (error.code === 11000) { // Duplicate key error
              if (error.keyValue && error.keyValue['settings.web_link.customSlug']) {
                 return res.status(400).json({ success: false, message: 'This custom slug is already in use (database constraint).' });
             }
@@ -266,15 +300,22 @@ exports.deleteCollector = async (req, res) => {
             session.endSession();
             return res.status(404).json({ success: false, message: 'Collector not found or does not belong to this survey.' });
         }
+
+        // Remove collector from DB
         await Collector.findByIdAndDelete(collectorId, { session });
+
+        // Pull collector's ID from the survey's collectors array
         await Survey.findByIdAndUpdate(
             surveyId,
             { $pull: { collectors: collectorId } },
-            { session, new: true }
+            { session, new: true } // new: true is not strictly necessary here but doesn't hurt
         );
+
         await session.commitTransaction();
         session.endSession();
+
         res.status(200).json({ success: true, message: 'Collector deleted successfully.', data: { id: collectorId } });
+
     } catch (error) {
         if (session.inTransaction()) {
             await session.abortTransaction();
@@ -284,4 +325,4 @@ exports.deleteCollector = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error deleting collector.' });
     }
 };
-// ----- END OF COMPLETE UPDATED FILE (v1.1 - Handle reCAPTCHA setting) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.2 - Handle IP Filtering Settings) -----
