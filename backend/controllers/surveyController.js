@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext8 - IP/UserAgent Collection) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext9 - Fix reCAPTCHA Site Key Fetching) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -113,7 +113,7 @@ exports.getSurveyById = async (req, res) => {
 
     try {
         let surveyQuery = Survey.findById(surveyId);
-        let collectorForTaking = null; // To store collector settings for the survey taking page
+        let collectorForTaking = null; 
 
         if (forTaking === 'true') {
             surveyQuery = surveyQuery
@@ -121,55 +121,53 @@ exports.getSurveyById = async (req, res) => {
                 .populate({ path: 'questions', options: { sort: { order: 1 } } });
             
             if (collectorId && mongoose.Types.ObjectId.isValid(collectorId)) {
-                // Fetch collector settings specifically for the survey taking page
                 collectorForTaking = await Collector.findById(collectorId)
-                                        .select('settings.web_link.allowMultipleResponses settings.web_link.anonymousResponses settings.web_link.enableRecaptcha') // Select only needed settings
+                                        // --- MODIFIED: Added settings.web_link.recaptchaSiteKey ---
+                                        .select('settings.web_link.allowMultipleResponses settings.web_link.anonymousResponses settings.web_link.enableRecaptcha settings.web_link.recaptchaSiteKey') 
                                         .lean(); 
             }
 
-        } else { // For admin view
+        } else { 
             surveyQuery = surveyQuery.populate({ path: 'questions', options: { sort: { order: 1 } } }).populate('collectors');
         }
 
-        const survey = await surveyQuery.lean(); // Use .lean() for plain JS objects if not modifying
+        const survey = await surveyQuery.lean(); 
 
         if (!survey) {
             return res.status(404).json({ success: false, message: 'Survey not found.' });
         }
 
-        // Authorization for admin view
         if (forTaking !== 'true' && req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
             return res.status(403).json({ success: false, message: 'You are not authorized to view this survey\'s details.' });
         }
 
-        // Logic for survey taking mode
         if (forTaking === 'true') {
             const isOwnerPreviewingDraft = survey.status === 'draft' && req.user && String(survey.createdBy) === String(req.user.id);
             if (survey.status !== 'active' && !isOwnerPreviewingDraft) {
                  return res.status(403).json({ success: false, message: 'This survey is not currently active.' });
             }
 
-            if (collectorId) { // This collectorId is from query param, used for validation
+            if (collectorId) { 
                 if (!mongoose.Types.ObjectId.isValid(collectorId)) return res.status(400).json({ success: false, message: 'Invalid Collector ID.' });
-                // Fetch the full collector for validation if not already fetched for settings
-                const fullCollectorForValidation = collectorForTaking && String(collectorForTaking._id) === collectorId ? collectorForTaking : await Collector.findById(collectorId).select('+settings.web_link.password');
                 
+                const fullCollectorForValidation = (collectorForTaking && String(collectorForTaking._id) === collectorId) 
+                    ? await Collector.findById(collectorId).select('+settings.web_link.password').lean() // Re-fetch with password if it's the same collector
+                    : await Collector.findById(collectorId).select('+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey').lean();
+
+
                 if (!fullCollectorForValidation || String(fullCollectorForValidation.survey) !== String(survey._id)) return res.status(404).json({ success: false, message: 'Collector not found or invalid for this survey.' });
                 if (fullCollectorForValidation.status !== 'open' && !isOwnerPreviewingDraft) return res.status(403).json({ success: false, message: `Link is ${fullCollectorForValidation.status}.` });
                 
-                if (fullCollectorForValidation.type === 'web_link' && fullCollectorForValidation.settings?.web_link?.enablePassword) {
+                if (fullCollectorForValidation.type === 'web_link' && fullCollectorForValidation.settings?.web_link?.password) { // Check if password field exists
                     const providedPassword = req.headers['x-survey-password'];
-                    // Need to compare hashed password if it's stored hashed
-                    // For simplicity, assuming direct comparison or a method on collector model
-                    const collectorInstance = await Collector.findById(collectorId); // Re-fetch to use instance method
+                    const collectorInstance = new Collector(fullCollectorForValidation); // Create instance to use comparePassword
                     const passwordMatch = await collectorInstance.comparePassword(providedPassword);
                     if (!providedPassword || !passwordMatch) {
                          return res.status(401).json({ success: false, message: 'Password required or incorrect.', requiresPassword: true });
                     }
                 }
-                 // If collectorForTaking wasn't fetched above, populate it now
-                if (!collectorForTaking) {
-                    collectorForTaking = { // Reconstruct from fullCollectorForValidation if needed
+                if (!collectorForTaking) { // If not fetched initially, populate it from fullCollectorForValidation
+                    collectorForTaking = { 
                         settings: { web_link: fullCollectorForValidation.settings?.web_link }
                     };
                 }
@@ -190,12 +188,14 @@ exports.getSurveyById = async (req, res) => {
         }
         
         const surveyResponseData = { ...survey, questions: processedQuestions };
-        if (forTaking === 'true' && collectorForTaking) {
-            surveyResponseData.collectorSettings = collectorForTaking.settings?.web_link || {};
-            // Ensure REACT_APP_RECAPTCHA_SITE_KEY is passed if reCAPTCHA is enabled by collector but no key on collector
+        if (forTaking === 'true' && collectorForTaking && collectorForTaking.settings?.web_link) {
+            surveyResponseData.collectorSettings = { ...collectorForTaking.settings.web_link }; // Make a copy
+            // Fallback to ENV site key if collector has it enabled but no specific key
             if (surveyResponseData.collectorSettings.enableRecaptcha && !surveyResponseData.collectorSettings.recaptchaSiteKey && process.env.REACT_APP_RECAPTCHA_SITE_KEY) {
                 surveyResponseData.collectorSettings.recaptchaSiteKey = process.env.REACT_APP_RECAPTCHA_SITE_KEY;
             }
+        } else if (forTaking === 'true') {
+             surveyResponseData.collectorSettings = {}; // Ensure it exists
         }
 
 
@@ -291,13 +291,13 @@ exports.submitSurveyAnswers = async (req, res) => {
             await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Survey not active.' });
         }
         
-        const collector = await Collector.findById(collectorId).select('+settings.web_link.password +settings.web_link.anonymousResponses').session(mongoSession); // <<< MODIFIED: Select anonymousResponses
+        const collector = await Collector.findById(collectorId).select('+settings.web_link.password +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey').session(mongoSession); 
         if (!collector) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Collector not found.' }); }
         if (String(collector.survey) !== String(surveyId)) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Collector mismatch.' }); }
         if (collector.status !== 'open' && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: `Link is ${collector.status}.` }); }
         
         const now = new Date(); 
-        const webLinkSettings = collector.settings?.web_link; // Already includes anonymousResponses due to select above
+        const webLinkSettings = collector.settings?.web_link;
 
         if (webLinkSettings?.openDate && new Date(webLinkSettings.openDate) > now && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Survey not yet open.' }); }
         if (webLinkSettings?.closeDate && new Date(webLinkSettings.closeDate) < now && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Survey closed.' }); }
@@ -305,8 +305,14 @@ exports.submitSurveyAnswers = async (req, res) => {
         
         if (collector.type === 'web_link' && webLinkSettings?.enableRecaptcha && !isOwnerPreviewingDraft) {
             if (!recaptchaToken) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'reCAPTCHA required.' }); }
+            
+            const siteKeyForVerification = webLinkSettings.recaptchaSiteKey || process.env.RECAPTCHA_V2_SITE_KEY_BACKEND_UNUSED; // Site key not used for verification, only secret
             const secretKey = process.env.RECAPTCHA_V2_SECRET_KEY;
-            if (!secretKey) { console.error("[submitSurveyAnswers] RECAPTCHA_V2_SECRET_KEY not set."); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'reCAPTCHA config error.' }); }
+
+            if (!secretKey) { console.error("[submitSurveyAnswers] RECAPTCHA_V2_SECRET_KEY not set."); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'reCAPTCHA config error (secret missing).' }); }
+            // if (!siteKeyForVerification) { console.error("[submitSurveyAnswers] reCAPTCHA site key not available (collector or ENV)."); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'reCAPTCHA config error (site key missing).' });}
+
+
             const verificationUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${recaptchaToken}&remoteip=${req.ip}`;
             try {
                 const recaptchaResponse = await axios.post(verificationUrl);
@@ -326,7 +332,6 @@ exports.submitSurveyAnswers = async (req, res) => {
             if (bulkWriteResult.hasWriteErrors()) { console.error('[submitSurveyAnswers] BulkWriteError:', bulkWriteResult.getWriteErrors()); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'Error saving answers.' }); }
         }
         
-        // --- MODIFIED: IP Address and User Agent Handling ---
         const responseUpdateData = { 
             status: 'completed', 
             submittedAt: new Date(), 
@@ -339,12 +344,9 @@ exports.submitSurveyAnswers = async (req, res) => {
             startedAt: (clientStartedAt && !isNaN(new Date(clientStartedAt).getTime())) ? new Date(clientStartedAt) : new Date() 
         };
 
-        // Check collector settings for anonymous responses
         const collectIpAndUserAgent = !(webLinkSettings && webLinkSettings.anonymousResponses === true);
 
         if (collectIpAndUserAgent) {
-            // Helper to get IP address. Handles 'x-forwarded-for' if present.
-            // Ensure 'trust proxy' is set in your Express app for req.ip to be reliable behind proxies.
             const getIp = (request) => {
                 const xForwardedFor = request.headers['x-forwarded-for'];
                 if (xForwardedFor) {
@@ -353,17 +355,15 @@ exports.submitSurveyAnswers = async (req, res) => {
                 return request.ip || request.connection?.remoteAddress;
             };
             responseUpdateData.ipAddress = getIp(req);
-            responseSetOnInsertData.ipAddress = getIp(req); // Also for $setOnInsert
+            responseSetOnInsertData.ipAddress = getIp(req); 
             responseUpdateData.userAgent = req.headers['user-agent'];
-            responseSetOnInsertData.userAgent = req.headers['user-agent']; // Also for $setOnInsert
+            responseSetOnInsertData.userAgent = req.headers['user-agent']; 
         } else {
-            // Ensure these are not set if anonymous
             responseUpdateData.ipAddress = undefined;
             responseSetOnInsertData.ipAddress = undefined;
             responseUpdateData.userAgent = undefined;
             responseSetOnInsertData.userAgent = undefined;
         }
-        // --- END MODIFICATION ---
 
         const updatedResponse = await Response.findOneAndUpdate(
             { survey: surveyId, collector: collectorId, sessionId: sessionIdToUse }, 
@@ -419,10 +419,8 @@ exports.getSurveyResults = async (req, res) => {
         if (!survey) return res.status(404).json({ success: false, message: 'Survey not found.' });
         if (req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Not authorized.' });
         
-        // Fetch responses, explicitly selecting ipAddress and userAgent for results display if needed
-        // Note: Response model has select:false for these, so they must be explicitly selected here.
         const responses = await Response.find({ survey: surveyId, status: { $in: ['completed', 'disqualified'] } })
-            .select('+sessionId +status +submittedAt +startedAt +ipAddress +userAgent +customVariables') // <<< MODIFIED: Explicitly select +ipAddress and +userAgent
+            .select('+sessionId +status +submittedAt +startedAt +ipAddress +userAgent +customVariables') 
             .lean(); 
 
         const sessionIds = responses.map(r => r.sessionId);
@@ -444,8 +442,8 @@ exports.getSurveyResults = async (req, res) => {
                 responseId: r._id, sessionId: r.sessionId, status: r.status,
                 submittedAt: r.submittedAt, startedAt: r.startedAt,
                 duration: r.startedAt && r.submittedAt ? (new Date(r.submittedAt).getTime() - new Date(r.startedAt).getTime()) / 1000 : null,
-                ipAddress: r.ipAddress, // Now available due to explicit select
-                userAgent: r.userAgent, // Now available
+                ipAddress: r.ipAddress, 
+                userAgent: r.userAgent, 
             })),
             questions: survey.questions.map(q => {
                 if (!q || !q._id) return null;
@@ -489,9 +487,8 @@ exports.exportSurveyResults = async (req, res) => {
         const responseQueryConditions = { survey: surveyId, status: { $in: ['completed', 'disqualified'] } };
         if (collectorId && mongoose.Types.ObjectId.isValid(collectorId)) responseQueryConditions.collector = collectorId;
         
-        // Explicitly select ipAddress and userAgent for export
         const responses = await Response.find(responseQueryConditions)
-            .select('+sessionId +status +submittedAt +startedAt +ipAddress +userAgent +customVariables') // <<< MODIFIED: Explicitly select
+            .select('+sessionId +status +submittedAt +startedAt +ipAddress +userAgent +customVariables') 
             .sort({ submittedAt: 1 })
             .lean();
 
@@ -514,8 +511,8 @@ exports.exportSurveyResults = async (req, res) => {
                 startedAt: responseDoc.startedAt ? new Date(responseDoc.startedAt).toISOString() : '', 
                 submittedAt: responseDoc.submittedAt ? new Date(responseDoc.submittedAt).toISOString() : '', 
                 duration: responseDoc.startedAt && responseDoc.submittedAt ? (new Date(responseDoc.submittedAt).getTime() - new Date(responseDoc.startedAt).getTime()) / 1000 : '', 
-                ipAddress: responseDoc.ipAddress || '', // Now available
-                userAgent: responseDoc.userAgent || '', // Now available
+                ipAddress: responseDoc.ipAddress || '', 
+                userAgent: responseDoc.userAgent || '', 
             };
             const respondentAnswers = allAnswersForResponses.filter(ans => ans.sessionId === responseDoc.sessionId);
             survey.questions.forEach(q => {
@@ -541,4 +538,4 @@ exports.exportSurveyResults = async (req, res) => {
         if (!res.headersSent) res.status(500).json({ success: false, message: 'Error exporting results.' });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (vNext8 - IP/UserAgent Collection) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext9 - Fix reCAPTCHA Site Key Fetching) -----
