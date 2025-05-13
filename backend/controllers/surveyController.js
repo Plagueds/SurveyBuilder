@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext11 - Add Backend DB Query Logging) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext12 - Ensure Plain Object for Collector Settings) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -104,7 +104,7 @@ exports.createSurvey = async (req, res) => {
 
 exports.getSurveyById = async (req, res) => {
     const { surveyId } = req.params;
-    const { forTaking, collectorId, isPreviewingOwner } = req.query; // collectorId is linkId/slug, isPreviewingOwner flag
+    const { forTaking, collectorId, isPreviewingOwner } = req.query; 
 
     console.log(`[getSurveyById Bkend] surveyId: ${surveyId}, forTaking: ${forTaking}, collectorId (identifier): ${collectorId}, isPreviewingOwner: ${isPreviewingOwner}`);
 
@@ -159,8 +159,7 @@ exports.getSurveyById = async (req, res) => {
         if (forTaking !== 'true' && req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
             return res.status(403).json({ success: false, message: 'You are not authorized to view this survey\'s details.' });
         }
-
-        // Use isPreviewingOwner flag passed from frontend if available, otherwise fallback to existing logic
+        
         const effectiveIsOwnerPreviewing = isPreviewingOwner === 'true' || (survey.status === 'draft' && req.user && String(survey.createdBy) === String(req.user.id));
 
         if (forTaking === 'true') {
@@ -181,7 +180,6 @@ exports.getSurveyById = async (req, res) => {
                 }
                 if (actualCollectorDoc.type === 'web_link' && actualCollectorDoc.settings?.web_link?.password) {
                     const providedPassword = req.headers['x-survey-password'];
-                    // actualCollectorDoc is a Mongoose instance now (removed .lean() from main find paths)
                     const passwordMatch = await actualCollectorDoc.comparePassword(providedPassword);
                     if (!providedPassword || !passwordMatch) {
                          return res.status(401).json({ success: false, message: 'Password required or incorrect.', requiresPassword: true });
@@ -207,9 +205,20 @@ exports.getSurveyById = async (req, res) => {
         
         if (forTaking === 'true') {
             if (actualCollectorDoc && actualCollectorDoc.settings?.web_link) {
-                surveyResponseData.collectorSettings = { ...actualCollectorDoc.settings.web_link }; 
+                // --- MODIFICATION START ---
+                // Use .toObject() to get a plain JS object for the subdocument
+                // Or, if settings.web_link is already lean due to select, ensure it's spread correctly.
+                // The safest is to convert the specific subdocument part to a plain object.
+                const webLinkSettingsObject = actualCollectorDoc.settings.web_link.toObject ? 
+                                              actualCollectorDoc.settings.web_link.toObject() : 
+                                              { ...actualCollectorDoc.settings.web_link };
+
+                surveyResponseData.collectorSettings = webLinkSettingsObject;
+                // --- MODIFICATION END ---
+                
                 surveyResponseData.actualCollectorObjectId = actualCollectorDoc._id; 
                 console.log(`[getSurveyById Bkend] Passing to frontend: actualCollectorObjectId=${actualCollectorDoc._id}, collectorSettings=`, surveyResponseData.collectorSettings);
+                
                 if (surveyResponseData.collectorSettings.enableRecaptcha && !surveyResponseData.collectorSettings.recaptchaSiteKey && process.env.REACT_APP_RECAPTCHA_SITE_KEY) {
                     surveyResponseData.collectorSettings.recaptchaSiteKey = process.env.REACT_APP_RECAPTCHA_SITE_KEY;
                 }
@@ -231,7 +240,8 @@ exports.getSurveyById = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error fetching survey.' });
     }
 };
-// ... (rest of the controller remains the same as vNext10)
+
+// ... (rest of the controller: updateSurvey, deleteSurvey, submitSurveyAnswers, etc., remain the same as vNext11)
 exports.updateSurvey = async (req, res) => {
     const { surveyId } = req.params;
     const updates = req.body; 
@@ -560,4 +570,4 @@ exports.exportSurveyResults = async (req, res) => {
         if (!res.headersSent) res.status(500).json({ success: false, message: 'Error exporting results.' });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (vNext11 - Add Backend DB Query Logging) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext12 - Ensure Plain Object for Collector Settings) -----
