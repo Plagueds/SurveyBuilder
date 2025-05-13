@@ -1,5 +1,5 @@
 // frontend/src/api/surveyApi.js
-// ----- START OF COMPLETE MODIFIED FILE -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext - Fix getSurveyById params) -----
 import axios from 'axios';
 
 // This is expected to be the FULL BASE URL for your /api routes.
@@ -111,7 +111,18 @@ export const createSurvey = async (surveyData, options = {}) => {
 
 export const getSurveyById = async (surveyId, options = {}) => {
     try {
-        const response = await apiClient.get(`/surveys/${surveyId}`, { signal: options.signal });
+        // --- MODIFICATION START ---
+        // Destructure known query parameters from options.
+        // Any other properties in options (like 'signal') will be handled separately or ignored by 'params'.
+        const { signal, ...queryParams } = options; 
+        
+        // Pass queryParams as the 'params' object to axios.
+        // Pass signal directly in the axios config.
+        const response = await apiClient.get(`/surveys/${surveyId}`, { 
+            params: queryParams, 
+            signal: signal 
+        });
+        // --- MODIFICATION END ---
         return response.data;
     } catch (error) {
         return handleApiError(error, `getSurveyById (${surveyId})`);
@@ -176,7 +187,13 @@ export const submitSurveyAnswers = async (surveyId, submissionData, options = {}
 
 export const getSurveyResults = async (surveyId, options = {}) => {
     try {
-        const response = await apiClient.get(`/surveys/${surveyId}/results`, { signal: options.signal });
+        // --- MODIFICATION FOR CONSISTENCY (if options might contain query params) ---
+        const { signal, ...queryParams } = options;
+        const response = await apiClient.get(`/surveys/${surveyId}/results`, { 
+            params: queryParams, 
+            signal: signal 
+        });
+        // --- END MODIFICATION ---
         return response.data;
     } catch (error) {
         return handleApiError(error, `getSurveyResults (${surveyId})`);
@@ -185,7 +202,14 @@ export const getSurveyResults = async (surveyId, options = {}) => {
 
 export const exportSurveyResults = async (surveyId, options = {}) => {
     try {
-        const response = await apiClient.get(`/surveys/${surveyId}/export`, { responseType: 'blob', signal: options.signal });
+        // --- MODIFICATION FOR CONSISTENCY (if options might contain query params) ---
+        const { signal, ...queryParams } = options;
+        const response = await apiClient.get(`/surveys/${surveyId}/export`, { 
+            responseType: 'blob', 
+            params: queryParams,
+            signal: signal 
+        });
+        // --- END MODIFICATION ---
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = url;
@@ -207,7 +231,6 @@ export const exportSurveyResults = async (surveyId, options = {}) => {
 };
 
 // --- Auth Endpoints ---
-// These are less likely to be aborted by component lifecycle, but signal option is harmless.
 export const loginUser = async (credentials, options = {}) => {
     try {
         const response = await apiClient.post('/auth/login', credentials, { signal: options.signal });
@@ -241,7 +264,8 @@ export const logoutUser = () => {
 
 export const getMe = async (options = {}) => {
     try {
-        const response = await apiClient.get('/auth/me', { signal: options.signal });
+        const { signal, ...queryParams } = options; // For consistency if any params were ever needed
+        const response = await apiClient.get('/auth/me', { params: queryParams, signal: signal });
         return response.data;
     } catch (error) {
         return handleApiError(error, 'getMe');
@@ -251,7 +275,8 @@ export const getMe = async (options = {}) => {
 // --- Collector Endpoints ---
 export const getCollectorsForSurvey = async (surveyId, options = {}) => {
     try {
-        const response = await apiClient.get(`/surveys/${surveyId}/collectors`, { signal: options.signal });
+        const { signal, ...queryParams } = options;
+        const response = await apiClient.get(`/surveys/${surveyId}/collectors`, { params: queryParams, signal: signal });
         return response.data;
     } catch (error) {
         return handleApiError(error, `getCollectorsForSurvey (${surveyId})`);
@@ -286,15 +311,17 @@ export const deleteCollector = async (surveyId, collectorId, options = {}) => {
 };
 
 // --- Public Survey Access Endpoint ---
+// This one seems to be structured differently, using a POST and a different base URL.
+// It's not directly related to the getSurveyById issue for SurveyTakingPage.
 export const accessPublicSurvey = async (accessIdentifier, password = null, options = {}) => {
     try {
         const payload = password ? { password } : {};
+        // This uses a different axios instance or base URL logic.
         const publicAccessClient = axios.create({ baseURL: effectivePublicAccessRootUrl });
         console.log(`[surveyApi] Calling POST ${effectivePublicAccessRootUrl}/s/${accessIdentifier}`);
         const response = await publicAccessClient.post(`/s/${accessIdentifier}`, payload, { signal: options.signal });
         return response.data;
     } catch (error) {
-        // Custom handling because it uses a different client and error structure might vary
         if (axios.isCancel(error) || error.name === 'AbortError') {
             console.log(`[surveyApi] accessPublicSurvey (${accessIdentifier}) request was aborted:`, error.message);
         } else {
@@ -317,4 +344,4 @@ const surveyApiFunctions = {
 };
 
 export default surveyApiFunctions;
-// ----- END OF COMPLETE MODIFIED FILE -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext - Fix getSurveyById params) -----
