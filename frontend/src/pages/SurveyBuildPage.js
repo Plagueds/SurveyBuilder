@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyBuildPage.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Confirm API call site, added debug logs for heatmap area issue) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.3 - Send full question objects on save) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { DndProvider } from 'react-dnd';
@@ -180,8 +180,9 @@ const SurveyBuildPage = () => {
             title: survey.title.trim(), 
             description: survey.description || '', 
             status: survey.status || 'draft',
-            questions: survey.questions?.map(q => q._id) || [], // Only send IDs for structure update
-            // Send the full objects for these, as they are complex and managed within the survey document.
+            // +++ CHANGE HERE: Send the full question objects from the local state +++
+            questions: survey.questions || [], // This now sends full objects, including definedHeatmapAreas
+            
             globalSkipLogic: survey.globalSkipLogic || [], 
             settings: survey.settings || {},
             randomizationLogic: survey.randomizationLogic || {},
@@ -189,16 +190,7 @@ const SurveyBuildPage = () => {
             thankYouMessage: survey.thankYouMessage || { text: "Thank you for completing the survey!" },
         };
 
-        // When saving the whole survey, ensure question definitions (like definedHeatmapAreas)
-        // that were updated locally are also part of what might be saved if the backend
-        // expects full question objects on a general survey update.
-        // However, typically, question content is updated via its own endpoint.
-        // The current payload only sends question IDs, which is correct for survey structure.
-        // The definedHeatmapAreas are saved on the question object itself, which should be handled
-        // when that specific question is saved (e.g., via QuestionEditPanel or if we add an explicit save for it after modal).
-        // For now, this handleSaveSurvey focuses on the survey's top-level structure and associated arrays like globalSkipLogic.
-
-        console.log("[SurveyBuildPage] Payload for handleSaveSurvey (API call):", JSON.stringify(payload, null, 2));
+        console.log("[SurveyBuildPage v1.3] Payload for handleSaveSurvey (API call):", JSON.stringify(payload, null, 2));
 
         try {
             const response = await surveyApi.updateSurvey(survey._id, payload); 
@@ -206,9 +198,10 @@ const SurveyBuildPage = () => {
             if (response && response.success && response.data) {
                 const updatedApiSurvey = response.data;
                 // If the API returns populated questions, use them. Otherwise, retain local.
+                // This logic is good and should handle the response correctly.
                 const questionsToSet = (updatedApiSurvey.questions && updatedApiSurvey.questions.length > 0 && typeof updatedApiSurvey.questions[0] === 'object')
                                      ? updatedApiSurvey.questions
-                                     : survey.questions; // Retain local questions if API only returns IDs
+                                     : survey.questions; 
 
                 setSurvey(prev => ({
                     ...prev, 
@@ -239,8 +232,7 @@ const SurveyBuildPage = () => {
         console.log("[SurveyBuildPage] handleSaveLogic called with rules:", JSON.stringify(updatedLogicRules, null, 2));
         setSurvey(prev => ({ 
             ...prev, 
-            // logicRules: updatedLogicRules, // if you have a separate field for this
-            globalSkipLogic: updatedLogicRules // Assuming globalSkipLogic is the main field
+            globalSkipLogic: updatedLogicRules 
         }));
         setIsLogicPanelOpen(false); 
         toast.info("Logic updated locally. Click 'Save Survey Structure' to persist changes to the server.");
@@ -257,9 +249,7 @@ const SurveyBuildPage = () => {
     const handleCancelEditPanel = () => { setSelectedQuestionId(null); setShowAddQuestionPanel(false); };
     
     const handleUpdateQuestionDefinitionForLogic = useCallback(async (questionId, updatedFields) => {
-        // DEBUG: Log what's coming into this crucial handler
         console.log("[SBP] handleUpdateQuestionDefinitionForLogic triggered for Q_ID:", questionId, "With fields:", JSON.stringify(updatedFields, null, 2));
-
         setSurvey(prevSurvey => {
             if (!prevSurvey || !prevSurvey.questions) {
                 console.warn("[SBP] prevSurvey or prevSurvey.questions is null/undefined in handleUpdateQuestionDefinitionForLogic");
@@ -268,22 +258,17 @@ const SurveyBuildPage = () => {
             const updatedQuestions = prevSurvey.questions.map(q => {
                 if (q._id === questionId) {
                     const newQState = { ...q, ...updatedFields };
-                    // DEBUG: Log the specific question being updated
                     console.log(`[SBP] Updating question ${questionId}. Old areas:`, q.definedHeatmapAreas, "New areas:", newQState.definedHeatmapAreas);
                     return newQState;
                 }
                 return q;
             });
-
-            // DEBUG: Log the question's definedHeatmapAreas from the *newly created* updatedQuestions array.
             const qAfterUpdateInMap = updatedQuestions.find(q => q._id === questionId);
             console.log(`[SBP] Question ${questionId} in new 'updatedQuestions' array. Areas:`, qAfterUpdateInMap?.definedHeatmapAreas);
-            
             toast.info(`Local question definition updated for logic. Save survey structure to persist.`);
             return { ...prevSurvey, questions: updatedQuestions };
         });
     }, []);
-
 
     const selectedQData = survey?.questions?.find(q => q._id === selectedQuestionId);
     const shouldMakeSpaceForPanel = showAddQuestionPanel || !!selectedQData;
@@ -366,4 +351,4 @@ const SurveyBuildPage = () => {
     );
 };
 export default SurveyBuildPage;
-// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Confirm API call site, added debug logs for heatmap area issue) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.3 - Send full question objects on save) -----

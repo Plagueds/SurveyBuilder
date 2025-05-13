@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext16 - Robust globalSkipLogic Update) -----
+// ----- START OF COMPLETE UPDATED FILE (vNext17 - Process full question objects in updateSurvey) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -7,7 +7,7 @@ const Question = require('../models/Question');
 const Answer = require('../models/Answer');
 const Collector = require('../models/Collector');
 const Response = require('../models/Response');
-const { evaluateAllLogic } = require('../utils/logicEvaluator'); // Assuming this is for survey taking
+const { evaluateAllLogic } = require('../utils/logicEvaluator');
 const axios = require('axios');
 const ipRangeCheck = require('ip-range-check');
 
@@ -124,7 +124,7 @@ exports.getSurveyById = async (req, res) => {
         if (forTaking === 'true') {
             surveyQuery = surveyQuery
                 .select('title description welcomeMessage thankYouMessage status questions settings.surveyWide.allowRetakes settings.surveyWide.showProgressBar settings.surveyWide.customCSS globalSkipLogic randomizationLogic')
-                .populate({ path: 'questions', options: { sort: { order: 1 } } });
+                .populate({ path: 'questions', options: { sort: { order: 1 } } }); // Sorting by 'order' might not be relevant if Question model has no 'order' field. Order comes from survey.questions array.
             
             if (collectorId) {
                 const selectFields = '+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist +settings.web_link.allowBackButton';
@@ -135,7 +135,7 @@ exports.getSurveyById = async (req, res) => {
                 if (!actualCollectorDoc) actualCollectorDoc = await Collector.findOne({ 'settings.web_link.customSlug': collectorId, survey: surveyId }).select(selectFields);
             }
         } else { 
-            surveyQuery = surveyQuery.populate({ path: 'questions', options: { sort: { order: 1 } } }).populate('collectors');
+            surveyQuery = surveyQuery.populate({ path: 'questions' /* Removed sort here, rely on array order */ }).populate('collectors');
         }
 
         const survey = await surveyQuery.lean(); 
@@ -174,7 +174,28 @@ exports.getSurveyById = async (req, res) => {
         }
 
         let processedQuestions = survey.questions || [];
-        if (Array.isArray(processedQuestions)) {
+        if (Array.isArray(processedQuestions) && processedQuestions.length > 0 && typeof processedQuestions[0] === 'object' && processedQuestions[0] !== null) { // Check if populated
+            // If questions are populated objects, sort them according to the survey.questions array of IDs
+            const questionOrderMap = survey.questions.reduce((map, qId, index) => {
+                map[String(qId)] = index; // Store original index of ID
+                return map;
+            }, {});
+            
+            // Fetch full question objects if they are not already populated as objects
+            // This step might be redundant if .populate() already worked correctly.
+            // The .lean() might cause questions to be just IDs if not populated correctly before .lean().
+            // Let's assume for now that populate worked and survey.questions are objects.
+            // If they are IDs, we need to re-fetch them.
+            // For now, we will sort the already populated objects.
+            
+            processedQuestions.sort((a, b) => {
+                const orderA = questionOrderMap[String(a._id)];
+                const orderB = questionOrderMap[String(b._id)];
+                if (orderA === undefined) return 1; // Should not happen if data is consistent
+                if (orderB === undefined) return -1; // Should not happen
+                return orderA - orderB;
+            });
+
             processedQuestions = processedQuestions.map(q => q && q.type === 'conjoint' && q.conjointAttributes ? { ...q, generatedProfiles: generateConjointProfiles(q.conjointAttributes) } : q);
         }
         
@@ -203,7 +224,7 @@ exports.updateSurvey = async (req, res) => {
     const { surveyId } = req.params;
     const updates = req.body; 
 
-    console.log(`[surveyController.updateSurvey] Received for survey ${surveyId}. Updates:`, JSON.stringify(updates, null, 2)); // Keep this log
+    console.log(`[surveyController.updateSurvey vNext17] Received for survey ${surveyId}. Updates:`, JSON.stringify(updates, null, 2));
 
     if (!mongoose.Types.ObjectId.isValid(surveyId)) return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
     
@@ -214,40 +235,94 @@ exports.updateSurvey = async (req, res) => {
         if (!survey) { await session.abortTransaction(); session.endSession(); return res.status(404).json({ success: false, message: 'Survey not found.' }); }
         if (req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') { await session.abortTransaction(); session.endSession(); return res.status(403).json({ success: false, message: 'Not authorized.' }); }
         
-        // Handle question order and deletions
-        if (updates.questions && Array.isArray(updates.questions)) {
-            const allValidObjectIds = updates.questions.every(id => mongoose.Types.ObjectId.isValid(id));
-            if (!allValidObjectIds) { await session.abortTransaction(); session.endSession(); return res.status(400).json({ success: false, message: 'Invalid question ID(s) in questions array.' }); }
-            
-            const newQuestionIdOrder = updates.questions.map(id => new mongoose.Types.ObjectId(id));
-            const currentQuestionIdsInSurvey = survey.questions.map(id => String(id));
-            const newQuestionIdOrderStrings = newQuestionIdOrder.map(id => String(id));
-            const questionsActuallyRemovedFromSurvey = currentQuestionIdsInSurvey.filter(id => !newQuestionIdOrderStrings.includes(id));
-            
-            if (questionsActuallyRemovedFromSurvey.length > 0) {
-                await Question.deleteMany({ _id: { $in: questionsActuallyRemovedFromSurvey }, survey: survey._id }, { session });
-                await Answer.deleteMany({ questionId: { $in: questionsActuallyRemovedFromSurvey }, surveyId: survey._id }, { session });
-            }
-            survey.questions = newQuestionIdOrder; 
-        }
-        
-        // --- MODIFIED: Explicitly handle globalSkipLogic and other top-level fields ---
-        const allowedTopLevelFields = ['title', 'description', 'status', 'settings', 'randomizationLogic', 'welcomeMessage', 'thankYouMessage', 'globalSkipLogic'];
-        
-        for (const key of allowedTopLevelFields) {
-            if (updates.hasOwnProperty(key)) { // Check if the key exists in the updates
-                if (key === 'globalSkipLogic') {
-                    // For arrays of complex objects, direct assignment is best for Mongoose to detect changes.
-                    // Ensure it's an array, otherwise Mongoose validation might fail or it might save null.
-                    survey.globalSkipLogic = Array.isArray(updates.globalSkipLogic) ? updates.globalSkipLogic : [];
-                    // Mongoose should automatically detect this change due to direct assignment of the array.
-                    // survey.markModified('globalSkipLogic'); // Usually not needed for direct array assignment
+        // --- MODIFIED: Handle full question objects in updates.questions ---
+        if (updates.hasOwnProperty('questions') && Array.isArray(updates.questions)) {
+            const receivedQuestionObjects = updates.questions;
+            const newQuestionObjectIdsForSurvey = []; // To store mongoose.Types.ObjectId
+
+            // Step 1: Update individual question documents and collect their IDs
+            for (let i = 0; i < receivedQuestionObjects.length; i++) {
+                const qDataFromPayload = receivedQuestionObjects[i];
+
+                if (!qDataFromPayload._id || !mongoose.Types.ObjectId.isValid(qDataFromPayload._id)) {
+                    await session.abortTransaction(); session.endSession();
+                    return res.status(400).json({ success: false, message: `Invalid or missing _id for question object at index ${i}.` });
+                }
+                
+                const questionObjectId = new mongoose.Types.ObjectId(qDataFromPayload._id);
+                newQuestionObjectIdsForSurvey.push(questionObjectId);
+
+                // Separate _id and survey ref from the actual update payload for the question
+                const { _id, survey: qPayloadSurveyId, createdAt, updatedAt, ...questionUpdateData } = qDataFromPayload;
+                
+                // Ensure the question's survey field correctly points to this survey
+                questionUpdateData.survey = survey._id; 
+
+                // Prepare $set and $unset operations for robust updates
+                const setOps = {};
+                const unsetOps = {};
+                for (const key in questionUpdateData) {
+                    if (questionUpdateData.hasOwnProperty(key)) {
+                        if (questionUpdateData[key] === undefined) {
+                            // If frontend explicitly sends undefined, it means unset the field
+                            unsetOps[key] = ""; // Value for $unset doesn't matter, just key presence
+                        } else {
+                            setOps[key] = questionUpdateData[key];
+                        }
+                    }
+                }
+
+                const updateCommand = {};
+                if (Object.keys(setOps).length > 0) updateCommand.$set = setOps;
+                if (Object.keys(unsetOps).length > 0) updateCommand.$unset = unsetOps;
+                
+                if (Object.keys(updateCommand).length > 0) {
+                    const updatedQuestionDoc = await Question.findByIdAndUpdate(
+                        questionObjectId,
+                        updateCommand,
+                        { new: true, runValidators: true, session: session, omitUndefined: false } // omitUndefined: false is important for $unset to work if fields are just not present vs explicitly undefined
+                    );
+                    if (!updatedQuestionDoc) {
+                        await session.abortTransaction(); session.endSession();
+                        return res.status(404).json({ success: false, message: `Question with ID ${questionObjectId} not found during update.` });
+                    }
                 } else {
-                    survey[key] = updates[key];
+                     console.log(`[surveyController.updateSurvey] No $set or $unset operations for question ${questionObjectId}. It might be unchanged or an empty object.`);
                 }
             }
+
+            // Step 2: Determine questions to be deleted from the Question collection
+            const currentQuestionIdsInSurveyStrings = survey.questions.map(id => String(id));
+            const newQuestionIdsInPayloadStrings = newQuestionObjectIdsForSurvey.map(id => String(id));
+            
+            const questionsRemovedFromSurveyStrings = currentQuestionIdsInSurveyStrings.filter(idStr => !newQuestionIdsInPayloadStrings.includes(idStr));
+            
+            if (questionsRemovedFromSurveyStrings.length > 0) {
+                const objectIdsToDelete = questionsRemovedFromSurveyStrings.map(idStr => new mongoose.Types.ObjectId(idStr));
+                console.log(`[surveyController.updateSurvey] Deleting ${objectIdsToDelete.length} questions from Question collection:`, objectIdsToDelete);
+                await Question.deleteMany({ _id: { $in: objectIdsToDelete }, survey: survey._id }, { session });
+                await Answer.deleteMany({ questionId: { $in: objectIdsToDelete }, surveyId: survey._id }, { session });
+            }
+
+            // Step 3: Update the survey's 'questions' array with the new ordered list of ObjectIds
+            survey.questions = newQuestionObjectIdsForSurvey;
+        } else if (updates.hasOwnProperty('questions') && updates.questions === null) {
+            // Handle explicit removal of all questions
+            if (survey.questions && survey.questions.length > 0) {
+                const objectIdsToDelete = survey.questions.map(id => new mongoose.Types.ObjectId(String(id)));
+                await Question.deleteMany({ _id: { $in: objectIdsToDelete }, survey: survey._id }, { session });
+                await Answer.deleteMany({ questionId: { $in: objectIdsToDelete }, surveyId: survey._id }, { session });
+            }
+            survey.questions = [];
         }
-        // --- END MODIFICATION ---
+        // --- END MODIFIED SECTION for updates.questions ---
+        
+        const allowedTopLevelFields = ['title', 'description', 'status', 'settings', 'randomizationLogic', 'welcomeMessage', 'thankYouMessage', 'globalSkipLogic'];
+        for (const key of allowedTopLevelFields) {
+            if (updates.hasOwnProperty(key)) {
+                survey[key] = updates[key];
+            }
+        }
 
         survey.updatedAt = Date.now(); 
         const updatedSurvey = await survey.save({ session }); 
@@ -255,10 +330,21 @@ exports.updateSurvey = async (req, res) => {
         await session.commitTransaction();
         session.endSession();
         
-        // Repopulate to send back the full survey with potentially updated/ordered questions
         const populatedSurvey = await Survey.findById(updatedSurvey._id)
-                                          .populate({ path: 'questions', options: { sort: { order: 1 } } })
-                                          .populate('collectors'); // Also populate collectors if needed by frontend
+                                          .populate({ 
+                                              path: 'questions', 
+                                              // Let mongoose populate based on the order in survey.questions
+                                          })
+                                          .populate('collectors');
+        
+        // Ensure questions in populatedSurvey are in the correct order
+        if (populatedSurvey && populatedSurvey.questions && Array.isArray(populatedSurvey.questions)) {
+            const orderMap = updatedSurvey.questions.reduce((map, id, index) => {
+                map[String(id)] = index;
+                return map;
+            }, {});
+            populatedSurvey.questions.sort((a, b) => orderMap[String(a._id)] - orderMap[String(b._id)]);
+        }
                                           
         res.status(200).json({ success: true, message: 'Survey updated successfully.', data: populatedSurvey });
 
@@ -410,6 +496,6 @@ exports.submitSurveyAnswers = async (req, res) => {
     }
 };
 
-exports.getSurveyResults = async (req, res) => { /* ... (no changes needed here for skip logic saving) ... */ };
-exports.exportSurveyResults = async (req, res) => { /* ... (no changes needed here for skip logic saving) ... */ };
-// ----- END OF COMPLETE MODIFIED FILE (vNext16 - Robust globalSkipLogic Update) -----
+exports.getSurveyResults = async (req, res) => { /* ... (no changes) ... */ };
+exports.exportSurveyResults = async (req, res) => { /* ... (no changes) ... */ };
+// ----- END OF COMPLETE UPDATED FILE (vNext17 - Process full question objects in updateSurvey) -----
