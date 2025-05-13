@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext2 - Debug Population in getSurveyById & startedAt fix) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext3 - Added runValidators and Logging to updateSurvey) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -13,7 +13,7 @@ const axios = require('axios');
 // --- Helper Function for Conjoint Question Type (used in getSurveyById) ---
 const generateConjointProfiles = (attributes) => {
     if (!attributes || attributes.length === 0) return [];
-    console.warn("[generateConjointProfiles] Placeholder function used. Needs full implementation.");
+    // console.warn("[generateConjointProfiles] Placeholder function used. Needs full implementation."); // Keep if still placeholder
     return [];
 };
 
@@ -62,7 +62,7 @@ const formatValueForCsv = (value, questionType, otherTextValue) => {
 
 exports.getAllSurveys = async (req, res) => {
     const requestStartTime = Date.now();
-    console.log(`[${new Date().toISOString()}] [getAllSurveys] Entered. User ID: ${req.user?.id}, Role: ${req.user?.role}`);
+    // console.log(`[${new Date().toISOString()}] [getAllSurveys] Entered. User ID: ${req.user?.id}, Role: ${req.user?.role}`);
     try {
         const filter = {};
         if (req.user && req.user.id) {
@@ -72,11 +72,11 @@ exports.getAllSurveys = async (req, res) => {
             console.error(`[${new Date().toISOString()}] [getAllSurveys] CRITICAL: req.user or req.user.id is undefined.`);
             return res.status(401).json({ success: false, message: "Authentication details missing or invalid." });
         }
-        console.log(`[${new Date().toISOString()}] [getAllSurveys] Using filter: ${JSON.stringify(filter)}`);
+        // console.log(`[${new Date().toISOString()}] [getAllSurveys] Using filter: ${JSON.stringify(filter)}`);
         const queryStartTime = Date.now();
         const surveys = await Survey.find(filter).select('-questions -globalSkipLogic -settings -randomizationLogic -collectors').sort({ createdAt: -1 });
         const queryEndTime = Date.now();
-        console.log(`[${new Date().toISOString()}] [getAllSurveys] Survey.find() executed in ${queryEndTime - queryStartTime}ms. Found ${surveys ? surveys.length : 'null/undefined'} surveys.`);
+        // console.log(`[${new Date().toISOString()}] [getAllSurveys] Survey.find() executed in ${queryEndTime - queryStartTime}ms. Found ${surveys ? surveys.length : 'null/undefined'} surveys.`);
         if (!surveys) {
             console.error(`[${new Date().toISOString()}] [getAllSurveys] Surveys array is unexpectedly null or undefined.`);
             if (!res.headersSent) return res.status(500).json({ success: false, message: "Error fetching surveys: Data became unavailable post-query." });
@@ -84,12 +84,12 @@ exports.getAllSurveys = async (req, res) => {
         }
         if (!res.headersSent) {
             res.status(200).json({ success: true, count: surveys.length, data: surveys });
-            console.log(`[${new Date().toISOString()}] [getAllSurveys] Response sent successfully. Total request time: ${Date.now() - requestStartTime}ms.`);
-        } else console.warn(`[${new Date().toISOString()}] [getAllSurveys] Headers already sent.`);
+            // console.log(`[${new Date().toISOString()}] [getAllSurveys] Response sent successfully. Total request time: ${Date.now() - requestStartTime}ms.`);
+        } // else console.warn(`[${new Date().toISOString()}] [getAllSurveys] Headers already sent.`);
     } catch (error) {
         console.error(`[${new Date().toISOString()}] [getAllSurveys] CRITICAL ERROR. Total request time: ${Date.now() - requestStartTime}ms. Error: ${error.message}`, error.stack);
         if (!res.headersSent) res.status(500).json({ success: false, message: "Critical error fetching surveys on the server." });
-        else console.warn(`[${new Date().toISOString()}] [getAllSurveys] Headers already sent when trying to send error response.`);
+        // else console.warn(`[${new Date().toISOString()}] [getAllSurveys] Headers already sent when trying to send error response.`);
     }
 };
 
@@ -111,14 +111,10 @@ exports.createSurvey = async (req, res) => {
     }
 };
 
-// @desc    Get a single survey by ID
-// @route   GET /api/surveys/:surveyId
-// @access  Private (Owner or Admin for full details, Public for active survey structure)
 exports.getSurveyById = async (req, res) => {
     const { surveyId } = req.params;
     const { forTaking, collectorId } = req.query;
 
-    // ++ ADDED LOGGING HERE ++
     console.log(`[Backend - getSurveyById] Attempting to fetch survey ${surveyId}. forTaking: ${forTaking}, collectorId: ${collectorId}`);
 
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
@@ -130,17 +126,13 @@ exports.getSurveyById = async (req, res) => {
         let surveyQuery = Survey.findById(surveyId);
 
         if (forTaking === 'true') {
-            // ++ ADDED LOGGING HERE ++
             console.log(`[Backend - getSurveyById] Preparing query for respondent (forTaking=true).`);
             surveyQuery = surveyQuery
                 .select('title description welcomeMessage thankYouMessage status questions settings.surveyWide.allowRetakes settings.surveyWide.showProgressBar settings.surveyWide.customCSS globalSkipLogic randomizationLogic')
                 .populate({
                     path: 'questions',
-                    // Temporarily remove 'select' from populate to ensure full question objects are fetched for debugging
-                    // select: '-survey -createdBy -updatedAt -__v -analytics', // Original select, re-add if population works
                     options: { sort: { order: 1 } }
                 });
-            console.log(`[Backend - getSurveyById] Survey query with population for 'questions' configured (no specific select on questions).`);
         } else {
             console.log(`[Backend - getSurveyById] Preparing query for admin/owner view.`);
             surveyQuery = surveyQuery.populate({
@@ -157,22 +149,13 @@ exports.getSurveyById = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Survey not found.' });
         }
 
-        // ++ ADDED DETAILED LOGGING for questions array AFTER population attempt ++
         if (survey.questions && survey.questions.length > 0) {
-            console.log(`[Backend - getSurveyById] Survey questions count: ${survey.questions.length}`);
-            console.log(`[Backend - getSurveyById] First question (raw from survey object after populate):`, JSON.stringify(survey.questions[0], null, 2));
-            console.log(`[Backend - getSurveyById] Type of first question: ${typeof survey.questions[0]}`);
-            if (typeof survey.questions[0] === 'object' && survey.questions[0] !== null) {
-                console.log(`[Backend - getSurveyById] 'type' property of first question: ${survey.questions[0].type}`);
-            } else {
-                console.log(`[Backend - getSurveyById] First question is not an object or is null.`);
-            }
+            // console.log(`[Backend - getSurveyById] Survey questions count: ${survey.questions.length}`);
+            // console.log(`[Backend - getSurveyById] First question (raw from survey object after populate):`, JSON.stringify(survey.questions[0], null, 2));
         } else {
-            console.log(`[Backend - getSurveyById] Survey has no questions or questions array is empty after population attempt.`);
+            // console.log(`[Backend - getSurveyById] Survey has no questions or questions array is empty after population attempt.`);
         }
 
-
-        // Authorization Check:
         if (forTaking !== 'true' && req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
             return res.status(403).json({ success: false, message: 'You are not authorized to view this survey\'s details.' });
         }
@@ -198,22 +181,21 @@ exports.getSurveyById = async (req, res) => {
             }
         }
         
-        // Ensure questions are plain JS objects before sending to client
         let processedQuestions = survey.questions || [];
         if (Array.isArray(processedQuestions)) {
             processedQuestions = processedQuestions.map(q => {
-                let questionObject = (q && typeof q.toObject === 'function') ? q.toObject() : q; // Handle Mongoose docs vs plain objects
+                let questionObject = (q && typeof q.toObject === 'function') ? q.toObject() : q; 
                 if (questionObject && questionObject.type === 'conjoint' && questionObject.conjointAttributes) {
-                    const profiles = generateConjointProfiles(questionObject.conjointAttributes);
+                    const profiles = generateConjointProfiles(questionObject.conjointAttributes); // This is still a placeholder
                     return { ...questionObject, generatedProfiles: profiles };
                 }
-                return questionObject; // Return the plain object
+                return questionObject; 
             });
         }
         
         const surveyResponseData = (survey && typeof survey.toObject === 'function') ? survey.toObject() : { ...survey };
         if (surveyResponseData) {
-            surveyResponseData.questions = processedQuestions; // Replace with processed questions
+            surveyResponseData.questions = processedQuestions; 
         }
 
         res.status(200).json({ success: true, data: surveyResponseData });
@@ -225,52 +207,126 @@ exports.getSurveyById = async (req, res) => {
 
 exports.updateSurvey = async (req, res) => {
     const { surveyId } = req.params;
-    const updates = req.body;
-    if (!mongoose.Types.ObjectId.isValid(surveyId)) return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
+    const updates = req.body; // This includes the 'questions' array
+    console.log(`[updateSurvey] Received update for surveyId: ${surveyId}`);
+    // console.log(`[updateSurvey] Full updates payload:`, JSON.stringify(updates, null, 2));
+
+
+    if (!mongoose.Types.ObjectId.isValid(surveyId)) {
+        return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
+    }
+
     const session = await mongoose.startSession();
     session.startTransaction();
+    console.log(`[updateSurvey] Transaction started for surveyId: ${surveyId}`);
+
     try {
         const survey = await Survey.findById(surveyId).session(session);
-        if (!survey) { await session.abortTransaction(); session.endSession(); return res.status(404).json({ success: false, message: 'Survey not found.' }); }
-        if (req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
-            await session.abortTransaction(); session.endSession(); return res.status(403).json({ success: false, message: 'Not authorized.' });
+        if (!survey) {
+            await session.abortTransaction();
+            session.endSession();
+            console.log(`[updateSurvey] Survey not found: ${surveyId}`);
+            return res.status(404).json({ success: false, message: 'Survey not found.' });
         }
+
+        if (req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
+            await session.abortTransaction();
+            session.endSession();
+            console.log(`[updateSurvey] Authorization failed for user ${req.user.id} on survey ${surveyId}`);
+            return res.status(403).json({ success: false, message: 'Not authorized.' });
+        }
+
+        // Handle questions update
         if (updates.questions && Array.isArray(updates.questions)) {
+            console.log(`[updateSurvey] Processing ${updates.questions.length} questions.`);
             const existingQuestionIds = survey.questions.map(id => String(id));
             const incomingQuestionIds = [];
-            for (const qData of updates.questions) {
+
+            for (let i = 0; i < updates.questions.length; i++) {
+                const qData = updates.questions[i];
+                console.log(`[updateSurvey] Processing question ${i + 1}/${updates.questions.length}, ID: ${qData._id}, Type: ${qData.type}, Text: "${qData.text ? qData.text.substring(0,20) : 'NO TEXT' }..."`);
+                if (qData.type === 'conjoint') {
+                     console.log(`[updateSurvey]   Conjoint specific: conjointNumTasks=${qData.conjointNumTasks} (type: ${typeof qData.conjointNumTasks}), conjointProfilesPerTask=${qData.conjointProfilesPerTask}`);
+                }
+
+
+                // Ensure survey ID is correctly associated, especially for $set
+                const updatePayload = { ...qData, survey: survey._id };
+
                 if (qData._id && mongoose.Types.ObjectId.isValid(qData._id)) {
-                    await Question.updateOne({ _id: qData._id, survey: survey._id }, { $set: qData }, { session });
+                    console.log(`[updateSurvey]   Updating existing question ID: ${qData._id}`);
+                    // For existing questions, ensure we only $set fields provided by qData
+                    // Mongoose schema defaults and type casting should apply on these fields
+                    // runValidators: true is crucial here
+                    const updateResult = await Question.updateOne(
+                        { _id: qData._id, survey: survey._id },
+                        { $set: updatePayload }, // Use updatePayload which includes survey_id
+                        { session, runValidators: true, context: 'query' }
+                    );
+                    console.log(`[updateSurvey]   updateOne result for ${qData._id}: matchedCount=${updateResult.matchedCount}, modifiedCount=${updateResult.modifiedCount}`);
                     incomingQuestionIds.push(String(qData._id));
                 } else {
+                    console.log(`[updateSurvey]   Creating new question.`);
                     const newQuestionData = { ...qData, survey: survey._id, createdBy: req.user.id };
-                    delete newQuestionData._id;
-                    const savedNewQ = await new Question(newQuestionData).save({ session });
+                    delete newQuestionData._id; 
+                    const newQuestionDoc = new Question(newQuestionData);
+                    const savedNewQ = await newQuestionDoc.save({ session }); // save() runs validators by default
+                    console.log(`[updateSurvey]   New question saved with ID: ${savedNewQ._id}`);
                     incomingQuestionIds.push(String(savedNewQ._id));
                 }
             }
+
             const questionsToDelete = existingQuestionIds.filter(id => !incomingQuestionIds.includes(id));
             if (questionsToDelete.length > 0) {
+                console.log(`[updateSurvey] Deleting ${questionsToDelete.length} questions:`, questionsToDelete);
                 await Question.deleteMany({ _id: { $in: questionsToDelete }, survey: survey._id }, { session });
                 await Answer.deleteMany({ questionId: { $in: questionsToDelete }, surveyId: survey._id }, { session });
             }
             survey.questions = incomingQuestionIds.map(id => new mongoose.Types.ObjectId(id));
-            delete updates.questions;
+            delete updates.questions; // Remove questions from main survey update object
         }
-        Object.keys(updates).forEach(key => { if (key !== '_id' && key !== 'createdBy' && key !== 'questions') survey[key] = updates[key]; });
-        survey.updatedAt = Date.now();
+
+        // Update other survey properties
+        Object.keys(updates).forEach(key => {
+            if (key !== '_id' && key !== 'createdBy' && key !== 'questions') {
+                survey[key] = updates[key];
+            }
+        });
+        survey.updatedAt = Date.now(); // Manually set updatedAt
+
         const updatedSurvey = await survey.save({ session });
+        console.log(`[updateSurvey] Main survey document saved. ID: ${updatedSurvey._id}`);
+
         await session.commitTransaction();
         session.endSession();
-        const populatedSurvey = await Survey.findById(updatedSurvey._id).populate({ path: 'questions', options: { sort: { order: 1 } } });
-        res.status(200).json({ success: true, message: 'Survey updated.', data: populatedSurvey });
+        console.log(`[updateSurvey] Transaction committed successfully for surveyId: ${surveyId}`);
+
+        // Repopulate for response
+        const populatedSurvey = await Survey.findById(updatedSurvey._id)
+            .populate({ path: 'questions', options: { sort: { order: 1 } } });
+            // .populate('collectors'); // If you need collectors in the response
+
+        res.status(200).json({ success: true, message: 'Survey updated successfully.', data: populatedSurvey });
+
     } catch (error) {
-        await session.abortTransaction(); session.endSession();
-        console.error(`[updateSurvey] Error:`, error);
-        if (error.name === 'ValidationError') return res.status(400).json({ success: false, message: 'Validation Error', details: error.errors });
-        res.status(500).json({ success: false, message: 'Error updating survey.' });
+        console.error(`[updateSurvey] Error during transaction for surveyId: ${surveyId}:`, error.message);
+        if (error.errors) { // Mongoose validation error
+            console.error(`[updateSurvey]   Validation errors:`, JSON.stringify(error.errors, null, 2));
+        } else {
+            console.error(`[updateSurvey]   Full error stack:`, error.stack);
+        }
+        
+        await session.abortTransaction();
+        session.endSession();
+        console.log(`[updateSurvey] Transaction aborted for surveyId: ${surveyId}`);
+
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ success: false, message: 'Validation Error', details: error.errors });
+        }
+        res.status(500).json({ success: false, message: 'Error updating survey on the server.' });
     }
 };
+
 
 exports.deleteSurvey = async (req, res) => {
     const { surveyId } = req.params;
@@ -301,18 +357,18 @@ exports.deleteSurvey = async (req, res) => {
 exports.submitSurveyAnswers = async (req, res) => {
     const { surveyId } = req.params;
     const { answers: answersPayload, sessionId: payloadSessionId, collectorId, recaptchaToken, startedAt: clientStartedAt } = req.body;
-    console.log(`[submitSurveyAnswers] Received submission for surveyId: ${surveyId}, collectorId: ${collectorId}`);
+    // console.log(`[submitSurveyAnswers] Received submission for surveyId: ${surveyId}, collectorId: ${collectorId}`);
     if (!mongoose.Types.ObjectId.isValid(surveyId)) return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
     if (!Array.isArray(answersPayload)) return res.status(400).json({ success: false, message: 'Answers must be an array.' });
     const sessionIdToUse = payloadSessionId;
     if (!sessionIdToUse) return res.status(400).json({ success: false, message: 'Session ID required.' });
     if (!collectorId || !mongoose.Types.ObjectId.isValid(collectorId)) return res.status(400).json({ success: false, message: 'Valid Collector ID required.' });
 
-    const mongoSession = await mongoose.startSession(); // Renamed to avoid conflict
+    const mongoSession = await mongoose.startSession(); 
     mongoSession.startTransaction();
-    console.log(`[submitSurveyAnswers] Started transaction for session ${sessionIdToUse}`);
+    // console.log(`[submitSurveyAnswers] Started transaction for session ${sessionIdToUse}`);
     try {
-        const survey = await Survey.findById(surveyId).populate('questions').select('+status +globalSkipLogic').session(mongoSession); // Removed +questions from select as it's populated
+        const survey = await Survey.findById(surveyId).populate('questions').select('+status +globalSkipLogic').session(mongoSession); 
         if (!survey) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Survey not found.' }); }
         const isOwnerPreviewingDraft = survey.status === 'draft' && req.user && String(survey.createdBy) === String(req.user.id);
         if (survey.status !== 'active' && !isOwnerPreviewingDraft) {
@@ -354,10 +410,10 @@ exports.submitSurveyAnswers = async (req, res) => {
         if (!webLinkSettings?.anonymousResponses && responseSetOnInsertData.ipAddress === undefined) responseSetOnInsertData.ipAddress = req.ip;
         if (!webLinkSettings?.anonymousResponses && responseSetOnInsertData.userAgent === undefined) responseSetOnInsertData.userAgent = req.headers['user-agent'];
         const updatedResponse = await Response.findOneAndUpdate({ survey: surveyId, collector: collectorId, sessionId: sessionIdToUse }, { $set: responseUpdateData, $setOnInsert: responseSetOnInsertData }, { new: true, upsert: true, runValidators: true, session: mongoSession });
-        console.log(`[submitSurveyAnswers] Response document upserted/updated: ${updatedResponse._id}`);
+        // console.log(`[submitSurveyAnswers] Response document upserted/updated: ${updatedResponse._id}`);
         if (!isOwnerPreviewingDraft) {
             const collectorUpdateResult = await Collector.updateOne({ _id: collectorId }, { $inc: { responseCount: 1 } }, { session: mongoSession });
-            if (collectorUpdateResult.modifiedCount > 0) { // Check if responseCount was actually incremented
+            if (collectorUpdateResult.modifiedCount > 0) { 
                 const updatedCollector = await Collector.findById(collectorId).session(mongoSession);
                 if (webLinkSettings?.maxResponses && updatedCollector.responseCount >= webLinkSettings.maxResponses) {
                     updatedCollector.status = 'completed_quota';
@@ -366,13 +422,13 @@ exports.submitSurveyAnswers = async (req, res) => {
             }
         }
         await mongoSession.commitTransaction();
-        console.log(`[submitSurveyAnswers] Transaction committed for session ${sessionIdToUse}.`);
+        // console.log(`[submitSurveyAnswers] Transaction committed for session ${sessionIdToUse}.`);
         let triggeredAction = null;
         if (survey.globalSkipLogic?.length > 0 && survey.questions) {
             const allSessionAnswers = await Answer.find({ surveyId, sessionId: sessionIdToUse }).lean();
             triggeredAction = evaluateAllLogic(survey.globalSkipLogic, allSessionAnswers, survey.questions);
             if (triggeredAction?.type === 'disqualifyRespondent') {
-                await Response.updateOne({ _id: updatedResponse._id }, { $set: { status: 'disqualified' } }); // No session needed, main transaction committed
+                await Response.updateOne({ _id: updatedResponse._id }, { $set: { status: 'disqualified' } }); 
                 return res.status(200).json({ success: true, message: triggeredAction.disqualificationMessage || 'Disqualified.', action: triggeredAction, sessionId: sessionIdToUse, responseId: updatedResponse._id });
             }
         }
@@ -454,7 +510,7 @@ exports.exportSurveyResults = async (req, res) => {
                     row[`q_${q._id}`] = formatValueForCsv(answer.answerValue, q.type, answer.otherText);
                     if (q.addOtherOption) row[`q_${q._id}_other`] = answer.otherText || '';
                 } else {
-                    row[`q_${q._id}`] = ''; if (q.addOtherOption) row[`q_${q._id}_other`] = '';
+                    row[`q_${q._id}`] = ''; if (q.addOtherOption) row[`q_${q._id}_other` = '']
                 }
             });
             return row;
@@ -469,4 +525,4 @@ exports.exportSurveyResults = async (req, res) => {
         if (!res.headersSent) res.status(500).json({ success: false, message: 'Error exporting results.' });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (vNext2 - Debug Population in getSurveyById & startedAt fix) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext3 - Added runValidators and Logging to updateSurvey) -----
