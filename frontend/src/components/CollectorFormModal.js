@@ -1,5 +1,5 @@
 // frontend/src/components/CollectorFormModal.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.3 - Added IP Filtering UI) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.4 - Added "Allow Back Button" UI) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import surveyApiFunctions from '../api/surveyApi';
 import { toast } from 'react-toastify';
@@ -24,9 +24,10 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     passwordProtectionEnabled: false,
                     password: '',
                     enableRecaptcha: false,
-                    recaptchaSiteKey: '', // Usually from ENV, but can be per collector
-                    ipAllowlistString: '', // For textarea input
-                    ipBlocklistString: '', // For textarea input
+                    recaptchaSiteKey: '',
+                    ipAllowlistString: '',
+                    ipBlocklistString: '',
+                    allowBackButton: true, // <<< ADDED: Default for new collectors
                 }
             }
         };
@@ -43,9 +44,12 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                 passwordProtectionEnabled: Boolean(existingWebLinkSettings.password),
                 enableRecaptcha: Boolean(existingWebLinkSettings.enableRecaptcha),
                 recaptchaSiteKey: existingWebLinkSettings.recaptchaSiteKey || '',
-                // --- MODIFIED: Populate IP list strings from arrays ---
                 ipAllowlistString: Array.isArray(existingWebLinkSettings.ipAllowlist) ? existingWebLinkSettings.ipAllowlist.join('\n') : '',
                 ipBlocklistString: Array.isArray(existingWebLinkSettings.ipBlocklist) ? existingWebLinkSettings.ipBlocklist.join('\n') : '',
+                // --- MODIFIED: Initialize allowBackButton ---
+                allowBackButton: typeof existingWebLinkSettings.allowBackButton === 'boolean' 
+                                 ? existingWebLinkSettings.allowBackButton 
+                                 : true, // Default to true if not present
             };
 
             return {
@@ -91,7 +95,6 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     }
                 }
             }));
-            // Clear specific error when field changes
             if (errors[`web_link_${field}`]) {
                 setErrors(prev => ({ ...prev, [`web_link_${field}`]: null }));
             }
@@ -106,13 +109,12 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
         }
     };
 
-    // Helper to parse IP list string (comma or newline separated) into an array
     const parseIpListString = (ipString) => {
         if (!ipString || typeof ipString !== 'string') return [];
         return ipString
-            .split(/[\n,]+/) // Split by newlines or commas
+            .split(/[\n,]+/) 
             .map(ip => ip.trim())
-            .filter(ip => ip.length > 0); // Remove empty strings
+            .filter(ip => ip.length > 0); 
     };
 
 
@@ -139,9 +141,8 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
             newErrors.web_link_maxResponses = "Max responses must be a non-negative number.";
         }
         
-        // Basic validation for IP lists (more robust validation can be added for IP/CIDR formats if needed)
         const allowlist = parseIpListString(formData.settings.web_link.ipAllowlistString);
-        if (allowlist.some(ip => ip.includes(' '))) { // Example simple validation
+        if (allowlist.some(ip => ip.includes(' '))) { 
             newErrors.web_link_ipAllowlistString = "IPs in allowlist should not contain spaces.";
         }
         const blocklist = parseIpListString(formData.settings.web_link.ipBlocklistString);
@@ -165,7 +166,6 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
         const parsedMaxResponses = parseInt(formData.settings.web_link.maxResponses, 10);
         const maxResponsesToSend = (isNaN(parsedMaxResponses) || parsedMaxResponses <= 0) ? null : parsedMaxResponses;
 
-        // --- MODIFIED: Prepare IP lists for payload ---
         const ipAllowlistArray = parseIpListString(formData.settings.web_link.ipAllowlistString);
         const ipBlocklistArray = parseIpListString(formData.settings.web_link.ipBlocklistString);
 
@@ -175,7 +175,9 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
             status: formData.status,
             settings: {
                 web_link: {
-                    ...formData.settings.web_link,
+                    // Spread all current web_link settings from formData first
+                    ...formData.settings.web_link, 
+                    // Then override specific ones that need parsing/cleaning
                     customSlug: formData.settings.web_link.customSlug || undefined,
                     openDate: formData.settings.web_link.openDate ? new Date(formData.settings.web_link.openDate).toISOString() : null,
                     closeDate: formData.settings.web_link.closeDate ? new Date(formData.settings.web_link.closeDate).toISOString() : null,
@@ -183,9 +185,9 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     password: formData.settings.web_link.passwordProtectionEnabled && formData.settings.web_link.password 
                                 ? formData.settings.web_link.password 
                                 : undefined,
-                    // --- ADDED: Send parsed IP lists ---
                     ipAllowlist: ipAllowlistArray,
                     ipBlocklist: ipBlocklistArray,
+                    // allowBackButton is already a boolean in formData.settings.web_link
                 }
             }
         };
@@ -193,7 +195,6 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
         if (!formData.settings.web_link.passwordProtectionEnabled) {
              payload.settings.web_link.password = null; 
         }
-        // Remove the temporary string versions from the payload
         delete payload.settings.web_link.ipAllowlistString;
         delete payload.settings.web_link.ipBlocklistString;
 
@@ -246,7 +247,6 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     <button onClick={onClose} className={styles.closeButton} disabled={isSaving}>&times;</button>
                 </div>
                 <form onSubmit={handleSubmit} className={styles.modalBody}>
-                    {/* ... other form groups (name, type, status) ... */}
                     <div className={styles.formGroup}>
                         <label htmlFor="name">Collector Name</label>
                         <input type="text" id="name" name="name" value={formData.name} onChange={handleChange} className={errors.name ? styles.inputError : ""} disabled={isSaving}/>
@@ -272,13 +272,27 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     {formData.type === 'web_link' && (
                         <fieldset className={styles.settingsFieldset}>
                             <legend>Web Link Settings</legend>
-                            {/* ... other web link settings (customSlug, dates, maxResponses, toggles) ... */}
                             <div className={styles.formGroup}>
                                 <label htmlFor="settings.web_link.customSlug">Custom URL Slug (Optional)</label>
                                 <input type="text" id="settings.web_link.customSlug" name="settings.web_link.customSlug" value={formData.settings.web_link.customSlug} onChange={handleChange} placeholder="e.g., my-survey-event" className={errors.web_link_customSlug ? styles.inputError : ""} disabled={isSaving} />
                                 <small className={styles.fieldDescription}>Unique identifier for the link. Letters, numbers, hyphens, underscores.</small>
                                 {renderError("web_link_customSlug")}
                             </div>
+                            {/* --- ADDED: Allow Back Button Checkbox --- */}
+                            <div className={styles.formGroupCheckbox}>
+                                <input 
+                                    type="checkbox" 
+                                    id="settings.web_link.allowBackButton" 
+                                    name="settings.web_link.allowBackButton" 
+                                    checked={formData.settings.web_link.allowBackButton} 
+                                    onChange={handleChange} 
+                                    disabled={isSaving} 
+                                />
+                                <label htmlFor="settings.web_link.allowBackButton">Allow "Back" Button for Respondents</label>
+                                <small className={styles.fieldDescription}>If checked, respondents can navigate to previous questions.</small>
+                                {renderError("web_link_allowBackButton")}
+                            </div>
+                            {/* --- END: Allow Back Button Checkbox --- */}
                             <div className={styles.formGroup}>
                                 <label htmlFor="settings.web_link.openDate">Open Date (Optional)</label>
                                 <input type="datetime-local" id="settings.web_link.openDate" name="settings.web_link.openDate" value={formData.settings.web_link.openDate} onChange={handleChange} disabled={isSaving} />
@@ -306,40 +320,18 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                                 <small className={styles.fieldDescription}>If checked, respondent's IP address and browser details will not be stored.</small>
                                 {renderError("web_link_anonymousResponses")}
                             </div>
-
-                            {/* --- IP FILTERING FIELDS START --- */}
                             <div className={styles.formGroup}>
                                 <label htmlFor="settings.web_link.ipAllowlistString">IP Allowlist (Optional)</label>
-                                <textarea
-                                    id="settings.web_link.ipAllowlistString"
-                                    name="settings.web_link.ipAllowlistString"
-                                    value={formData.settings.web_link.ipAllowlistString}
-                                    onChange={handleChange}
-                                    rows="3"
-                                    placeholder="Enter one IP address or CIDR range per line (e.g., 192.168.1.100 or 10.0.0.0/24)"
-                                    className={errors.web_link_ipAllowlistString ? styles.inputError : ""}
-                                    disabled={isSaving}
-                                />
+                                <textarea id="settings.web_link.ipAllowlistString" name="settings.web_link.ipAllowlistString" value={formData.settings.web_link.ipAllowlistString} onChange={handleChange} rows="3" placeholder="Enter one IP address or CIDR range per line (e.g., 192.168.1.100 or 10.0.0.0/24)" className={errors.web_link_ipAllowlistString ? styles.inputError : ""} disabled={isSaving}/>
                                 <small className={styles.fieldDescription}>If specified, only these IPs can access the survey. One entry per line or comma-separated.</small>
                                 {renderError("web_link_ipAllowlistString")}
                             </div>
                             <div className={styles.formGroup}>
                                 <label htmlFor="settings.web_link.ipBlocklistString">IP Blocklist (Optional)</label>
-                                <textarea
-                                    id="settings.web_link.ipBlocklistString"
-                                    name="settings.web_link.ipBlocklistString"
-                                    value={formData.settings.web_link.ipBlocklistString}
-                                    onChange={handleChange}
-                                    rows="3"
-                                    placeholder="Enter one IP address or CIDR range per line (e.g., 1.2.3.4 or 2001:db8::/32)"
-                                    className={errors.web_link_ipBlocklistString ? styles.inputError : ""}
-                                    disabled={isSaving}
-                                />
+                                <textarea id="settings.web_link.ipBlocklistString" name="settings.web_link.ipBlocklistString" value={formData.settings.web_link.ipBlocklistString} onChange={handleChange} rows="3" placeholder="Enter one IP address or CIDR range per line (e.g., 1.2.3.4 or 2001:db8::/32)" className={errors.web_link_ipBlocklistString ? styles.inputError : ""} disabled={isSaving} />
                                 <small className={styles.fieldDescription}>If specified, these IPs will be blocked. One entry per line or comma-separated. Allowlist takes precedence.</small>
                                 {renderError("web_link_ipBlocklistString")}
                             </div>
-                            {/* --- IP FILTERING FIELDS END --- */}
-
                             <div className={styles.formGroupCheckbox}>
                                 <input type="checkbox" id="settings.web_link.passwordProtectionEnabled" name="settings.web_link.passwordProtectionEnabled" checked={formData.settings.web_link.passwordProtectionEnabled} onChange={handleChange} disabled={isSaving} />
                                 <label htmlFor="settings.web_link.passwordProtectionEnabled">Password Protect Survey Link</label>
@@ -358,7 +350,7 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                                 <small className={styles.fieldDescription}>Helps prevent automated submissions.</small>
                                 {renderError("web_link_enableRecaptcha")}
                             </div>
-                            <div className={styles.formGroup}> {/* Optional: Field for reCAPTCHA Site Key if you want it configurable per collector */}
+                            <div className={styles.formGroup}> 
                                 <label htmlFor="settings.web_link.recaptchaSiteKey">reCAPTCHA Site Key (Optional)</label>
                                 <input type="text" id="settings.web_link.recaptchaSiteKey" name="settings.web_link.recaptchaSiteKey" value={formData.settings.web_link.recaptchaSiteKey} onChange={handleChange} placeholder="Overrides global key if set" disabled={isSaving}/>
                                 <small className={styles.fieldDescription}>Leave blank to use the site-wide reCAPTCHA key.</small>
@@ -382,4 +374,4 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
 };
 
 export default CollectorFormModal;
-// ----- END OF COMPLETE MODIFIED FILE (v1.3 - Added IP Filtering UI) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.4 - Added "Allow Back Button" UI) -----

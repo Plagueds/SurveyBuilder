@@ -1,5 +1,5 @@
 // frontend/src/components/CollectorsPanel.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.3 - Display IP Filter Info) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.4 - Display "Allow Back Button" Info) -----
 import React, { useState } from 'react';
 import styles from './CollectorsPanel.module.css';
 import surveyApi from '../api/surveyApi';
@@ -87,8 +87,7 @@ const CollectorsPanel = ({
         }
     };
 
-    // --- ADDED: Helper to display IP filter status ---
-    const getIpFilterStatus = (list, type) => {
+    const getIpFilterStatus = (list) => { // Removed 'type' param as it's not used
         if (Array.isArray(list) && list.length > 0) {
             return `Active (${list.length} rule${list.length === 1 ? '' : 's'})`;
         }
@@ -136,15 +135,16 @@ const CollectorsPanel = ({
                                                 {collector.responseCount || 0}
                                                 {collector.settings?.web_link?.maxResponses > 0 ? ` / ${collector.settings.web_link.maxResponses}` : ''}
                                             </span>
+                                            {/* --- ADDED: Display for Allow Back Button --- */}
+                                            <span>Back Button:</span><span>{typeof collector.settings?.web_link?.allowBackButton === 'boolean' ? (collector.settings.web_link.allowBackButton ? 'Allowed' : 'Disallowed') : 'Allowed (Default)'}</span>
                                             <span>Open Date:</span><span>{formatDate(collector.settings?.web_link?.openDate)}</span>
                                             <span>Close Date:</span><span>{formatDate(collector.settings?.web_link?.closeDate)}</span>
                                             <span>Multiple Responses:</span><span>{collector.settings?.web_link?.allowMultipleResponses ? 'Allowed' : 'Not Allowed'}</span>
                                             <span>Anonymous:</span><span>{collector.settings?.web_link?.anonymousResponses ? 'Yes' : 'No'}</span>
                                             <span>Password:</span><span>{collector.settings?.web_link?.passwordProtectionEnabled || collector.settings?.web_link?.password ? 'Enabled' : 'Disabled'}</span>
                                             <span>reCAPTCHA:</span><span>{collector.settings?.web_link?.enableRecaptcha ? 'Enabled' : 'Disabled'}</span>
-                                            {/* --- ADDED: Display IP Filter Status --- */}
-                                            <span>IP Allowlist:</span><span>{getIpFilterStatus(collector.settings?.web_link?.ipAllowlist, 'Allowlist')}</span>
-                                            <span>IP Blocklist:</span><span>{getIpFilterStatus(collector.settings?.web_link?.ipBlocklist, 'Blocklist')}</span>
+                                            <span>IP Allowlist:</span><span>{getIpFilterStatus(collector.settings?.web_link?.ipAllowlist)}</span>
+                                            <span>IP Blocklist:</span><span>{getIpFilterStatus(collector.settings?.web_link?.ipBlocklist)}</span>
                                         </div>
                                         
                                         {collector.type === 'web_link' && (collector.linkId || collector.settings?.web_link?.customSlug) && (
@@ -187,4 +187,4 @@ const CollectorsPanel = ({
 };
 
 export default CollectorsPanel;
-// ----- END OF COMPLETE MODIFIED FILE (v1.3 - Display IP Filter Info) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.4 - Display "Allow Back Button" Info) -----

@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext10 - Corrected: Use actualCollectorObjectId, All Imports) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext11 - Implement Back Button Logic) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -7,7 +7,6 @@ import ReCAPTCHA from "react-google-recaptcha";
 import styles from './SurveyTakingPage.module.css';
 import surveyApiFunctions from '../api/surveyApi';
 
-// --- ADDED BACK: Ensure all question component imports are present ---
 import ShortTextQuestion from '../components/survey_question_renders/ShortTextQuestion';
 import TextAreaQuestion from '../components/survey_question_renders/TextAreaQuestion';
 import MultipleChoiceQuestion from '../components/survey_question_renders/MultipleChoiceQuestion';
@@ -22,7 +21,6 @@ import MaxDiffQuestion from '../components/survey_question_renders/MaxDiffQuesti
 import ConjointQuestion from '../components/survey_question_renders/ConjointQuestion';
 import RankingQuestion from '../components/survey_question_renders/RankingQuestion';
 import CardSortQuestion from '../components/survey_question_renders/CardSortQuestion';
-// --- END ADDED BACK ---
 
 const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : []));
 const isAnswerEmpty = (value, questionType) => {
@@ -54,7 +52,7 @@ const evaluateRule = (rule, allAnswers, questionsById) => {
 
 
 function SurveyTakingPage() {
-    const { surveyId, collectorId: routeCollectorIdentifier } = useParams(); // Renamed to routeCollectorIdentifier
+    const { surveyId, collectorId: routeCollectorIdentifier } = useParams(); 
     const navigate = useNavigate();
     const location = useLocation(); 
 
@@ -76,8 +74,8 @@ function SurveyTakingPage() {
     const [isDisqualified, setIsDisqualified] = useState(false);
     const [disqualificationMessage, setDisqualificationMessage] = useState('');
     
-    const [currentCollectorIdentifier, setCurrentCollectorIdentifier] = useState(null); // For fetching (linkId/slug)
-    const [actualCollectorObjectId, setActualCollectorObjectId] = useState(null); // For submitting (MongoDB _id)
+    const [currentCollectorIdentifier, setCurrentCollectorIdentifier] = useState(null); 
+    const [actualCollectorObjectId, setActualCollectorObjectId] = useState(null); 
     const [collectorSettings, setCollectorSettings] = useState(null); 
     const [hasAlreadyResponded, setHasAlreadyResponded] = useState(false);
     
@@ -85,6 +83,9 @@ function SurveyTakingPage() {
     const [recaptchaSiteKey, setRecaptchaSiteKey] = useState(''); 
     const [recaptchaToken, setRecaptchaToken] = useState(null);
     const recaptchaRef = useRef(null);
+
+    // --- NEW: State for back button allowance ---
+    const [allowBackButton, setAllowBackButton] = useState(true); 
 
     const NA_VALUE_INTERNAL = '__NA__';
     const OTHER_VALUE_INTERNAL = '__OTHER__';
@@ -137,11 +138,15 @@ function SurveyTakingPage() {
             const fetchedCollectorSettings = surveyData.collectorSettings || {};
             const fetchedActualCollectorObjectId = surveyData.actualCollectorObjectId || null;
 
-            console.log("[SurveyTakingPage fetchSurvey] Raw fetchedCollectorSettings from API:", JSON.stringify(fetchedCollectorSettings));
-            console.log("[SurveyTakingPage fetchSurvey] Fetched actualCollectorObjectId from API:", fetchedActualCollectorObjectId);
-
             setCollectorSettings(fetchedCollectorSettings);
             setActualCollectorObjectId(fetchedActualCollectorObjectId);
+
+            // --- MODIFIED: Set allowBackButton state from fetched settings ---
+            if (typeof fetchedCollectorSettings.allowBackButton === 'boolean') {
+                setAllowBackButton(fetchedCollectorSettings.allowBackButton);
+            } else {
+                setAllowBackButton(true); // Default if not specified
+            }
 
             const storageKeyCollectorId = fetchedActualCollectorObjectId || currentCollectorIdentifier;
 
@@ -158,7 +163,6 @@ function SurveyTakingPage() {
             if (enableRecaptchaFlag) {
                 siteKeyToUse = fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY || '';
                 if (!siteKeyToUse) {
-                    console.warn("[SurveyTakingPage fetchSurvey] reCAPTCHA enabled by collector but NO site key found (collector or ENV). Disabling reCAPTCHA for this session.");
                     setRecaptchaEnabled(false); 
                 } else {
                     setRecaptchaEnabled(true);
@@ -167,7 +171,6 @@ function SurveyTakingPage() {
                 setRecaptchaEnabled(false);
             }
             setRecaptchaSiteKey(siteKeyToUse);
-            console.log(`[SurveyTakingPage fetchSurvey] Derived states: recaptchaEnabled=${recaptchaEnabled}, siteKeyToUse (becomes recaptchaSiteKey state)=${siteKeyToUse}`); // Note: recaptchaEnabled state might not be updated yet here due to async nature of setState
             
             setSurvey(surveyData);
             const fetchedQuestions = surveyData.questions || [];
@@ -212,7 +215,7 @@ function SurveyTakingPage() {
             if (err.name === 'AbortError') { console.log('[SurveyTakingPage] Fetch survey aborted.'); }
             else { const errorMessage = err.response?.data?.message || err.message || "Could not load survey."; setError(errorMessage); toast.error(`Error: ${errorMessage}`); }
         } finally { setIsLoading(false); }
-    }, [surveyId, currentCollectorIdentifier, location.state]); // Removed recaptchaEnabled from dependencies here as it's set within
+    }, [surveyId, currentCollectorIdentifier, location.state]); 
 
     useEffect(() => {
         if (currentCollectorIdentifier || location.state?.isPreviewingOwner) { 
@@ -222,13 +225,12 @@ function SurveyTakingPage() {
         } else if (routeCollectorIdentifier === undefined && !location.state?.collectorIdentifier && !location.state?.isPreviewingOwner) {
             setIsLoading(false);
             setError("Collector information is missing. Cannot load survey.");
-            console.error("Collector Identifier is undefined. Survey cannot be loaded.");
         }
     }, [fetchSurvey, currentCollectorIdentifier, routeCollectorIdentifier, location.state]);
 
 
     useEffect(() => { if (isLoading || !originalQuestions || originalQuestions.length === 0) { if(visibleQuestionIndices.length > 0) setVisibleQuestionIndices([]); return; } const newVisibleOriginalIndices = questionsInCurrentOrder.map(question => question ? questionIdToOriginalIndexMap[question._id] : undefined).filter(originalIndex => { if (originalIndex === undefined) return false; const question = originalQuestions[originalIndex]; return question && !hiddenQuestionIds.has(question._id); }); setVisibleQuestionIndices(prevIndices => { if (JSON.stringify(prevIndices) !== JSON.stringify(newVisibleOriginalIndices)) { return newVisibleOriginalIndices; } return prevIndices; }); }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices.length]);
-    useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0) setVisitedPath([]); return; } const currentPointsToValidQuestion = currentVisibleIndex < visibleQuestionIndices.length; if (!currentPointsToValidQuestion && currentVisibleIndex !== visibleQuestionIndices.length) { for (let i = visitedPath.length - 1; i >= 0; i--) { const pathOriginalIndex = visitedPath[i]; const pathVisibleIndex = visibleQuestionIndices.indexOf(pathOriginalIndex); if (pathVisibleIndex !== -1) { setCurrentVisibleIndex(pathVisibleIndex); return; } } setCurrentVisibleIndex(0); } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, visitedPath]);
+    useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0 && !allowBackButton) setVisitedPath([]); return; } const currentPointsToValidQuestion = currentVisibleIndex < visibleQuestionIndices.length; if (!currentPointsToValidQuestion && currentVisibleIndex !== visibleQuestionIndices.length) { if(allowBackButton) { for (let i = visitedPath.length - 1; i >= 0; i--) { const pathOriginalIndex = visitedPath[i]; const pathVisibleIndex = visibleQuestionIndices.indexOf(pathOriginalIndex); if (pathVisibleIndex !== -1) { setCurrentVisibleIndex(pathVisibleIndex); return; } } } setCurrentVisibleIndex(0); } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, visitedPath, allowBackButton]); // Added allowBackButton
     
     const evaluateDisabled = useCallback((questionOriginalIndex) => originalQuestions[questionOriginalIndex]?.isDisabled === true, [originalQuestions]);
     const evaluateActionLogic = useCallback((questionOriginalIndex) => { const question = originalQuestions[questionOriginalIndex]; if (!question || !question.skipLogic || !Array.isArray(question.skipLogic.rules) || question.skipLogic.rules.length === 0) return null; const result = evaluateRule(question.skipLogic, currentAnswers, questionsById); return result?.action || null; }, [originalQuestions, currentAnswers, questionsById]);
@@ -241,13 +243,12 @@ function SurveyTakingPage() {
     
     const renderQuestion = useCallback((questionToRenderArg) => {
         if (!questionToRenderArg) return <div className={styles.loading}>Loading question content...</div>;
-        if (!questionToRenderArg.type) { console.error("[SurveyTakingPage] renderQuestion: Question object is MISSING 'type' property!", questionToRenderArg); return <div>Error: Question data is missing 'type'. Cannot render.</div>; }
+        if (!questionToRenderArg.type) { return <div>Error: Question data is missing 'type'. Cannot render.</div>; }
         const question = questionToRenderArg;
         const value = currentAnswers[question._id];
         const otherText = otherInputValues[question._id] || '';
         const isDisabled = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
         const commonProps = { question, currentAnswer: value, onAnswerChange: handleInputChange, onCheckboxChange: handleCheckboxChange, otherValue: otherText, onOtherTextChange: handleOtherInputChange, disabled: isDisabled, optionsOrder: randomizedOptionOrders[question._id], isPreviewMode: false };
-        // --- THIS SWITCH STATEMENT IS NOW CORRECT ---
         switch (question.type) {
             case 'text': return <ShortTextQuestion {...commonProps} />;
             case 'textarea': return <TextAreaQuestion {...commonProps} />;
@@ -263,12 +264,70 @@ function SurveyTakingPage() {
             case 'conjoint': return <ConjointQuestion {...commonProps} />;
             case 'ranking': return <RankingQuestion {...commonProps} />;
             case 'cardsort': return <CardSortQuestion {...commonProps} />;
-            default: console.warn(`[SurveyTakingPage] renderQuestion: Encountered UNSUPPORTED question type: "${question.type}" for Q_ID: ${question._id}. Question object:`, question); return <div>Unsupported question type: {question.type || "Type is missing"}</div>;
+            default: return <div>Unsupported question type: {question.type || "Type is missing"}</div>;
         }
     }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled]);
 
-    const handleNext = useCallback(() => { if (isDisqualified || isLoading) return;  const currentOriginalIndex = visibleQuestionIndices[currentVisibleIndex]; const question = originalQuestions[currentOriginalIndex]; const isDisabledBySetting = evaluateDisabled(currentOriginalIndex); const isQuestionValid = validateQuestion(question, currentAnswers[question._id], false, isDisabledBySetting); if (!isQuestionValid) { if (question && question.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[question._id], question.type)) { toast.error(`Please answer the current question: "${question.text}"`); } return;  } setVisitedPath(prev => [...prev, currentOriginalIndex]); const globalAction = evaluateGlobalLogic(); if (globalAction) { if (globalAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(globalAction.disqualificationMessage || "Disqualified by global logic."); return; } } const localAction = evaluateActionLogic(currentOriginalIndex); if (localAction) { if (localAction.type === 'jumpToQuestion') { const targetQOriginalIndex = questionIdToOriginalIndexMap[localAction.targetQuestionId]; const targetVisibleIndex = visibleQuestionIndices.indexOf(targetQOriginalIndex); if (targetVisibleIndex !== -1) setCurrentVisibleIndex(targetVisibleIndex); else toast.warn("Jump target question is not visible."); return; } else if (localAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(localAction.disqualificationMessage || "Disqualified by question logic."); return; } else if (localAction.type === 'endSurvey') { setCurrentVisibleIndex(visibleQuestionIndices.length); return; } } if (currentVisibleIndex < visibleQuestionIndices.length - 1) { setCurrentVisibleIndex(prev => prev + 1); } else { setCurrentVisibleIndex(visibleQuestionIndices.length); } }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, visitedPath, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap, setIsDisqualified, setDisqualificationMessage]);
-    const handlePrevious = useCallback(() => { if (isDisqualified || isLoading || visitedPath.length === 0) return; const lastVisitedOriginalIndex = visitedPath[visitedPath.length - 1]; const lastVisitedVisibleIndex = visibleQuestionIndices.indexOf(lastVisitedOriginalIndex); if (lastVisitedVisibleIndex !== -1) { setCurrentVisibleIndex(lastVisitedVisibleIndex); setVisitedPath(prev => prev.slice(0, -1)); } else if (currentVisibleIndex > 0) { setCurrentVisibleIndex(prev => prev - 1); } }, [isDisqualified, isLoading, visitedPath, currentVisibleIndex, visibleQuestionIndices]);
+    const handleNext = useCallback(() => { 
+        if (isDisqualified || isLoading) return;  
+        const currentOriginalIndex = visibleQuestionIndices[currentVisibleIndex]; 
+        const question = originalQuestions[currentOriginalIndex]; 
+        const isDisabledBySetting = evaluateDisabled(currentOriginalIndex); 
+        const isQuestionValid = validateQuestion(question, currentAnswers[question._id], false, isDisabledBySetting); 
+        if (!isQuestionValid) { 
+            if (question && question.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[question._id], question.type)) { 
+                toast.error(`Please answer the current question: "${question.text}"`); 
+            } 
+            return;  
+        } 
+        // --- MODIFIED: Only add to visitedPath if back button is allowed ---
+        if (allowBackButton) {
+            setVisitedPath(prev => [...prev, currentOriginalIndex]); 
+        }
+        const globalAction = evaluateGlobalLogic(); 
+        if (globalAction) { 
+            if (globalAction.type === 'disqualifyRespondent') { 
+                setIsDisqualified(true); 
+                setDisqualificationMessage(globalAction.disqualificationMessage || "Disqualified by global logic."); 
+                return; 
+            } 
+        } 
+        const localAction = evaluateActionLogic(currentOriginalIndex); 
+        if (localAction) { 
+            if (localAction.type === 'jumpToQuestion') { 
+                const targetQOriginalIndex = questionIdToOriginalIndexMap[localAction.targetQuestionId]; 
+                const targetVisibleIndex = visibleQuestionIndices.indexOf(targetQOriginalIndex); 
+                if (targetVisibleIndex !== -1) setCurrentVisibleIndex(targetVisibleIndex); 
+                else toast.warn("Jump target question is not visible."); 
+                return; 
+            } else if (localAction.type === 'disqualifyRespondent') { 
+                setIsDisqualified(true); 
+                setDisqualificationMessage(localAction.disqualificationMessage || "Disqualified by question logic."); 
+                return; 
+            } else if (localAction.type === 'endSurvey') { 
+                setCurrentVisibleIndex(visibleQuestionIndices.length); 
+                return; 
+            } 
+        } 
+        if (currentVisibleIndex < visibleQuestionIndices.length - 1) { 
+            setCurrentVisibleIndex(prev => prev + 1); 
+        } else { 
+            setCurrentVisibleIndex(visibleQuestionIndices.length); 
+        } 
+    }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, visitedPath, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap, setIsDisqualified, setDisqualificationMessage, allowBackButton]); // Added allowBackButton
+
+    const handlePrevious = useCallback(() => { 
+        // --- MODIFIED: Check allowBackButton flag ---
+        if (!allowBackButton || isDisqualified || isLoading || visitedPath.length === 0) return; 
+        const lastVisitedOriginalIndex = visitedPath[visitedPath.length - 1]; 
+        const lastVisitedVisibleIndex = visibleQuestionIndices.indexOf(lastVisitedOriginalIndex); 
+        if (lastVisitedVisibleIndex !== -1) { 
+            setCurrentVisibleIndex(lastVisitedVisibleIndex); 
+            setVisitedPath(prev => prev.slice(0, -1)); 
+        } else if (currentVisibleIndex > 0) { // Fallback if last visited is not in current visible (e.g. due to logic changes)
+            setCurrentVisibleIndex(prev => prev - 1); 
+        } 
+    }, [isDisqualified, isLoading, visitedPath, currentVisibleIndex, visibleQuestionIndices, allowBackButton]); // Added allowBackButton
     
     const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
@@ -345,22 +404,10 @@ function SurveyTakingPage() {
             else { navigate(result.redirectUrl || '/thank-you', { state: { responseId: result.responseId } }); }
         } catch (errCatch) {
             const errorMessage = errCatch.response?.data?.message || errCatch.message || "Submission error.";
-            console.error("[HANDLE_SUBMIT] error:", errCatch.response || errCatch);
             setError(errorMessage); toast.error(`Failed: ${errorMessage}`);
             if (recaptchaEnabled && recaptchaRef.current && recaptchaSiteKey) { recaptchaRef.current.reset(); setRecaptchaToken(null); }
         } finally { setIsSubmitting(false); }
     }, [actualCollectorObjectId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, recaptchaRef, questionIdToOriginalIndexMap, surveyStartedAt, OTHER_VALUE_INTERNAL, isDisqualified, currentCollectorIdentifier]);
-
-    if (process.env.NODE_ENV === 'development') { 
-        console.log("[SurveyTakingPage RENDER] States relevant to reCAPTCHA:", {
-            finalIsSubmitState: isSubmitStateDerived,
-            recaptchaEnabledState: recaptchaEnabled,
-            recaptchaSiteKeyState: recaptchaSiteKey,
-            collectorSettingsState: collectorSettings,
-            actualCollectorObjectIdState: actualCollectorObjectId,
-            currentCollectorIdentifierState: currentCollectorIdentifier
-        });
-    }
     
     if (hasAlreadyResponded) { return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> <div className={styles.alreadyRespondedBox}> <h2>Already Responded</h2> <p>Our records indicate that you have already completed this survey.</p> <p>Multiple submissions are not permitted for this link.</p> <button onClick={() => navigate('/')} className={styles.navButton}>Go to Homepage</button> </div> </div> ); }
     if (isLoading && !survey) return <div className={styles.loading}>Loading survey...</div>;
@@ -372,7 +419,53 @@ function SurveyTakingPage() {
     const finalIsSubmitState = isSubmitStateDerived; 
     const isCurrentQuestionDisabled = finalCurrentQToRender ? evaluateDisabled(questionIdToOriginalIndexMap[finalCurrentQToRender._id]) : false;
     
-    return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>} {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>} {isLoading && survey ? <div className={styles.loading}>Loading question...</div> : <div className={`${styles.questionBox} ${isCurrentQuestionDisabled ? styles.disabled : ''}`}> {finalIsSubmitState ? ( <div className={styles.submitPrompt}> <p>End of survey.</p> <p>Click "Submit" to record responses.</p> </div> ) : finalCurrentQToRender ? ( renderQuestion(finalCurrentQToRender) ) : ( originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified ? <div className={styles.submitPrompt}><p>No questions visible. Submit if applicable.</p></div> : (isLoading ? <div className={styles.loading}>Preparing...</div> : <div className={styles.loading}>Survey empty or issue.</div>) )} </div> } {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && ( <div className={styles.recaptchaContainer}> <ReCAPTCHA ref={recaptchaRef} sitekey={recaptchaSiteKey} onChange={(token) => setRecaptchaToken(token)} onExpired={() => setRecaptchaToken(null)} onErrored={() => { toast.error("reCAPTCHA failed. Refresh."); setRecaptchaToken(null); }} /> </div> )} <div className={styles.surveyNavigationArea}> <button onClick={handlePrevious} className={styles.navButton} disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) }> Previous </button> {finalIsSubmitState || (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified && !isLoading) ? ( <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} > {isSubmitting ? 'Submitting...' : 'Submit'} </button> ) : ( <button onClick={handleNext} className={styles.navButton} disabled={isDisqualified || isSubmitting || isLoading || !finalCurrentQToRender } > Next </button> )} </div> <div className={styles.progressIndicator}> {!finalIsSubmitState && finalCurrentQToRender ? (visibleQuestionIndices.length > 0 ? `Question ${currentVisibleIndex + 1} of ${visibleQuestionIndices.length}` : 'Loading...') : (finalIsSubmitState ? `End (${visibleQuestionIndices.length} questions shown)`: 'Initializing...')} </div> </div> );
+    return ( 
+        <div className={styles.surveyContainer}> 
+            <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> 
+            {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>} 
+            {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>} 
+            {isLoading && survey ? <div className={styles.loading}>Loading question...</div> : 
+                <div className={`${styles.questionBox} ${isCurrentQuestionDisabled ? styles.disabled : ''}`}> 
+                    {finalIsSubmitState ? ( <div className={styles.submitPrompt}> <p>End of survey.</p> <p>Click "Submit" to record responses.</p> </div> ) 
+                    : finalCurrentQToRender ? ( renderQuestion(finalCurrentQToRender) ) 
+                    : ( originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified ? <div className={styles.submitPrompt}><p>No questions visible. Submit if applicable.</p></div> 
+                    : (isLoading ? <div className={styles.loading}>Preparing...</div> : <div className={styles.loading}>Survey empty or issue.</div>) )} 
+                </div> 
+            } 
+            {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && ( 
+                <div className={styles.recaptchaContainer}> 
+                    <ReCAPTCHA ref={recaptchaRef} sitekey={recaptchaSiteKey} onChange={(token) => setRecaptchaToken(token)} onExpired={() => setRecaptchaToken(null)} onErrored={() => { toast.error("reCAPTCHA failed. Refresh."); setRecaptchaToken(null); }} /> 
+                </div> 
+            )} 
+            <div className={styles.surveyNavigationArea}> 
+                {/* --- MODIFIED: Conditionally render or disable Previous button --- */}
+                {allowBackButton && (
+                    <button 
+                        onClick={handlePrevious} 
+                        className={styles.navButton} 
+                        disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) }
+                    > 
+                        Previous 
+                    </button> 
+                )}
+                {!allowBackButton && <div style={{width: '100px'}}></div> /* Placeholder to maintain layout if button hidden */}
+
+                {finalIsSubmitState || (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified && !isLoading) ? ( 
+                    <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} > 
+                        {isSubmitting ? 'Submitting...' : 'Submit'} 
+                    </button> 
+                ) : ( 
+                    <button onClick={handleNext} className={styles.navButton} disabled={isDisqualified || isSubmitting || isLoading || !finalCurrentQToRender } > 
+                        Next 
+                    </button> 
+                )} 
+            </div> 
+            <div className={styles.progressIndicator}> 
+                {!finalIsSubmitState && finalCurrentQToRender ? (visibleQuestionIndices.length > 0 ? `Question ${currentVisibleIndex + 1} of ${visibleQuestionIndices.length}` : 'Loading...') 
+                : (finalIsSubmitState ? `End (${visibleQuestionIndices.length} questions shown)`: 'Initializing...')} 
+            </div> 
+        </div> 
+    );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext10 - Corrected: Use actualCollectorObjectId, All Imports) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext11 - Implement Back Button Logic) -----

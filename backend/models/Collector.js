@@ -1,5 +1,5 @@
 // backend/models/Collector.js
-// ----- START OF COMPLETE UPDATED FILE (v1.3 - Added IP Filtering fields) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.4 - Add allowBackButton setting) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 const { v4: uuidv4 } = require('uuid');
@@ -25,15 +25,12 @@ const webLinkCollectorSettingsSchema = new Schema({
     allowMultipleResponses: { type: Boolean, default: false },
     anonymousResponses: { type: Boolean, default: false },
     enableRecaptcha: { type: Boolean, default: false },
-    recaptchaSiteKey: { type: String, trim: true, default: '' }, // Added for completeness, though often from ENV
-    
-    // --- NEW IP FILTERING FIELDS ---
+    recaptchaSiteKey: { type: String, trim: true, default: '' },
     ipAllowlist: {
-        type: [String], // Array of IP addresses or CIDR ranges
+        type: [String], 
         default: [],
         validate: {
             validator: function(arr) {
-                // Basic validation for IP/CIDR format (can be enhanced)
                 if (!Array.isArray(arr)) return false;
                 return arr.every(ip => typeof ip === 'string' && ip.length > 0);
             },
@@ -41,7 +38,7 @@ const webLinkCollectorSettingsSchema = new Schema({
         }
     },
     ipBlocklist: {
-        type: [String], // Array of IP addresses or CIDR ranges
+        type: [String], 
         default: [],
         validate: {
             validator: function(arr) {
@@ -50,8 +47,10 @@ const webLinkCollectorSettingsSchema = new Schema({
             },
             message: 'IP Blocklist must be an array of valid IP addresses or CIDR ranges.'
         }
-    }
-    // --- END NEW IP FILTERING FIELDS ---
+    },
+    // --- NEW: Allow Back Button Setting ---
+    allowBackButton: { type: Boolean, default: true } 
+    // --- END NEW ---
 });
 
 // --- Main Collector Schema ---
@@ -148,14 +147,13 @@ collectorSchema.methods.comparePassword = async function(enteredPassword) {
     if (this.type !== 'web_link' || !this.settings || !this.settings.web_link || !this.settings.web_link.password) {
         return false;
     }
-    // Fetch the document again including the password field explicitly
     const collectorWithPassword = await mongoose.model('Collector').findById(this._id).select('+settings.web_link.password').exec();
     if (!collectorWithPassword || !collectorWithPassword.settings || !collectorWithPassword.settings.web_link || !collectorWithPassword.settings.web_link.password) {
-        return false; // Should not happen if password was set, but good guard
+        return false; 
     }
     return await bcrypt.compare(enteredPassword, collectorWithPassword.settings.web_link.password);
 };
 
 const Collector = mongoose.model('Collector', collectorSchema);
 module.exports = Collector;
-// ----- END OF COMPLETE UPDATED FILE (v1.3 - Added IP Filtering fields) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.4 - Add allowBackButton setting) -----
