@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext3 - Added runValidators and Logging to updateSurvey) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext4 - Fixed SyntaxError in exportSurveyResults) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -207,7 +207,7 @@ exports.getSurveyById = async (req, res) => {
 
 exports.updateSurvey = async (req, res) => {
     const { surveyId } = req.params;
-    const updates = req.body; // This includes the 'questions' array
+    const updates = req.body; 
     console.log(`[updateSurvey] Received update for surveyId: ${surveyId}`);
     // console.log(`[updateSurvey] Full updates payload:`, JSON.stringify(updates, null, 2));
 
@@ -236,7 +236,6 @@ exports.updateSurvey = async (req, res) => {
             return res.status(403).json({ success: false, message: 'Not authorized.' });
         }
 
-        // Handle questions update
         if (updates.questions && Array.isArray(updates.questions)) {
             console.log(`[updateSurvey] Processing ${updates.questions.length} questions.`);
             const existingQuestionIds = survey.questions.map(id => String(id));
@@ -249,18 +248,13 @@ exports.updateSurvey = async (req, res) => {
                      console.log(`[updateSurvey]   Conjoint specific: conjointNumTasks=${qData.conjointNumTasks} (type: ${typeof qData.conjointNumTasks}), conjointProfilesPerTask=${qData.conjointProfilesPerTask}`);
                 }
 
-
-                // Ensure survey ID is correctly associated, especially for $set
                 const updatePayload = { ...qData, survey: survey._id };
 
                 if (qData._id && mongoose.Types.ObjectId.isValid(qData._id)) {
                     console.log(`[updateSurvey]   Updating existing question ID: ${qData._id}`);
-                    // For existing questions, ensure we only $set fields provided by qData
-                    // Mongoose schema defaults and type casting should apply on these fields
-                    // runValidators: true is crucial here
                     const updateResult = await Question.updateOne(
                         { _id: qData._id, survey: survey._id },
-                        { $set: updatePayload }, // Use updatePayload which includes survey_id
+                        { $set: updatePayload }, 
                         { session, runValidators: true, context: 'query' }
                     );
                     console.log(`[updateSurvey]   updateOne result for ${qData._id}: matchedCount=${updateResult.matchedCount}, modifiedCount=${updateResult.modifiedCount}`);
@@ -270,7 +264,7 @@ exports.updateSurvey = async (req, res) => {
                     const newQuestionData = { ...qData, survey: survey._id, createdBy: req.user.id };
                     delete newQuestionData._id; 
                     const newQuestionDoc = new Question(newQuestionData);
-                    const savedNewQ = await newQuestionDoc.save({ session }); // save() runs validators by default
+                    const savedNewQ = await newQuestionDoc.save({ session }); 
                     console.log(`[updateSurvey]   New question saved with ID: ${savedNewQ._id}`);
                     incomingQuestionIds.push(String(savedNewQ._id));
                 }
@@ -283,16 +277,15 @@ exports.updateSurvey = async (req, res) => {
                 await Answer.deleteMany({ questionId: { $in: questionsToDelete }, surveyId: survey._id }, { session });
             }
             survey.questions = incomingQuestionIds.map(id => new mongoose.Types.ObjectId(id));
-            delete updates.questions; // Remove questions from main survey update object
+            delete updates.questions; 
         }
 
-        // Update other survey properties
         Object.keys(updates).forEach(key => {
             if (key !== '_id' && key !== 'createdBy' && key !== 'questions') {
                 survey[key] = updates[key];
             }
         });
-        survey.updatedAt = Date.now(); // Manually set updatedAt
+        survey.updatedAt = Date.now(); 
 
         const updatedSurvey = await survey.save({ session });
         console.log(`[updateSurvey] Main survey document saved. ID: ${updatedSurvey._id}`);
@@ -301,16 +294,14 @@ exports.updateSurvey = async (req, res) => {
         session.endSession();
         console.log(`[updateSurvey] Transaction committed successfully for surveyId: ${surveyId}`);
 
-        // Repopulate for response
         const populatedSurvey = await Survey.findById(updatedSurvey._id)
             .populate({ path: 'questions', options: { sort: { order: 1 } } });
-            // .populate('collectors'); // If you need collectors in the response
 
         res.status(200).json({ success: true, message: 'Survey updated successfully.', data: populatedSurvey });
 
     } catch (error) {
         console.error(`[updateSurvey] Error during transaction for surveyId: ${surveyId}:`, error.message);
-        if (error.errors) { // Mongoose validation error
+        if (error.errors) { 
             console.error(`[updateSurvey]   Validation errors:`, JSON.stringify(error.errors, null, 2));
         } else {
             console.error(`[updateSurvey]   Full error stack:`, error.stack);
@@ -510,7 +501,9 @@ exports.exportSurveyResults = async (req, res) => {
                     row[`q_${q._id}`] = formatValueForCsv(answer.answerValue, q.type, answer.otherText);
                     if (q.addOtherOption) row[`q_${q._id}_other`] = answer.otherText || '';
                 } else {
-                    row[`q_${q._id}`] = ''; if (q.addOtherOption) row[`q_${q._id}_other` = '']
+                    row[`q_${q._id}`] = ''; 
+                    // *** CORRECTED LINE BELOW ***
+                    if (q.addOtherOption) row[`q_${q._id}_other`] = ''; 
                 }
             });
             return row;
@@ -525,4 +518,4 @@ exports.exportSurveyResults = async (req, res) => {
         if (!res.headersSent) res.status(500).json({ success: false, message: 'Error exporting results.' });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (vNext3 - Added runValidators and Logging to updateSurvey) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext4 - Fixed SyntaxError in exportSurveyResults) -----
