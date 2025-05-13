@@ -1,5 +1,5 @@
 // frontend/src/components/survey_question_renders/RankingQuestion.js
-// ----- START OF COMPLETE MODIFIED FILE (v2.1 - DND Fixes) -----
+// ----- START OF COMPLETE MODIFIED FILE (v2.2 - DND Style Refinement) -----
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     DndContext,
@@ -26,14 +26,14 @@ function SortableItem({ id, children, isDragging }) {
         listeners,
         setNodeRef,
         transform,
-        transition,
-        isOver, // Can be used for drop indicator styling
+        transition, // dnd-kit provides this
+        isOver, 
     } = useSortable({ id });
 
     const itemStyle = {
         transform: CSS.Transform.toString(transform),
-        transition,
-        // Add other base styles from your CSS module or inline if preferred
+        transition: transition, // Use transition from dnd-kit
+        // Other visual styles can be applied via className
     };
 
     return (
@@ -56,51 +56,71 @@ const RankingQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMod
         text,
         options = [],
         description,
-        isRequired // Assuming this will be derived from question.requiredSetting
+        // isRequired // Assuming this will be derived from question.requiredSetting
     } = question;
 
     const initialItems = useMemo(() => {
-        const originalOptionTexts = options.map(opt => typeof opt === 'string' ? opt : opt.text || String(opt));
+        const originalOptionTexts = options.map(opt => typeof opt === 'string' ? opt : opt.text || String(opt)).filter(Boolean); // Ensure no undefined/null texts
         let validCurrentAnswer = [];
 
         if (Array.isArray(currentAnswer) && currentAnswer.length > 0) {
             const currentAnswerTexts = currentAnswer.map(item => String(item));
+            // Ensure all items in currentAnswer are actually among the original options
             const allInOptions = currentAnswerTexts.every(item => originalOptionTexts.includes(item));
-            if (allInOptions && new Set(currentAnswerTexts).size === currentAnswerTexts.length) {
+            // Ensure no duplicates in currentAnswer
+            const hasNoDuplicates = new Set(currentAnswerTexts).size === currentAnswerTexts.length;
+
+            if (allInOptions && hasNoDuplicates && currentAnswerTexts.length === originalOptionTexts.length) {
                 validCurrentAnswer = currentAnswerTexts;
             }
         }
 
-        if (validCurrentAnswer.length > 0) {
-            const rankedSet = new Set(validCurrentAnswer);
+        if (validCurrentAnswer.length === originalOptionTexts.length) {
+            // If currentAnswer is a valid permutation of all options, use it
+            return [...validCurrentAnswer];
+        } else if (validCurrentAnswer.length > 0) {
+            // If currentAnswer is partial or invalid, try to use its valid parts and append the rest
+            const rankedSet = new Set(validCurrentAnswer.filter(item => originalOptionTexts.includes(item)));
             const unrankedOptions = originalOptionTexts.filter(optText => !rankedSet.has(optText));
-            return [...validCurrentAnswer, ...unrankedOptions];
+            return [...Array.from(rankedSet), ...unrankedOptions];
         }
+        // Default to original options order if currentAnswer is empty or completely invalid
         return [...originalOptionTexts];
     }, [currentAnswer, options]);
 
-    const [rankedItems, setRankedItems] = useState(initialItems);
+    const [rankedItems, setRankedItems] = useState(() => initialItems); // Initialize with memoized value
     const [activeId, setActiveId] = useState(null);
 
     useEffect(() => {
-        // Update local state if the initial items (derived from props) change
-        // This ensures that if currentAnswer is updated externally (e.g., loading saved progress),
-        // the component reflects it.
-        setRankedItems(initialItems);
-    }, [initialItems]);
+        // Only update if initialItems fundamentally changes (e.g. options prop changes)
+        // This comparison helps prevent unnecessary resets if currentAnswer updates reflect user interaction
+        if (JSON.stringify(rankedItems) !== JSON.stringify(initialItems) && 
+            initialItems.length === (question.options || []).length ) { // Basic check if options changed
+             setRankedItems(initialItems);
+        }
+    }, [initialItems, rankedItems, question.options]);
+
 
     const sensors = useSensors(
-        useSensor(PointerSensor),
+        useSensor(PointerSensor, {
+            // Require the mouse to move by 10 pixels before activating
+            // Improves behavior on touch devices and prevents accidental drags
+            activationConstraint: {
+              distance: 10,
+            },
+        }),
         useSensor(KeyboardSensor, {
             coordinateGetter: sortableKeyboardCoordinates,
         })
     );
 
     const handleDragStart = (event) => {
+        if (disabled) return;
         setActiveId(event.active.id);
     };
 
     const handleDragEnd = (event) => {
+        if (disabled) return;
         setActiveId(null);
         const { active, over } = event;
 
@@ -108,6 +128,8 @@ const RankingQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMod
             setRankedItems((items) => {
                 const oldIndex = items.findIndex(item => item === active.id);
                 const newIndex = items.findIndex(item => item === over.id);
+                if (oldIndex === -1 || newIndex === -1) return items; // Should not happen
+                
                 const newOrder = arrayMove(items, oldIndex, newIndex);
                 if (typeof onAnswerChange === 'function') {
                     onAnswerChange(questionId, newOrder);
@@ -117,7 +139,8 @@ const RankingQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMod
         }
     };
     
-    const sortableItemIds = useMemo(() => rankedItems.map(itemText => itemText), [rankedItems]);
+    // dnd-kit expects IDs to be strings for SortableContext items
+    const sortableItemIds = useMemo(() => rankedItems.map(itemText => String(itemText)), [rankedItems]);
 
 
     if (!options || options.length === 0) {
@@ -144,11 +167,12 @@ const RankingQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMod
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
+                // autoScroll={{layoutShiftCompensation: false}} // Consider if layout shifts are an issue
             >
                 <SortableContext items={sortableItemIds} strategy={verticalListSortingStrategy}>
                     <div className={styles.rankingListContainer}>
                         {rankedItems.map((itemText, index) => (
-                            <SortableItem key={itemText} id={itemText} isDragging={activeId === itemText}>
+                            <SortableItem key={String(itemText)} id={String(itemText)} isDragging={activeId === String(itemText)}>
                                 <span className={styles.rankingItemIndex}>{index + 1}.</span>
                                 <span className={styles.rankingItemTextDnD}>{itemText}</span>
                                 <span className={styles.rankingDragHandle}>&#x2630;</span>
@@ -162,4 +186,4 @@ const RankingQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMod
 };
 
 export default RankingQuestion;
-// ----- END OF COMPLETE MODIFIED FILE (v2.1 - DND Fixes) -----
+// ----- END OF COMPLETE MODIFIED FILE (v2.2 - DND Style Refinement) -----

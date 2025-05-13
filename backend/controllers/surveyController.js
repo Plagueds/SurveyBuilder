@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext6 - Fixed SyntaxError in getSurveyResults) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext7 - Robust Checkbox in getSurveyResults) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -18,6 +18,8 @@ const generateConjointProfiles = (attributes) => {
 
 // --- Helper Function for CSV Export (used in exportSurveyResults) ---
 const CSV_SEPARATOR = '; ';
+const ensureArrayForCsv = (val) => (Array.isArray(val) ? val : (val !== undefined && val !== null ? [String(val)] : []));
+
 const formatValueForCsv = (value, questionType, otherTextValue) => {
     if (value === null || value === undefined) return '';
     switch (questionType) {
@@ -29,9 +31,7 @@ const formatValueForCsv = (value, questionType, otherTextValue) => {
             if (value === '__OTHER__' && otherTextValue) return `Other: ${otherTextValue}`;
             return String(value);
         case 'checkbox':
-            // Helper to ensure value is an array for checkbox processing
-            const ensureArrayForCheckbox = (val) => (Array.isArray(val) ? val : (val !== undefined && val !== null ? [val] : []));
-            const answerArray = ensureArrayForCheckbox(value);
+            const answerArray = ensureArrayForCsv(value); // Use helper
             if (answerArray.length > 0) {
                 const options = answerArray.filter(v => v !== '__OTHER__').map(v => String(v)).join(CSV_SEPARATOR);
                 const otherIsSelected = answerArray.includes('__OTHER__');
@@ -61,7 +61,7 @@ const formatValueForCsv = (value, questionType, otherTextValue) => {
 };
 
 // --- Controller Functions ---
-
+// (getAllSurveys, createSurvey, getSurveyById, updateSurvey, deleteSurvey, submitSurveyAnswers remain the same as vNext6)
 exports.getAllSurveys = async (req, res) => {
     try {
         const filter = {};
@@ -375,47 +375,68 @@ exports.getSurveyResults = async (req, res) => {
         
         const responses = await Response.find({ survey: surveyId, status: { $in: ['completed', 'disqualified'] } })
             .select('sessionId status submittedAt startedAt ipAddress userAgent customVariables')
-            .lean(); // Use lean for potentially large datasets
+            .lean(); 
 
         const sessionIds = responses.map(r => r.sessionId);
-        const answers = await Answer.find({ surveyId: survey._id, sessionId: { $in: sessionIds } })
-            .populate('questionId', 'text type options matrixRows matrixColumns') // Keep populate if question details needed
-            .lean(); // Use lean
+        // Fetch answers with their question details populated
+        const answersFromDb = await Answer.find({ surveyId: survey._id, sessionId: { $in: sessionIds } })
+            .populate({ path: 'questionId', select: 'text type options matrixRows matrixColumns addOtherOption' }) // Ensure necessary fields are populated
+            .lean(); 
 
-        // Helper to ensure value is an array for checkbox processing in results
-        const ensureArray = (val) => (Array.isArray(val) ? val : (val !== undefined && val !== null ? [val] : []));
+        // Helper to robustly convert answerValue to an array, especially for checkboxes
+        const robustEnsureArrayFromAnswerValue = (value) => {
+            if (Array.isArray(value)) return value.map(String); // Ensure all elements are strings
+            if (typeof value === 'string') return value.split('||').filter(Boolean).map(String);
+            if (value !== null && value !== undefined) return [String(value)];
+            return [];
+        };
 
         const results = {
             surveyTitle: survey.title,
             totalResponses: responses.length,
             responsesSummary: responses.map(r => ({
-                responseId: r._id,
-                sessionId: r.sessionId,
-                status: r.status,
-                submittedAt: r.submittedAt,
-                startedAt: r.startedAt,
+                responseId: r._id, sessionId: r.sessionId, status: r.status,
+                submittedAt: r.submittedAt, startedAt: r.startedAt,
                 duration: r.startedAt && r.submittedAt ? (new Date(r.submittedAt).getTime() - new Date(r.startedAt).getTime()) / 1000 : null,
-                ipAddress: r.ipAddress,
-                userAgent: r.userAgent,
+                ipAddress: r.ipAddress, userAgent: r.userAgent,
             })),
             questions: survey.questions.map(q => {
-                const questionAnswers = answers.filter(a => a.questionId && String(a.questionId._id) === String(q._id));
-                let aggregatedAnswers = {};
-                if (['multiple-choice', 'dropdown', 'nps', 'rating'].includes(q.type)) {
-                    aggregatedAnswers.optionsCount = {};
+                if (!q || !q._id) return null; // Skip if question is somehow invalid
+                const questionDetails = q; // q is already the populated question object
+                const questionAnswers = answersFromDb.filter(a => a.questionId && String(a.questionId._id) === String(questionDetails._id));
+                
+                let aggregatedAnswers = { counts: {}, writeIns: {} }; // Ensure writeIns is initialized
+
+                if (['multiple-choice', 'dropdown', 'checkbox'].includes(questionDetails.type)) {
                     questionAnswers.forEach(ans => {
-                        const key = ans.otherText ? `Other: ${ans.otherText}` : String(ans.answerValue);
-                        aggregatedAnswers.optionsCount[key] = (aggregatedAnswers.optionsCount[key] || 0) + 1;
-                    });
-                } else if (q.type === 'checkbox') {
-                    aggregatedAnswers.optionsCount = {};
-                    questionAnswers.forEach(ans => {
-                        ensureArray(ans.answerValue).forEach(val => { // Use ensureArray here
-                            const key = val === '__OTHER__' && ans.otherText ? `Other: ${ans.otherText}` : String(val);
-                            aggregatedAnswers.optionsCount[key] = (aggregatedAnswers.optionsCount[key] || 0) + 1;
+                        const valuesToProcess = questionDetails.type === 'checkbox' 
+                            ? robustEnsureArrayFromAnswerValue(ans.answerValue)
+                            : [String(ans.answerValue)]; // MC/Dropdown are single value
+
+                        valuesToProcess.forEach(val => {
+                            if (val === null || val === undefined || val.trim() === '') return;
+                            
+                            if (val === '__NA__') { // Use constant if defined, otherwise string
+                                aggregatedAnswers.counts['__NA__'] = (aggregatedAnswers.counts['__NA__'] || 0) + 1;
+                            } else if (val === '__OTHER__') {
+                                aggregatedAnswers.counts['__OTHER__'] = (aggregatedAnswers.counts['__OTHER__'] || 0) + 1;
+                                if (ans.otherText && ans.otherText.trim()) {
+                                    const writeIn = ans.otherText.trim();
+                                    aggregatedAnswers.writeIns[writeIn] = (aggregatedAnswers.writeIns[writeIn] || 0) + 1;
+                                }
+                            } else {
+                                aggregatedAnswers.counts[val] = (aggregatedAnswers.counts[val] || 0) + 1;
+                            }
                         });
                     });
+                } else if (['nps', 'rating'].includes(questionDetails.type)) {
+                    // Simplified, actual implementation would parse numbers, calculate avg, etc.
+                    questionAnswers.forEach(ans => {
+                        const valStr = String(ans.answerValue);
+                        aggregatedAnswers.counts[valStr] = (aggregatedAnswers.counts[valStr] || 0) + 1;
+                    });
                 } else {
+                    // Fallback for other types or if more detailed raw data is needed
                     aggregatedAnswers.raw = questionAnswers.map(a => ({
                         value: a.answerValue,
                         other: a.otherText,
@@ -423,17 +444,18 @@ exports.getSurveyResults = async (req, res) => {
                     }));
                 }
                 return {
-                    questionId: q._id,
-                    text: q.text,
-                    type: q.type,
-                    order: q.order,
+                    questionId: questionDetails._id,
+                    text: questionDetails.text,
+                    type: questionDetails.type,
+                    options: questionDetails.options, // Pass options for rendering labels
+                    order: questionDetails.order,
                     responsesCount: questionAnswers.length,
                     answers: aggregatedAnswers,
                 };
-            }),
+            }).filter(Boolean), // Remove nulls from map if any invalid questions
         };
         res.status(200).json({ success: true, data: results });
-    } catch (error) { // *** CORRECTED THIS LINE ***
+    } catch (error) { 
         console.error(`[getSurveyResults] Error for survey ${surveyId}:`, error);
         res.status(500).json({ success: false, message: 'Error fetching results.' });
     }
@@ -483,4 +505,4 @@ exports.exportSurveyResults = async (req, res) => {
         if (!res.headersSent) res.status(500).json({ success: false, message: 'Error exporting results.' });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (vNext6 - Fixed SyntaxError in getSurveyResults) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext7 - Robust Checkbox in getSurveyResults) -----

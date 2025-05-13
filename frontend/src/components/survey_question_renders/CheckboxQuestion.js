@@ -1,5 +1,5 @@
 // frontend/src/components/survey_question_renders/CheckboxQuestion.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.3 - Fixed Hooks order) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.4 - Correctly use array for currentAnswer) -----
 import React, { useMemo } from 'react';
 import styles from './SurveyQuestionStyles.module.css';
 
@@ -8,7 +8,7 @@ const OTHER_VALUE_INTERNAL = '__OTHER__';
 
 const CheckboxQuestion = ({
     question,
-    currentAnswer,
+    currentAnswer, // Expect this to be an array of selected values
     onCheckboxChange,
     otherValue,
     onOtherTextChange,
@@ -16,20 +16,29 @@ const CheckboxQuestion = ({
     optionsOrder
 }) => {
     // --- HOOKS MOVED TO THE TOP ---
-    const selectedSet = useMemo(() => new Set(currentAnswer ? String(currentAnswer).split('||').filter(v => v) : []), [currentAnswer]);
+    // currentAnswer is expected to be an array from SurveyTakingPage
+    // Ensure currentAnswer is always treated as an array for the Set
+    const selectedSet = useMemo(() => {
+        if (Array.isArray(currentAnswer)) {
+            return new Set(currentAnswer);
+        }
+        if (typeof currentAnswer === 'string' && currentAnswer) {
+            // Fallback for older data or if currentAnswer is a string for some reason
+            // This specific '||' split might not be necessary if SurveyTakingPage always provides an array
+            return new Set(currentAnswer.split('||').filter(v => v));
+        }
+        return new Set();
+    }, [currentAnswer]);
     
     const orderedOptions = useMemo(() => {
-        // Ensure question and question.options are accessed safely if they might be initially undefined
         const options = question?.options || [];
         return optionsOrder
             ? optionsOrder.map(index => options[index]).filter(opt => opt !== undefined)
             : options;
-    }, [question?.options, optionsOrder]); // Added optional chaining for question.options
+    }, [question?.options, optionsOrder]);
 
     // --- VALIDATION CHECK AFTER HOOKS ---
     if (!question || !Array.isArray(question.options)) {
-        // It's generally better to handle missing critical props higher up,
-        // but if rendering a message here, ensure Hooks are already called.
         console.error("[CheckboxQuestion] Invalid question data:", question);
         return <p className={styles.errorMessage}>Question data or options are missing.</p>;
     }
@@ -38,6 +47,7 @@ const CheckboxQuestion = ({
     const actualNaText = question.naText || "Not Applicable";
 
     const handleLocalCheckboxChange = (optionValue, isChecked) => {
+        // This directly calls the handler from SurveyTakingPage, which manages the array state
         onCheckboxChange(question._id, optionValue, isChecked);
     };
 
@@ -50,11 +60,17 @@ const CheckboxQuestion = ({
     const naIsExclusive = question.naIsExclusive === undefined ? (question.addNAOption || false) : question.naIsExclusive;
     const isNASelected = selectedSet.has(actualNaValue);
 
+    // Determine if max selections limit has been reached (excluding N/A if it's selected and exclusive)
+    const nonNaSelectionsCount = Array.from(selectedSet).filter(val => val !== actualNaValue).length;
+    const maxSelectionsReached = question.maxSelections !== undefined && 
+                                 nonNaSelectionsCount >= question.maxSelections &&
+                                 !isNASelected; // If NA is selected, this limit might not apply to NA itself
+
     return (
         <div className={`${styles.questionContainer} ${disabled ? styles.disabled : ''}`}>
             <p className={styles.questionText}>
                 {question.text || 'Question text missing'}
-                {question.isRequired && <span className={styles.requiredIndicator}>*</span>}
+                {question.requiredSetting === 'required' && <span className={styles.requiredIndicator}>*</span>}
             </p>
             {question.description && <p className={styles.questionDescription}>{question.description}</p>}
             <div className={styles.optionsContainer}>
@@ -63,9 +79,10 @@ const CheckboxQuestion = ({
                     const optionValue = typeof option === 'object' ? option.value : option;
                     if (optionText === undefined || optionValue === undefined) return null;
 
+                    const isChecked = selectedSet.has(optionValue);
                     const isOptionDisabled = disabled || 
-                                             (isNASelected && naIsExclusive) ||
-                                             (!selectedSet.has(optionValue) && selectedSet.size >= (question.maxSelections || Infinity) && !isNASelected);
+                                             (isNASelected && naIsExclusive && optionValue !== actualNaValue) || // if NA is selected and exclusive, disable others
+                                             (!isChecked && maxSelectionsReached); // Disable if not checked and max reached
 
                     return (
                         <div key={optionValue || index} className={styles.optionItem}>
@@ -73,7 +90,7 @@ const CheckboxQuestion = ({
                                 type="checkbox"
                                 id={`q_${question._id}_opt_${index}`}
                                 value={optionValue}
-                                checked={selectedSet.has(optionValue)}
+                                checked={isChecked}
                                 onChange={(e) => handleLocalCheckboxChange(optionValue, e.target.checked)}
                                 disabled={isOptionDisabled}
                                 className={styles.checkboxInput}
@@ -93,7 +110,7 @@ const CheckboxQuestion = ({
                             value={OTHER_VALUE_INTERNAL}
                             checked={selectedSet.has(OTHER_VALUE_INTERNAL)}
                             onChange={(e) => handleLocalCheckboxChange(OTHER_VALUE_INTERNAL, e.target.checked)}
-                            disabled={disabled || (isNASelected && naIsExclusive) || (!selectedSet.has(OTHER_VALUE_INTERNAL) && selectedSet.size >= (question.maxSelections || Infinity) && !isNASelected)}
+                            disabled={disabled || (isNASelected && naIsExclusive && OTHER_VALUE_INTERNAL !== actualNaValue) || (!selectedSet.has(OTHER_VALUE_INTERNAL) && maxSelectionsReached)}
                             className={styles.checkboxInput}
                         />
                         <label htmlFor={`q_${question._id}_opt_other`} className={styles.optionLabel}>
@@ -106,7 +123,7 @@ const CheckboxQuestion = ({
                                 onChange={handleOtherText}
                                 placeholder={question.otherPlaceholder || "Please specify"}
                                 className={styles.otherTextInput}
-                                disabled={disabled || (isNASelected && naIsExclusive)}
+                                disabled={disabled || (isNASelected && naIsExclusive)} // Other text input enabled even if NA selected, unless NA is exclusive and "Other" is not NA
                                 required={question.requireOtherIfSelected && selectedSet.has(OTHER_VALUE_INTERNAL)}
                             />
                         )}
@@ -121,7 +138,9 @@ const CheckboxQuestion = ({
                             value={actualNaValue} 
                             checked={isNASelected}
                             onChange={(e) => handleLocalCheckboxChange(actualNaValue, e.target.checked)}
-                            disabled={disabled || (!isNASelected && selectedSet.size >= (question.maxSelections || Infinity))}
+                            // N/A can always be selected/deselected unless general disable.
+                            // If other options hit max, N/A should still be selectable to override.
+                            disabled={disabled} 
                             className={styles.checkboxInput}
                         />
                         <label htmlFor={`q_${question._id}_opt_na`} className={styles.optionLabel}>
@@ -136,4 +155,4 @@ const CheckboxQuestion = ({
     );
 };
 export default CheckboxQuestion;
-// ----- END OF COMPLETE MODIFIED FILE (v1.3) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.4 - Correctly use array for currentAnswer) -----
