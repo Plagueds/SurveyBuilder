@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext12 - Ensure Plain Object for Collector Settings) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext13 - Fix IP Address Conflict) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -205,17 +205,11 @@ exports.getSurveyById = async (req, res) => {
         
         if (forTaking === 'true') {
             if (actualCollectorDoc && actualCollectorDoc.settings?.web_link) {
-                // --- MODIFICATION START ---
-                // Use .toObject() to get a plain JS object for the subdocument
-                // Or, if settings.web_link is already lean due to select, ensure it's spread correctly.
-                // The safest is to convert the specific subdocument part to a plain object.
                 const webLinkSettingsObject = actualCollectorDoc.settings.web_link.toObject ? 
                                               actualCollectorDoc.settings.web_link.toObject() : 
                                               { ...actualCollectorDoc.settings.web_link };
 
                 surveyResponseData.collectorSettings = webLinkSettingsObject;
-                // --- MODIFICATION END ---
-                
                 surveyResponseData.actualCollectorObjectId = actualCollectorDoc._id; 
                 console.log(`[getSurveyById Bkend] Passing to frontend: actualCollectorObjectId=${actualCollectorDoc._id}, collectorSettings=`, surveyResponseData.collectorSettings);
                 
@@ -241,7 +235,6 @@ exports.getSurveyById = async (req, res) => {
     }
 };
 
-// ... (rest of the controller: updateSurvey, deleteSurvey, submitSurveyAnswers, etc., remain the same as vNext11)
 exports.updateSurvey = async (req, res) => {
     const { surveyId } = req.params;
     const updates = req.body; 
@@ -364,10 +357,12 @@ exports.submitSurveyAnswers = async (req, res) => {
             if (bulkWriteResult.hasWriteErrors()) { console.error('[submitSurveyAnswers] BulkWriteError:', bulkWriteResult.getWriteErrors()); await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'Error saving answers.' }); }
         }
         
+        // --- MODIFICATION START: IP Address and User Agent handling ---
         const responseUpdateData = { 
             status: 'completed', 
             submittedAt: new Date(), 
             lastActivityAt: new Date() 
+            // ipAddress and userAgent are removed from here if they are only set on insert
         };
         const responseSetOnInsertData = { 
             survey: surveyId, 
@@ -386,16 +381,13 @@ exports.submitSurveyAnswers = async (req, res) => {
                 }
                 return request.ip || request.connection?.remoteAddress;
             };
-            responseUpdateData.ipAddress = getIp(req);
+            // Add to $setOnInsert only
             responseSetOnInsertData.ipAddress = getIp(req); 
-            responseUpdateData.userAgent = req.headers['user-agent'];
             responseSetOnInsertData.userAgent = req.headers['user-agent']; 
-        } else {
-            responseUpdateData.ipAddress = undefined;
-            responseSetOnInsertData.ipAddress = undefined;
-            responseUpdateData.userAgent = undefined;
-            responseSetOnInsertData.userAgent = undefined;
         }
+        // No need for an else to set them to undefined in $setOnInsert, as they simply won't be added.
+        // If they were in responseUpdateData ($set), then setting to undefined would remove them.
+        // --- MODIFICATION END ---
 
         const updatedResponse = await Response.findOneAndUpdate(
             { survey: surveyId, collector: collector._id, sessionId: sessionIdToUse }, 
@@ -435,6 +427,10 @@ exports.submitSurveyAnswers = async (req, res) => {
         }
         if (!res.headersSent) {
             if (error.name === 'ValidationError') return res.status(400).json({ success: false, message: 'Validation Error.', details: error.errors });
+            // Check specifically for the conflict error message for ipAddress
+            if (error.message && error.message.includes("Updating the path 'ipAddress' would create a conflict")) {
+                 return res.status(409).json({ success: false, message: error.message }); // 409 Conflict
+            }
             if (error.code === 11000) return res.status(409).json({ success: false, message: 'Duplicate submission or conflict.', details: error.keyValue });
             res.status(500).json({ success: false, message: error.message || 'Error submitting answers.' });
         }
@@ -570,4 +566,4 @@ exports.exportSurveyResults = async (req, res) => {
         if (!res.headersSent) res.status(500).json({ success: false, message: 'Error exporting results.' });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (vNext12 - Ensure Plain Object for Collector Settings) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext13 - Fix IP Address Conflict) -----
