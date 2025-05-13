@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyBuildPage.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.1 - Logic Panel as Modal) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Correct globalSkipLogic payload & log) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { DndProvider } from 'react-dnd';
@@ -11,7 +11,7 @@ import QuestionPropertiesPanel from '../components/QuestionEditPanel';
 import SurveyLogicPanel from '../components/SurveyLogicPanel';
 import SurveySettingsPanel from '../components/SurveySettingsPanel';
 import QuestionListItem from '../components/QuestionListItem';
-import styles from './SurveyBuildPage.module.css'; // Ensure this contains .modalBackdrop (added below)
+import styles from './SurveyBuildPage.module.css';
 import surveyApi from '../api/surveyApi';
 import CollectorsPanel from '../components/CollectorsPanel';
 
@@ -26,7 +26,7 @@ const SurveyBuildPage = () => {
     const [saving, setSaving] = useState(false);
     const [pageError, setPageError] = useState('');
 
-    const [isLogicPanelOpen, setIsLogicPanelOpen] = useState(false); // This controls the modal
+    const [isLogicPanelOpen, setIsLogicPanelOpen] = useState(false);
     const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
     const [isCollectorsPanelOpen, setIsCollectorsPanelOpen] = useState(false);
 
@@ -175,24 +175,41 @@ const SurveyBuildPage = () => {
         if (!survey?._id) { toast.error("Survey data not available."); return; }
         if (!survey.title?.trim()) { toast.error("Survey title cannot be empty."); return; }
         setSaving(true);
+        
+        // Construct the payload with the correct field name 'globalSkipLogic'
         const payload = {
-            title: survey.title.trim(), description: survey.description || '', status: survey.status || 'draft',
+            title: survey.title.trim(), 
+            description: survey.description || '', 
+            status: survey.status || 'draft',
             questions: survey.questions?.map(q => q._id) || [],
-            logicRules: survey.logicRules || survey.globalSkipLogic || [], settings: survey.settings || {},
+            // --- MODIFIED: Use survey.globalSkipLogic directly ---
+            globalSkipLogic: survey.globalSkipLogic || [], 
+            settings: survey.settings || {},
             randomizationLogic: survey.randomizationLogic || {},
+            welcomeMessage: survey.welcomeMessage || { text: "Welcome to the survey!" }, // Ensure these are included if they are part of your Survey model root
+            thankYouMessage: survey.thankYouMessage || { text: "Thank you for completing the survey!" },
         };
+
+        // Log the payload right before the API call
+        console.log("[SurveyBuildPage] Payload for handleSaveSurvey (API call):", JSON.stringify(payload, null, 2));
+
         try {
-            const response = await surveyApi.updateSurveyStructure(survey._id, payload);
+            // Ensure surveyApi.updateSurvey is the correct endpoint for general survey updates
+            // If you have a specific endpoint like updateSurveyStructure, ensure it handles all these fields.
+            const response = await surveyApi.updateSurvey(survey._id, payload); 
+            
             if (response && response.success && response.data) {
                 const updatedApiSurvey = response.data;
+                // Ensure questions are properly structured if they come back as just IDs
                 const questionsToSet = (updatedApiSurvey.questions && updatedApiSurvey.questions.length > 0 && typeof updatedApiSurvey.questions[0] === 'object')
                                      ? updatedApiSurvey.questions
-                                     : survey.questions;
+                                     : survey.questions; // Fallback to current questions if API returns only IDs
 
                 setSurvey(prev => ({
-                    ...prev, ...updatedApiSurvey,
-                    questions: questionsToSet,
-                    logicRules: updatedApiSurvey.logicRules || updatedApiSurvey.globalSkipLogic || [],
+                    ...prev, 
+                    ...updatedApiSurvey, // Spread the whole updated survey data
+                    questions: questionsToSet, // Explicitly set questions
+                    globalSkipLogic: updatedApiSurvey.globalSkipLogic || [], // Ensure globalSkipLogic is updated from response
                 }));
                 toast.success('Survey structure saved successfully!');
             } else {
@@ -210,10 +227,19 @@ const SurveyBuildPage = () => {
     };
 
     const handleSaveLogic = (updatedLogicRules) => {
-        setSurvey(prev => ({ ...prev, logicRules: updatedLogicRules, globalSkipLogic: updatedLogicRules }));
+        // This function is called by SurveyLogicPanel when its "Apply & Close" is clicked.
+        // It updates the local 'survey' state. The actual save to backend happens via handleSaveSurvey.
+        console.log("[SurveyBuildPage] handleSaveLogic called with rules:", JSON.stringify(updatedLogicRules, null, 2));
+        setSurvey(prev => ({ 
+            ...prev, 
+            // Ensure both are updated if you use them interchangeably, but primary should be globalSkipLogic
+            logicRules: updatedLogicRules, 
+            globalSkipLogic: updatedLogicRules 
+        }));
         setIsLogicPanelOpen(false); // Close the modal
-        toast.info("Logic updated. Click 'Save Survey Structure'.");
+        toast.info("Logic updated. Click 'Save Survey Structure' to persist changes to the server.");
     };
+
     const handleSaveSettings = (updatedSettings) => {
         setSurvey(prev => ({ ...prev, settings: updatedSettings }));
         setIsSettingsPanelOpen(false);
@@ -223,6 +249,28 @@ const SurveyBuildPage = () => {
     const handleOpenAddQuestionPanel = () => { setSelectedQuestionId(null); setShowAddQuestionPanel(true); };
     const handleQuestionClick = (id) => { setShowAddQuestionPanel(false); setSelectedQuestionId(id); };
     const handleCancelEditPanel = () => { setSelectedQuestionId(null); setShowAddQuestionPanel(false); };
+
+    // Function to be passed to LogicRuleEditor through SurveyLogicPanel
+    // This is needed if a logic rule (e.g., defining a heatmap area) modifies a question's definition
+    const handleUpdateQuestionDefinitionForLogic = useCallback(async (questionId, updatedFields) => {
+        setSurvey(prevSurvey => {
+            if (!prevSurvey || !prevSurvey.questions) return prevSurvey;
+            const updatedQuestions = prevSurvey.questions.map(q => {
+                if (q._id === questionId) {
+                    return { ...q, ...updatedFields };
+                }
+                return q;
+            });
+            // This updates the local survey state.
+            // The actual save of this question change would typically happen when the question itself is saved
+            // or when the entire survey structure is saved.
+            // For now, we just update the local state so the logic panel has the latest question def.
+            console.log(`[SurveyBuildPage] Question ${questionId} definition updated locally for logic panel:`, updatedFields);
+            toast.info(`Question definition updated for logic. Remember to save the question or survey structure.`);
+            return { ...prevSurvey, questions: updatedQuestions };
+        });
+    }, []);
+
 
     const selectedQData = survey?.questions?.find(q => q._id === selectedQuestionId);
     const shouldMakeSpaceForPanel = showAddQuestionPanel || !!selectedQData;
@@ -269,24 +317,23 @@ const SurveyBuildPage = () => {
                 {showAddQuestionPanel && survey?._id && (<QuestionPropertiesPanel key="add-new-question-panel" questionData={null} mode="add" onSave={handleCreateQuestionFromPanel} onCancel={handleCancelEditPanel} isSaving={saving} allQuestions={survey.questions || []} questionIndex={-1} surveyId={survey._id} />)}
                 {selectedQData && !showAddQuestionPanel && survey?._id && (<QuestionPropertiesPanel key={selectedQData._id} questionData={selectedQData} mode="edit" onSave={(payload) => updateQuestion(selectedQData._id, payload)} onCancel={handleCancelEditPanel} isSaving={saving} allQuestions={survey.questions || []} questionIndex={(survey.questions || []).findIndex(q => q._id === selectedQData._id)} surveyId={survey._id} />)}
                 
-                {/* --- MODAL IMPLEMENTATION FOR LOGIC PANEL --- */}
                 {isLogicPanelOpen && survey?._id && (
                     <div className={styles.modalBackdrop} onClick={() => setIsLogicPanelOpen(false)}>
                         <div className={styles.modalContentWrapper} onClick={e => e.stopPropagation()}>
-                            {/* SurveyLogicPanel is now rendered inside the modal content wrapper */}
                             <SurveyLogicPanel 
                                 key={`logic-modal-${survey._id}`} 
-                                initialRules={survey.logicRules || survey.globalSkipLogic || []} 
+                                initialRules={survey.globalSkipLogic || survey.logicRules || []} // Prefer globalSkipLogic if present
                                 allQuestions={survey.questions || []} 
                                 onSaveRules={handleSaveLogic} 
                                 onClose={() => setIsLogicPanelOpen(false)} 
                                 isLoading={saving} 
-                                surveyId={survey._id} 
+                                surveyId={survey._id}
+                                // Pass the new handler down to SurveyLogicPanel
+                                onUpdateQuestionDefinition={handleUpdateQuestionDefinitionForLogic}
                             />
                         </div>
                     </div>
                 )}
-                {/* --- END MODAL IMPLEMENTATION --- */}
 
                 {isSettingsPanelOpen && survey?._id && (<SurveySettingsPanel isOpen={isSettingsPanelOpen} onClose={() => setIsSettingsPanelOpen(false)} settings={survey.settings || {}} onSave={handleSaveSettings} surveyId={survey._id} />)}
                 {isCollectorsPanelOpen && survey?._id && (<CollectorsPanel isOpen={isCollectorsPanelOpen} onClose={() => setIsCollectorsPanelOpen(false)} surveyId={survey._id} collectors={collectors} onCollectorsUpdate={() => {
@@ -307,4 +354,4 @@ const SurveyBuildPage = () => {
     );
 };
 export default SurveyBuildPage;
-// ----- END OF COMPLETE MODIFIED FILE (v1.1 - Logic Panel as Modal) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Correct globalSkipLogic payload & log) -----
