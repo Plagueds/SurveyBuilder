@@ -1,5 +1,5 @@
 // frontend/src/components/logic/LogicGroupEditor.js
-// ----- START OF UPDATED FILE (v1.2 - Pass onUpdateQuestionDefinition) -----
+// ----- START OF UPDATED FILE (v1.3 - Pass onOpenAreaManager) -----
 import React from 'react';
 import LogicConditionEditor from './LogicConditionEditor';
 import { LOGICAL_OPERATORS } from './logicConstants';
@@ -10,13 +10,13 @@ function LogicGroupEditor({
     onUpdateGroup,
     onRemoveGroup,
     availableSourceQuestions,
-    allQuestions, // This is the full list of questions for lookups
+    allQuestions,
     styles,
     truncateText,
     getQuestionTypeLabel,
     ensureArray,
-    // +++ NEW PROP: Accept onUpdateQuestionDefinition +++
-    onUpdateQuestionDefinition
+    onUpdateQuestionDefinition,
+    onOpenAreaManager // +++ NEW PROP: Accept onOpenAreaManager +++
 }) {
     const handleGroupOperatorChange = (e) => {
         onUpdateGroup(groupIndex, { ...group, groupOperator: e.target.value });
@@ -76,13 +76,13 @@ function LogicGroupEditor({
                             onUpdateCondition={updateCondition}
                             onRemoveCondition={removeCondition}
                             availableSourceQuestions={availableSourceQuestions}
-                            allQuestions={allQuestions} // Pass allQuestions for selectedQuestion lookup
+                            allQuestions={allQuestions}
                             styles={styles}
                             truncateText={truncateText}
                             getQuestionTypeLabel={getQuestionTypeLabel}
                             ensureArray={ensureArray}
-                            // +++ PASS THE PROP DOWN +++
                             onUpdateQuestionDefinition={onUpdateQuestionDefinition}
+                            onOpenAreaManager={onOpenAreaManager} // +++ PASS THE PROP DOWN +++
                         />
                     </React.Fragment>
                 ))}
@@ -100,4 +100,4 @@ function LogicGroupEditor({
 }
 
 export default LogicGroupEditor;
-// ----- END OF UPDATED FILE (v1.2 - Pass onUpdateQuestionDefinition) -----
+// ----- END OF UPDATED FILE (v1.3 - Pass onOpenAreaManager) -----
