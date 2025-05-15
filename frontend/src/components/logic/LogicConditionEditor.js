@@ -1,6 +1,6 @@
 // frontend/src/components/logic/LogicConditionEditor.js
 // ----- START OF UPDATED FILE (v1.8 - Wrapped HeatmapModal for consistent presentation) -----
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getOperatorsForQuestionType, getConditionValueInputDetails } from './logicConstants';
 import HeatmapAreaSelectorModal from './HeatmapAreaSelectorModal'; // Ensure this path is correct
 
