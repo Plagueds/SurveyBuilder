@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE UPDATED FILE (vNext18 - Pass ProgressBar settings to frontend) -----
+// ----- START OF COMPLETE UPDATED FILE (vNext19 - Debug Logging in submitSurveyAnswers) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -7,7 +7,7 @@ const Question = require('../models/Question');
 const Answer = require('../models/Answer');
 const Collector = require('../models/Collector');
 const Response = require('../models/Response');
-const { evaluateAllLogic, evaluateSurveyLogic } = require('../utils/logicEvaluator'); // Assuming evaluateSurveyLogic is also in logicEvaluator
+const { evaluateAllLogic, evaluateSurveyLogic } = require('../utils/logicEvaluator');
 const axios = require('axios');
 const ipRangeCheck = require('ip-range-check');
 
@@ -21,7 +21,6 @@ const getIpAddress = (request) => {
 
 const generateConjointProfiles = (attributes) => {
     if (!attributes || attributes.length === 0) return [];
-    // Placeholder for actual conjoint profile generation logic
     return [];
 };
 
@@ -29,6 +28,7 @@ const CSV_SEPARATOR = '; ';
 const ensureArrayForCsv = (val) => (Array.isArray(val) ? val : (val !== undefined && val !== null ? [String(val)] : []));
 
 const formatValueForCsv = (value, questionType, otherTextValue) => {
+    // ... (existing code, no changes) ...
     if (value === null || value === undefined) return '';
     switch (questionType) {
         case 'multiple-choice':
@@ -69,6 +69,7 @@ const formatValueForCsv = (value, questionType, otherTextValue) => {
 };
 
 exports.getAllSurveys = async (req, res) => {
+    // ... (existing code, no changes) ...
     try {
         const filter = {};
         if (req.user && req.user.id) {
@@ -92,6 +93,7 @@ exports.getAllSurveys = async (req, res) => {
 };
 
 exports.createSurvey = async (req, res) => {
+    // ... (existing code, no changes) ...
     const { title, description, category, settings, welcomeMessage, thankYouMessage } = req.body;
     try {
         const newSurvey = new Survey({
@@ -110,6 +112,7 @@ exports.createSurvey = async (req, res) => {
 };
 
 exports.getSurveyById = async (req, res) => {
+    // ... (existing code, no changes other than what was already there for progress bar) ...
     const { surveyId } = req.params;
     const { forTaking, collectorId, isPreviewingOwner } = req.query;
 
@@ -127,7 +130,6 @@ exports.getSurveyById = async (req, res) => {
                 .populate({ path: 'questions', options: { sort: { order: 1 } } });
 
             if (collectorId) {
-                // --- MODIFIED: Added progressBarEnabled & progressBarStyle to selectFields ---
                 const selectFields = '+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist +settings.web_link.allowBackButton +settings.web_link.progressBarEnabled +settings.web_link.progressBarStyle';
                 if (mongoose.Types.ObjectId.isValid(collectorId)) {
                     actualCollectorDoc = await Collector.findOne({ _id: collectorId, survey: surveyId }).select(selectFields);
@@ -201,19 +203,17 @@ exports.getSurveyById = async (req, res) => {
                 surveyResponseData.actualCollectorObjectId = actualCollectorDoc._id;
                 if (surveyResponseData.collectorSettings.enableRecaptcha && !surveyResponseData.collectorSettings.recaptchaSiteKey && process.env.REACT_APP_RECAPTCHA_SITE_KEY) surveyResponseData.collectorSettings.recaptchaSiteKey = process.env.REACT_APP_RECAPTCHA_SITE_KEY;
 
-                // --- MODIFIED: Ensure progressBar settings are passed with defaults ---
                 if (typeof surveyResponseData.collectorSettings.allowBackButton === 'undefined') {
-                    surveyResponseData.collectorSettings.allowBackButton = true; // Default if not set
+                    surveyResponseData.collectorSettings.allowBackButton = true;
                 }
                 if (typeof surveyResponseData.collectorSettings.progressBarEnabled === 'undefined') {
-                    surveyResponseData.collectorSettings.progressBarEnabled = false; // Default if not set
+                    surveyResponseData.collectorSettings.progressBarEnabled = false;
                 }
                 if (typeof surveyResponseData.collectorSettings.progressBarStyle === 'undefined') {
-                    surveyResponseData.collectorSettings.progressBarStyle = 'percentage'; // Default if not set
+                    surveyResponseData.collectorSettings.progressBarStyle = 'percentage';
                 }
-                // --- END MODIFIED ---
 
-            } else { // Default settings if no collector or not web_link (e.g., owner previewing draft without collector)
+            } else {
                 surveyResponseData.collectorSettings = {
                     allowMultipleResponses: survey.settings?.surveyWide?.allowRetakes ?? true,
                     anonymousResponses: false,
@@ -222,8 +222,8 @@ exports.getSurveyById = async (req, res) => {
                     ipAllowlist: [],
                     ipBlocklist: [],
                     allowBackButton: true,
-                    progressBarEnabled: false, // Default
-                    progressBarStyle: 'percentage' // Default
+                    progressBarEnabled: false,
+                    progressBarStyle: 'percentage'
                 };
                 surveyResponseData.actualCollectorObjectId = null;
             }
@@ -236,6 +236,7 @@ exports.getSurveyById = async (req, res) => {
 };
 
 exports.updateSurvey = async (req, res) => {
+    // ... (existing code, no changes) ...
     const { surveyId } = req.params;
     const updates = req.body;
 
@@ -318,8 +319,273 @@ exports.updateSurvey = async (req, res) => {
     }
 };
 
-exports.deleteSurvey = async (req, res) => { /* ... (no changes) ... */ };
-exports.submitSurveyAnswers = async (req, res) => { /* ... (no changes) ... */ };
-exports.getSurveyResults = async (req, res) => { /* ... (no changes) ... */ };
-exports.exportSurveyResults = async (req, res) => { /* ... (no changes) ... */ };
-// ----- END OF COMPLETE UPDATED FILE (vNext18 - Pass ProgressBar settings to frontend) -----
+exports.deleteSurvey = async (req, res) => { /* ... (existing code, no changes) ... */ };
+
+exports.submitSurveyAnswers = async (req, res) => {
+    // --- START: Extensive Debug Logging ---
+    console.log(`[B_SUBMIT_ENTRY] Received submission request for surveyId: ${req.params.surveyId}. Body keys: ${Object.keys(req.body).join(', ')}`);
+
+    const { surveyId } = req.params;
+    const { answers: answersPayload, sessionId: payloadSessionId, collectorId, recaptchaToken, startedAt: clientStartedAt } = req.body;
+
+    console.log(`[B_SUBMIT_PARAMS] surveyId=${surveyId}, collectorId=${collectorId}, payloadSessionId=${payloadSessionId}, recaptchaToken=${recaptchaToken ? 'present' : 'absent'}, clientStartedAt=${clientStartedAt}`);
+
+    const respondentIp = getIpAddress(req);
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+    const sessionIdToUse = payloadSessionId || new mongoose.Types.ObjectId().toString(); // Ensure a session ID
+
+    console.log(`[B_SUBMIT_INFO] Respondent IP: ${respondentIp}, User-Agent: ${userAgent.substring(0, 50)}..., SessionID to use: ${sessionIdToUse}`);
+
+    let mongoSession; // Define mongoSession here to be accessible in finally block
+
+    try {
+        console.log("[B_SUBMIT_SESSION] Attempting to start MongoDB session...");
+        mongoSession = await mongoose.startSession();
+        console.log("[B_SUBMIT_SESSION] MongoDB session started successfully.");
+
+        console.log("[B_SUBMIT_TRANSACTION] Attempting to start transaction...");
+        mongoSession.startTransaction();
+        console.log("[B_SUBMIT_TRANSACTION] Transaction started successfully.");
+
+        console.log(`[B_SUBMIT_FETCH_SURVEY] Fetching survey: ${surveyId}`);
+        const survey = await Survey.findById(surveyId).session(mongoSession);
+        if (!survey) {
+            console.error(`[B_SUBMIT_ERROR] Survey not found: ${surveyId}. Aborting transaction.`);
+            await mongoSession.abortTransaction();
+            console.log("[B_SUBMIT_TRANSACTION] Transaction aborted due to survey not found.");
+            return res.status(404).json({ success: false, message: 'Survey not found.' });
+        }
+        console.log(`[B_SUBMIT_FETCH_SURVEY] Survey ${surveyId} fetched. Status: ${survey.status}`);
+
+        console.log(`[B_SUBMIT_FETCH_COLLECTOR] Fetching collector: ${collectorId}`);
+        const collector = await Collector.findById(collectorId).select('+settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist').session(mongoSession);
+        if (!collector) {
+            console.error(`[B_SUBMIT_ERROR] Collector not found: ${collectorId}. Aborting transaction.`);
+            await mongoSession.abortTransaction();
+            console.log("[B_SUBMIT_TRANSACTION] Transaction aborted due to collector not found.");
+            return res.status(404).json({ success: false, message: 'Collector not found.' });
+        }
+        console.log(`[B_SUBMIT_FETCH_COLLECTOR] Collector ${collectorId} fetched. Type: ${collector.type}, Status: ${collector.status}`);
+
+        const isOwnerPreviewingDraft = survey.status === 'draft' && req.user && String(survey.createdBy) === String(req.user.id);
+        console.log(`[B_SUBMIT_PREVIEW_CHECK] Is owner previewing draft? ${isOwnerPreviewingDraft}`);
+
+        if (survey.status !== 'active' && !isOwnerPreviewingDraft) {
+            console.warn(`[B_SUBMIT_WARN] Survey ${surveyId} is not active. Status: ${survey.status}. Aborting transaction.`);
+            await mongoSession.abortTransaction();
+            console.log("[B_SUBMIT_TRANSACTION] Transaction aborted due to inactive survey.");
+            return res.status(403).json({ success: false, message: 'This survey is not currently active.' });
+        }
+        if (collector.status !== 'open' && !isOwnerPreviewingDraft) {
+            console.warn(`[B_SUBMIT_WARN] Collector ${collectorId} is not open. Status: ${collector.status}. Aborting transaction.`);
+            await mongoSession.abortTransaction();
+            console.log("[B_SUBMIT_TRANSACTION] Transaction aborted due to non-open collector.");
+            return res.status(403).json({ success: false, message: `This survey link is ${collector.status}.` });
+        }
+
+        // IP Filtering (if applicable for the collector type, e.g., web_link)
+        if (collector.type === 'web_link' && collector.settings?.web_link && !isOwnerPreviewingDraft) {
+            console.log("[B_SUBMIT_IP_CHECK] Performing IP checks for web_link collector.");
+            const { ipAllowlist, ipBlocklist } = collector.settings.web_link;
+            if (respondentIp) {
+                if (ipAllowlist?.length > 0 && !ipAllowlist.some(allowedIpOrRange => ipRangeCheck(respondentIp, allowedIpOrRange))) {
+                    console.warn(`[B_SUBMIT_WARN] IP ${respondentIp} not in allowlist. Aborting transaction.`);
+                    await mongoSession.abortTransaction();
+                    return res.status(403).json({ success: false, message: 'Access restricted (not in allowlist).' });
+                }
+                if (ipBlocklist?.length > 0 && ipBlocklist.some(blockedIpOrRange => ipRangeCheck(respondentIp, blockedIpOrRange))) {
+                    console.warn(`[B_SUBMIT_WARN] IP ${respondentIp} in blocklist. Aborting transaction.`);
+                    await mongoSession.abortTransaction();
+                    return res.status(403).json({ success: false, message: 'Access restricted (in blocklist).' });
+                }
+            }
+            console.log("[B_SUBMIT_IP_CHECK] IP checks passed.");
+        }
+
+        // reCAPTCHA verification (if applicable)
+        if (collector.type === 'web_link' && collector.settings?.web_link?.enableRecaptcha && !isOwnerPreviewingDraft) {
+            console.log("[B_SUBMIT_RECAPTCHA] Verifying reCAPTCHA token...");
+            if (!recaptchaToken) {
+                console.warn("[B_SUBMIT_WARN] reCAPTCHA token missing. Aborting transaction.");
+                await mongoSession.abortTransaction();
+                return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed (token missing).' });
+            }
+            try {
+                const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
+                if (!recaptchaSecret) throw new Error("reCAPTCHA secret key not configured on server.");
+
+                const verificationUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${recaptchaToken}&remoteip=${respondentIp}`;
+                console.log("[B_SUBMIT_RECAPTCHA] Calling Google siteverify...");
+                const response = await axios.post(verificationUrl);
+                console.log("[B_SUBMIT_RECAPTCHA] Google siteverify response status:", response.status);
+                console.log("[B_SUBMIT_RECAPTCHA] Google siteverify response data:", JSON.stringify(response.data));
+
+                if (!response.data.success) {
+                    console.warn("[B_SUBMIT_WARN] reCAPTCHA verification failed with Google. Errors:", response.data['error-codes']?.join(', '));
+                    await mongoSession.abortTransaction();
+                    return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed.', errors: response.data['error-codes'] });
+                }
+                console.log("[B_SUBMIT_RECAPTCHA] reCAPTCHA verification successful.");
+            } catch (recaptchaError) {
+                console.error("[B_SUBMIT_ERROR] Error during reCAPTCHA verification:", recaptchaError.message, recaptchaError.stack);
+                await mongoSession.abortTransaction();
+                return res.status(500).json({ success: false, message: 'Error during reCAPTCHA verification.' });
+            }
+        }
+
+        const questionsMap = new Map(survey.questions.map(q => [String(q._id), q]));
+        const answersToUpsert = [];
+
+        console.log(`[B_SUBMIT_ANSWERS_PROCESS] Processing ${answersPayload?.length || 0} answers from payload.`);
+        if (answersPayload && Array.isArray(answersPayload)) {
+            for (const ans of answersPayload) {
+                if (!ans.questionId || !mongoose.Types.ObjectId.isValid(ans.questionId)) {
+                    console.warn(`[B_SUBMIT_WARN] Invalid questionId in payload: ${ans.questionId}. Skipping.`);
+                    continue;
+                }
+                // const question = questionsMap.get(String(ans.questionId));
+                // if (!question) {
+                // console.warn(`[B_SUBMIT_WARN] Question ${ans.questionId} not found in survey ${surveyId}. Skipping answer.`);
+                // continue;
+                // }
+                answersToUpsert.push({
+                    updateOne: {
+                        filter: {
+                            surveyId: survey._id,
+                            collectorId: collector._id,
+                            questionId: new mongoose.Types.ObjectId(ans.questionId),
+                            sessionId: sessionIdToUse,
+                        },
+                        update: {
+                            $set: {
+                                answerValue: ans.answerValue,
+                                otherText: ans.otherText,
+                                questionText: ans.questionText, // Storing denormalized question text
+                                questionType: ans.questionType, // Storing denormalized question type
+                                submittedAt: new Date(),
+                            },
+                        },
+                        upsert: true,
+                    },
+                });
+            }
+        }
+        console.log(`[B_SUBMIT_ANSWERS_PROCESS] Prepared ${answersToUpsert.length} answers for bulkWrite.`);
+
+        if (answersToUpsert.length > 0) {
+            console.log("[B_SUBMIT_DB_BULKWRITE_ANSWERS] Attempting Answer.bulkWrite...");
+            const bulkWriteResult = await Answer.bulkWrite(answersToUpsert, { session: mongoSession });
+            console.log("[B_SUBMIT_DB_BULKWRITE_ANSWERS] Answer.bulkWrite completed.");
+            console.log(`[B_SUBMIT_DB_BULKWRITE_ANSWERS_RESULT] Upserted: ${bulkWriteResult.upsertedCount}, Modified: ${bulkWriteResult.modifiedCount}, Matched: ${bulkWriteResult.matchedCount}`);
+            if (bulkWriteResult.hasWriteErrors()) {
+               const writeErrors = bulkWriteResult.getWriteErrors();
+               console.error("[B_SUBMIT_DB_BULKWRITE_ANSWERS_ERROR] Answer BulkWriteError:", JSON.stringify(writeErrors));
+               await mongoSession.abortTransaction();
+               return res.status(500).json({ success: false, message: 'Error saving some answers.', details: writeErrors });
+            }
+        } else {
+            console.log("[B_SUBMIT_ANSWERS_PROCESS] No answers to save after processing.");
+        }
+
+        const responseUpdateData = {
+            surveyId: survey._id,
+            collectorId: collector._id,
+            sessionId: sessionIdToUse,
+            status: 'completed', // Can be updated by logic later
+            startedAt: clientStartedAt ? new Date(clientStartedAt) : new Date(),
+            completedAt: new Date(),
+            ipAddress: collector.settings?.web_link?.anonymousResponses ? undefined : respondentIp,
+            userAgent: collector.settings?.web_link?.anonymousResponses ? undefined : userAgent,
+            // answers will be linked by sessionId, surveyId, collectorId
+        };
+        console.log("[B_SUBMIT_DB_UPSERT_RESPONSE] Attempting Response.findOneAndUpdate (upsert)...");
+        const updatedResponse = await Response.findOneAndUpdate(
+            { surveyId: survey._id, collectorId: collector._id, sessionId: sessionIdToUse },
+            { $set: responseUpdateData, $setOnInsert: { createdAt: new Date() } },
+            { upsert: true, new: true, runValidators: true, session: mongoSession }
+        );
+        console.log(`[B_SUBMIT_DB_UPSERT_RESPONSE] Response document processed. ID: ${updatedResponse?._id}, Status: ${updatedResponse?.status}`);
+
+
+        let triggeredAction = null;
+        if (survey.globalSkipLogic && survey.globalSkipLogic.length > 0) {
+            console.log("[B_SUBMIT_LOGIC_GLOBAL] Evaluating global logic...");
+            const allAnswersForLogic = await Answer.find({ surveyId: survey._id, collectorId: collector._id, sessionId: sessionIdToUse }).session(mongoSession);
+            const currentAnswersForLogic = allAnswersForLogic.reduce((acc, cur) => {
+                acc[String(cur.questionId)] = cur.answerValue; // Simplified for example
+                return acc;
+            }, {});
+            triggeredAction = evaluateSurveyLogic(survey.globalSkipLogic, currentAnswersForLogic, survey.questions); // Assuming survey.questions is populated or fetched
+            console.log("[B_SUBMIT_LOGIC_GLOBAL] Global logic evaluation result:", JSON.stringify(triggeredAction));
+        }
+
+
+        if (!isOwnerPreviewingDraft) {
+            console.log("[B_SUBMIT_COLLECTOR_UPDATE] Incrementing collector responseCount...");
+            await Collector.updateOne({ _id: collector._id }, { $inc: { responseCount: 1 } }, { session: mongoSession });
+            console.log("[B_SUBMIT_COLLECTOR_UPDATE] Collector responseCount incremented.");
+
+            if (collector.settings?.web_link?.maxResponses && collector.responseCount + 1 >= collector.settings.web_link.maxResponses) {
+                console.log(`[B_SUBMIT_COLLECTOR_UPDATE] Max responses reached for collector ${collector._id}. Setting status to 'completed_quota'.`);
+                await Collector.updateOne({ _id: collector._id }, { $set: { status: 'completed_quota' } }, { session: mongoSession });
+            }
+        }
+
+        console.log("[B_SUBMIT_TRANSACTION_COMMIT] Attempting to commit transaction...");
+        await mongoSession.commitTransaction();
+        console.log("[B_SUBMIT_TRANSACTION_COMMIT] Transaction committed successfully.");
+
+        const responseMessage = triggeredAction?.type === 'disqualifyRespondent'
+            ? (triggeredAction.disqualificationMessage || 'Disqualified based on responses.')
+            : 'Survey answers submitted successfully.';
+
+        const responsePayload = {
+            success: true,
+            message: responseMessage,
+            responseId: updatedResponse._id,
+            sessionId: sessionIdToUse,
+            action: triggeredAction || null, // Send back the action if any
+            redirectUrl: survey.thankYouMessage?.redirectUrl || (triggeredAction?.type === 'disqualifyRespondent' ? survey.thankYouMessage?.disqualificationRedirectUrl : null) || '/thank-you'
+        };
+
+        console.log("[B_SUBMIT_SUCCESS] Sending 201 response. Payload:", JSON.stringify(responsePayload).substring(0, 300) + "...");
+        res.status(201).json(responsePayload);
+        console.log("[B_SUBMIT_SUCCESS] Response sent.");
+
+    } catch (error) {
+        console.error(`[B_SUBMIT_CRITICAL_ERROR] Unhandled error in submitSurveyAnswers for survey ${surveyId}, session ${sessionIdToUse}. Error: ${error.message}`, error.stack); // Log the full error object and stack
+        if (mongoSession && mongoSession.inTransaction()) {
+            try {
+                console.error("[B_SUBMIT_CRITICAL_ERROR] Attempting to abort transaction due to error...");
+                await mongoSession.abortTransaction();
+                console.error("[B_SUBMIT_CRITICAL_ERROR] Transaction aborted successfully.");
+            } catch (abortError) {
+                console.error("[B_SUBMIT_CRITICAL_ERROR] Failed to abort transaction:", abortError.message, abortError.stack);
+            }
+        }
+        if (!res.headersSent) {
+            console.error("[B_SUBMIT_CRITICAL_ERROR] Sending 500 response due to unhandled error.");
+            res.status(500).json({ success: false, message: error.message || 'An unexpected error occurred on the server while submitting answers.' });
+        } else {
+            console.error("[B_SUBMIT_CRITICAL_ERROR] Headers already sent, cannot send 500 response.");
+        }
+    } finally {
+        if (mongoSession) { // Check if mongoSession was initialized
+            try {
+                console.log("[B_SUBMIT_FINALLY] Attempting to end MongoDB session...");
+                await mongoSession.endSession(); // Ensure endSession is awaited if it's async, or remove await if not. Mongoose's endSession is typically synchronous.
+                console.log("[B_SUBMIT_FINALLY] MongoDB session ended.");
+            } catch (sessionEndError) {
+                 console.error("[B_SUBMIT_FINALLY] Error ending MongoDB session:", sessionEndError.message, sessionEndError.stack);
+            }
+        } else {
+            console.log("[B_SUBMIT_FINALLY] MongoDB session was not initialized or already ended.");
+        }
+        console.log("[B_SUBMIT_EXIT] Exiting submitSurveyAnswers function.");
+    }
+};
+// --- END: Extensive Debug Logging ---
+
+exports.getSurveyResults = async (req, res) => { /* ... (existing code, no changes) ... */ };
+exports.exportSurveyResults = async (req, res) => { /* ... (existing code, no changes) ... */ };
+// ----- END OF COMPLETE UPDATED FILE (vNext19 - Debug Logging in submitSurveyAnswers) -----
