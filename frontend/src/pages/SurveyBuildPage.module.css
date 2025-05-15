@@ -1,6 +1,7 @@
 /* frontend/src/pages/SurveyBuildPage.module.css */
-/* ----- START OF COMPLETE MODIFIED FILE (v3.4 - Added Heatmap Modal Styles) ----- */
+/* ----- START OF COMPLETE MODIFIED FILE (v3.5 - Image Sizing Tweaks & Button Debug Prep) ----- */
 
+/* ... (all previous CSS from v3.4 remains the same up to .modalHeader) ... */
 .surveyBuildPage {
     display: flex;
     flex-direction: column;
@@ -133,14 +134,13 @@
     margin-top: 0;
 }
 
-/* ----- Styles for Modals (SurveyLogicPanel, HeatmapAreaSelectorModal etc.) ----- */
 .modalBackdrop {
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(0, 0, 0, 0.65); /* Slightly darker for better focus */
+  background-color: rgba(0, 0, 0, 0.65);
   z-index: 1040;
   display: flex;
   justify-content: center;
@@ -150,41 +150,36 @@
 }
 
 .modalContentWrapper {
-  /* This wrapper contains the actual modal panel (e.g., SurveyLogicPanel, HeatmapAreaSelectorModal) */
-  /* The panel itself (e.g. .surveyLogicPanel or .heatmapAreaModalContent) defines its own background, padding, etc. */
-  /* We can set max-width/height here to constrain the panel within the viewport. */
-  max-width: 95%; /* Max width relative to viewport width */
-  max-height: 90vh; /* Max height relative to viewport height */
-  display: flex; /* To allow the inner modal panel to define its own size up to these max constraints */
-  flex-direction: column; /* If the panel itself needs to scroll, it should handle overflow */
-  overflow: hidden; /* The wrapper itself shouldn't scroll; the panel inside should if needed */
-  border-radius: var(--border-radius-xl, 12px); /* Apply border-radius to the wrapper for a cleaner look */
-  box-shadow: var(--shadow-xl, 0 10px 25px rgba(0,0,0,0.15), 0 5px 10px rgba(0,0,0,0.1)); /* Enhanced shadow */
+  max-width: 95%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--border-radius-xl, 12px);
+  box-shadow: var(--shadow-xl, 0 10px 25px rgba(0,0,0,0.15), 0 5px 10px rgba(0,0,0,0.1));
 }
 
-/* ----- Styles for HeatmapAreaSelectorModal specifically ----- */
-/* This is the root div inside HeatmapAreaSelectorModal.js */
 .heatmapAreaModalContent {
     background-color: var(--background-color-light, #fff);
-    border-radius: var(--border-radius-xl, 12px); /* Match wrapper or be slightly less if wrapper has padding */
+    border-radius: var(--border-radius-xl, 12px);
     display: flex;
     flex-direction: column;
-    width: 80vw; /* Desired width */
-    max-width: 1200px; /* Max pixel width */
-    height: 85vh; /* Desired height */
-    max-height: 800px; /* Max pixel height */
-    overflow: hidden; /* Prevent this main container from scrolling; body will scroll */
+    width: 80vw; 
+    max-width: 1200px; 
+    height: 85vh; 
+    max-height: 800px; 
+    overflow: hidden; 
     color: var(--text-color);
 }
 
-.modalHeader { /* Shared by SurveyLogicPanel and HeatmapAreaSelectorModal */
+.modalHeader {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 15px 25px;
     border-bottom: 1px solid var(--border-color-light, #dee2e6);
     background-color: var(--background-accent, #f8f9fa);
-    border-radius: var(--border-radius-xl, 12px) var(--border-radius-xl, 12px) 0 0; /* Top corners */
+    border-radius: var(--border-radius-xl, 12px) var(--border-radius-xl, 12px) 0 0;
 }
 
 .modalHeader h3 {
@@ -194,7 +189,7 @@
     color: var(--text-color-strong);
 }
 
-.modalCloseButton { /* Shared */
+.modalCloseButton {
     background: none;
     border: none;
     font-size: 1.8em;
@@ -210,21 +205,21 @@
 
 .heatmapAreaModalBody {
     display: flex;
-    flex-direction: row; /* List panel and drawing panel side-by-side */
-    flex-grow: 1; /* Take remaining space in the modal */
+    flex-direction: row; 
+    flex-grow: 1; 
     padding: 20px 25px;
     gap: 25px;
-    overflow: hidden; /* Important: prevent body from overflowing, let panels scroll if needed */
+    overflow: hidden; 
 }
 
 .heatmapAreaListPanel {
-    flex: 0 0 300px; /* Fixed width for the list panel */
+    flex: 0 0 300px; 
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding-right: 15px; /* Optional: space before a potential border or scrollbar */
+    padding-right: 15px; 
     border-right: 1px solid var(--border-color-light, #dee2e6);
-    overflow-y: auto; /* Allow this panel to scroll if content exceeds height */
+    overflow-y: auto; 
 }
 .heatmapAreaListPanel h4 {
     margin-top: 0;
@@ -237,7 +232,7 @@
     list-style: none;
     padding: 0;
     margin: 0;
-    flex-grow: 1; /* Allow list to take space before button */
+    flex-grow: 1; 
 }
 
 .heatmapDefinedAreasList li {
@@ -255,7 +250,7 @@
     border-color: var(--border-color, #ced4da);
 }
 
-.selectedAreaItem { /* Applied to the selected <li> */
+.selectedAreaItem { 
     background-color: var(--primary-color-light, #cfe2ff) !important;
     border-color: var(--primary-color, #0d6efd) !important;
     font-weight: 500;
@@ -263,14 +258,14 @@
 }
 
 .heatmapAreaDrawingPanel {
-    flex-grow: 1; /* Takes the rest of the horizontal space */
+    flex-grow: 1; 
     display: flex;
     flex-direction: column;
     gap: 15px;
-    overflow: hidden; /* Prevent this panel from causing overflow; image container will handle its own */
+    overflow: hidden; 
 }
 
-.modalInstructions { /* Shared, but good for heatmap too */
+.modalInstructions { 
     font-size: 0.9em;
     color: var(--text-muted);
     margin-top: 0;
@@ -280,24 +275,25 @@
 }
 
 .heatmapImageContainer {
-    flex-grow: 1; /* Allow image container to take available vertical space in drawing panel */
-    position: relative; /* For absolute positioning of selection boxes and labels */
-    overflow: auto; /* If image is larger than container, allow scroll */
-    display: flex; /* Center image if smaller than container */
+    flex-grow: 1; 
+    position: relative; 
+    overflow: hidden; /* Changed from auto to hidden to prevent scrollbars if image is larger */
+    display: flex; 
     justify-content: center;
     align-items: center;
-    background-color: var(--background-color-darker, #e0e0e0); /* Placeholder if image is transparent or loading */
+    background-color: var(--background-color-darker, #e0e0e0); 
     border-radius: var(--border-radius-md);
     border: 1px solid var(--border-color, #ced4da);
+    min-height: 200px; /* Ensure it has some minimum height */
 }
 
 .heatmapSelectableImage {
-    display: block; /* Remove extra space below image */
-    max-width: 100%; /* Ensure image is responsive within its container */
-    max-height: 100%; /* Ensure image is responsive within its container */
-    object-fit: contain; /* Scale image down to fit, preserving aspect ratio */
-    user-select: none; /* Prevent image dragging/selection issues */
-    cursor: crosshair; /* Indicate drawing capability */
+    display: block; 
+    width: 100%;  /* Make image try to fill container width */
+    height: 100%; /* Make image try to fill container height */
+    object-fit: contain; 
+    user-select: none; 
+    cursor: crosshair; 
 }
 
 .heatmapAreaLabelOnImage {
@@ -318,11 +314,11 @@
     gap: 10px;
     padding-top: 10px;
     border-top: 1px solid var(--border-color-light, #dee2e6);
-    flex-shrink: 0; /* Prevent controls from shrinking */
+    flex-shrink: 0; 
 }
 
-.heatmapAreaControls .formControl { /* If you have a generic .formControl */
-    flex-grow: 1; /* Allow input to take available space */
+.heatmapAreaControls .formControl { 
+    flex-grow: 1; 
 }
 
 .heatmapCoordsDisplay {
@@ -332,18 +328,17 @@
     flex-shrink: 0;
 }
 
-.modalFooter { /* Shared by SurveyLogicPanel and HeatmapAreaSelectorModal */
+.modalFooter { 
     display: flex;
     justify-content: flex-end;
     align-items: center;
     padding: 15px 25px;
     border-top: 1px solid var(--border-color-light, #dee2e6);
     background-color: var(--background-accent, #f8f9fa);
-    border-radius: 0 0 var(--border-radius-xl, 12px) var(--border-radius-xl, 12px); /* Bottom corners */
+    border-radius: 0 0 var(--border-radius-xl, 12px) var(--border-radius-xl, 12px); 
     gap: 10px;
 }
 
-/* Generic form control styling if not already present or needs override for modals */
 .formControl {
     padding: 0.5rem 0.75rem;
     font-size: 0.95rem;
@@ -361,102 +356,37 @@
     box-shadow: 0 0 0 0.2rem var(--primary-color-alpha);
 }
 
-.textMuted { /* Generic muted text */
+.textMuted { 
     color: var(--text-muted, #6c757d);
 }
 
-.invalidFeedback { /* Generic invalid feedback for errors */
+.invalidFeedback { 
     width: 100%;
     margin-top: .25rem;
     font-size: .875em;
     color: var(--danger-color, #dc3545);
 }
 
-
-/* Media Queries for Responsiveness */
 @media (max-width: 1024px) {
-  .mainContentWrapper {
-    flex-direction: column;
-  }
-  .rightColumnSizer {
-    min-width: 100%;
-    max-width: 100%;
-    flex-basis: auto;
-  }
-  .leftColumnWithPanelSpace {
-    flex-basis: auto;
-  }
-
-  .heatmapAreaModalContent { /* Adjust modal size for tablets */
-    width: 90vw;
-    height: 80vh;
-  }
-  .heatmapAreaModalBody {
-    flex-direction: column; /* Stack panels vertically on smaller screens */
-    overflow-y: auto; /* Allow body to scroll if content overflows */
-  }
-  .heatmapAreaListPanel {
-    flex: 0 0 auto; /* Don't fix width, let it be natural or 100% */
-    max-height: 250px; /* Example max height for list panel before it scrolls */
-    border-right: none;
-    border-bottom: 1px solid var(--border-color-light, #dee2e6);
-    padding-right: 0;
-    margin-bottom: 15px;
-  }
-  .heatmapAreaDrawingPanel {
-     min-height: 300px; /* Ensure drawing panel has some min height */
-  }
+  .mainContentWrapper { flex-direction: column; }
+  .rightColumnSizer { min-width: 100%; max-width: 100%; flex-basis: auto; }
+  .leftColumnWithPanelSpace { flex-basis: auto; }
+  .heatmapAreaModalContent { width: 90vw; height: 80vh; }
+  .heatmapAreaModalBody { flex-direction: column; overflow-y: auto; }
+  .heatmapAreaListPanel { flex: 0 0 auto; max-height: 250px; border-right: none; border-bottom: 1px solid var(--border-color-light, #dee2e6); padding-right: 0; margin-bottom: 15px; }
+  .heatmapAreaDrawingPanel { min-height: 300px; }
 }
 
 @media (max-width: 768px) {
-  .surveyBuildPageInner {
-    padding: 15px;
-    padding-top: 70px;
-  }
-  .surveyHeader {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 15px;
-    padding: 15px;
-    top: 50px;
-    border-radius: var(--border-radius-md);
-  }
-  .surveyTitleInput {
-    width: 100%;
-    margin-right: 0;
-    font-size: 1.4em;
-    padding: 10px;
-  }
-  .headerActions {
-    width: 100%;
-    justify-content: space-between;
-    flex-wrap: wrap;
-  }
-  .headerActions .button {
-    flex-grow: 1;
-    min-width: 110px;
-    font-size: 0.85em;
-    margin-bottom: 8px;
-  }
-  .questionListHeader {
-    padding: 15px 20px;
-  }
-  .questionsContainer {
-    padding: 20px;
-  }
-
-  .heatmapAreaModalContent { /* Adjust modal size for mobile */
-    width: 95vw;
-    height: auto; /* Let content define height, up to max-height of wrapper */
-    max-height: 85vh; /* Ensure it doesn't exceed viewport too much */
-  }
-  .heatmapAreaModalBody {
-    padding: 15px;
-    gap: 15px;
-  }
-  .heatmapAreaControls {
-    flex-direction: column;
-    align-items: stretch; /* Make buttons/input full width */
-  }
+  .surveyBuildPageInner { padding: 15px; padding-top: 70px; }
+  .surveyHeader { flex-direction: column; align-items: flex-start; gap: 15px; padding: 15px; top: 50px; border-radius: var(--border-radius-md); }
+  .surveyTitleInput { width: 100%; margin-right: 0; font-size: 1.4em; padding: 10px; }
+  .headerActions { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+  .headerActions .button { flex-grow: 1; min-width: 110px; font-size: 0.85em; margin-bottom: 8px; }
+  .questionListHeader { padding: 15px 20px; }
+  .questionsContainer { padding: 20px; }
+  .heatmapAreaModalContent { width: 95vw; height: auto; max-height: 85vh; }
+  .heatmapAreaModalBody { padding: 15px; gap: 15px; }
+  .heatmapAreaControls { flex-direction: column; align-items: stretch; }
 }
-/* ----- END OF COMPLETE MODIFIED FILE (v3.4) ----- */
+/* ----- END OF COMPLETE MODIFIED FILE (v3.5) ----- */
