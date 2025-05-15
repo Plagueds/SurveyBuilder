@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE UPDATED FILE (vNext22 - Corrected logic function call) -----
+// ----- START OF COMPLETE UPDATED FILE (vNext23 - Pass answer array to logic) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -7,8 +7,7 @@ const Question = require('../models/Question');
 const Answer = require('../models/Answer');
 const Collector = require('../models/Collector');
 const Response = require('../models/Response');
-// Correctly import based on what's exported and used
-const { evaluateAllLogic } = require('../utils/logicEvaluator'); // evaluateSurveyLogic was not exported
+const { evaluateAllLogic } = require('../utils/logicEvaluator');
 const axios = require('axios');
 const ipRangeCheck = require('ip-range-check');
 
@@ -478,11 +477,11 @@ exports.submitSurveyAnswers = async (req, res) => {
         let triggeredAction = null;
         if (survey.globalSkipLogic && survey.globalSkipLogic.length > 0 && survey.questions && survey.questions.length > 0) {
             console.log("[B_SUBMIT_LOGIC_GLOBAL] Evaluating global logic...");
+            // Fetch all answers for the current session to pass to the logic evaluator
             const allAnswersForLogic = await Answer.find({ survey: survey._id, collector: collector._id, sessionId: sessionIdToUse }).session(mongoSession);
-            const currentAnswersForLogic = allAnswersForLogic.reduce((acc, cur) => { acc[String(cur.questionId)] = cur.answerValue; return acc; }, {});
             
-            // *** CORRECTED FUNCTION CALL HERE ***
-            triggeredAction = evaluateAllLogic(survey.globalSkipLogic, currentAnswersForLogic, survey.questions); 
+            // *** PASS THE ARRAY 'allAnswersForLogic' DIRECTLY ***
+            triggeredAction = evaluateAllLogic(survey.globalSkipLogic, allAnswersForLogic, survey.questions); 
             
             console.log("[B_SUBMIT_LOGIC_GLOBAL] Global logic evaluation result:", JSON.stringify(triggeredAction));
             if (triggeredAction && triggeredAction.type === 'disqualifyRespondent' && updatedResponse) {
@@ -697,4 +696,4 @@ exports.exportSurveyResults = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error exporting survey results.' });
     }
 };
-// ----- END OF COMPLETE UPDATED FILE (vNext22 - Corrected logic function call) -----
+// ----- END OF COMPLETE UPDATED FILE (vNext23 - Pass answer array to logic) -----
