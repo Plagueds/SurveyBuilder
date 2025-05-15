@@ -1,30 +1,29 @@
 // frontend/src/components/logic/HeatmapAreaSelectorModal.js
-// ----- START OF UPDATED FILE (v2.4 - Adapted for external backdrop and event handling) -----
+// ----- START OF UPDATED FILE (v2.5 - Confirmed for SurveyBuildPage hosting) -----
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
-const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose methods
-    isOpen, // Keep isOpen for internal logic if any; parent controls actual visibility
+const HeatmapAreaSelectorModal = forwardRef(({
+    isOpen,
     onClose,
     onSaveAreas,
     imageUrl,
-    initialAreas = [],
+    initialAreas = [], // ensureArray is handled by SBP before passing here
     styles,
-    onDrawingStateChange // New prop to inform parent about drawing state
-}, ref) => { // Add ref as second argument
+    onDrawingStateChange
+}, ref) => {
     const [areas, setAreas] = useState([]);
     const [selectedAreaId, setSelectedAreaId] = useState(null);
     const [editingAreaName, setEditingAreaName] = useState('');
     const [currentDrawing, setCurrentDrawing] = useState(null);
-    const [isDrawing, setIsDrawingState] = useState(false); // Renamed to avoid conflict with prop
+    const [isDrawing, setIsDrawingState] = useState(false);
     const [startPoint, setStartPoint] = useState({ x: 0, y: 0 });
     const [imageRenderedSize, setImageRenderedSize] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
     const [error, setError] = useState('');
 
     const imageRef = useRef(null);
-    const drawingCanvasRef = useRef(null); // This is the container for the image and drawing operations
+    const drawingCanvasRef = useRef(null);
 
-    // Inform parent about drawing state changes
     useEffect(() => {
         if (typeof onDrawingStateChange === 'function') {
             onDrawingStateChange(isDrawing);
@@ -32,63 +31,74 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
     }, [isDrawing, onDrawingStateChange]);
 
     useEffect(() => {
-        // Reset state when isOpen becomes true (modal is "opened" by parent)
-        if (isOpen) {
+        if (isOpen) { // When modal is opened/props change
             const processedAreas = initialAreas.map(area => ({
                 ...area,
-                id: area.id || uuidv4(),
+                id: area.id || uuidv4(), // Ensure ID exists
             }));
             setAreas(processedAreas);
             setSelectedAreaId(null);
             setEditingAreaName('');
             setCurrentDrawing(null);
             setError('');
-            setImageRenderedSize({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 });
-            // setIsDrawingState(false); // Ensure drawing is reset
+            // Reset drawing state when modal is re-opened with potentially new data
+            setIsDrawingState(false); 
+            setImageRenderedSize({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0 }); // Recalculate on image load
         }
-    }, [initialAreas, isOpen]);
+    }, [initialAreas, isOpen]); // Rerun if isOpen changes or initialAreas change
 
     const updateImageRenderedSize = useCallback(() => {
-        if (imageRef.current) {
+        if (imageRef.current && imageRef.current.complete && imageRef.current.naturalWidth > 0) {
             setImageRenderedSize({
                 width: imageRef.current.offsetWidth,
                 height: imageRef.current.offsetHeight,
                 naturalWidth: imageRef.current.naturalWidth,
                 naturalHeight: imageRef.current.naturalHeight
             });
+        } else if (imageRef.current) {
+            // Image might not be loaded yet, or offsetWidth/Height is 0
+            // console.warn("Heatmap image not fully ready for size calculation or not visible.");
         }
     }, []);
 
+
     useEffect(() => {
         const imgElement = imageRef.current;
-        const handleLoad = () => updateImageRenderedSize();
-
+        const handleLoad = () => {
+            // console.log("Image loaded, attempting to update size.");
+            updateImageRenderedSize();
+        };
+    
         if (isOpen && imgElement) {
+            // console.log("Modal open, image element exists. Complete:", imgElement.complete, "NaturalW:", imgElement.naturalWidth);
             if (imgElement.complete && imgElement.naturalWidth > 0) {
-                handleLoad();
+                handleLoad(); // Already loaded
             } else {
                 imgElement.addEventListener('load', handleLoad);
             }
+            // Add resize listener for window to re-calculate image dimensions
             window.addEventListener('resize', updateImageRenderedSize);
         }
+    
         return () => {
-            if (imgElement) imgElement.removeEventListener('load', handleLoad);
+            if (imgElement) {
+                imgElement.removeEventListener('load', handleLoad);
+            }
             window.removeEventListener('resize', updateImageRenderedSize);
         };
-    }, [isOpen, updateImageRenderedSize]);
+    }, [isOpen, updateImageRenderedSize]); // updateImageRenderedSize is stable due to useCallback
 
     const getMousePositionOnImage = useCallback((event) => {
-        if (!drawingCanvasRef.current || !imageRef.current || !imageRef.current.complete || imageRef.current.naturalWidth === 0) {
+        if (!drawingCanvasRef.current || !imageRef.current || !imageRef.current.complete || imageRef.current.naturalWidth === 0 || imageRenderedSize.width === 0) {
+            // console.warn("Cannot get mouse position: canvas/image ref not ready or image not loaded/sized.");
             return { x: 0, y: 0, valid: false };
         }
-        const canvasContainer = drawingCanvasRef.current; // Use the drawingCanvasRef for bounds
+        const canvasContainer = drawingCanvasRef.current;
         const rect = canvasContainer.getBoundingClientRect();
         
-        // Use clientX/Y as they are global, then adjust for element's position and border/padding
         let x = event.clientX - rect.left;
         let y = event.clientY - rect.top;
 
-        // Clamp to image dimensions
         x = Math.max(0, Math.min(x, imageRenderedSize.width));
         y = Math.max(0, Math.min(y, imageRenderedSize.height));
         return { x, y, valid: true };
@@ -97,11 +107,14 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
 
     const handleMouseDownOnCanvas = (event) => {
         if (event.button !== 0 || !imageRenderedSize.width || !imageRenderedSize.height) return;
-        event.preventDefault(); // Prevent text selection, etc.
-        event.stopPropagation(); // Stop event from bubbling to parent backdrop click
+        event.preventDefault(); 
+        event.stopPropagation(); 
         
         const pos = getMousePositionOnImage(event);
-        if (!pos.valid) return;
+        if (!pos.valid) {
+            // console.warn("Mouse down on canvas, but position is invalid.");
+            return;
+        }
         
         setIsDrawingState(true);
         setStartPoint({ x: pos.x, y: pos.y });
@@ -114,10 +127,8 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
         setError('');
     };
 
-    // These will be called by the parent (LogicConditionEditor)
     const handleGlobalMouseMove = useCallback((event) => {
         if (!isDrawing || !imageRenderedSize.width || !imageRenderedSize.height) return;
-        // No preventDefault/stopPropagation here as the event is on the backdrop
         const currentPos = getMousePositionOnImage(event);
         if (!currentPos.valid) return;
 
@@ -134,21 +145,18 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
         });
     }, [isDrawing, imageRenderedSize, startPoint, getMousePositionOnImage]);
 
-    const handleGlobalMouseUp = useCallback((event) => {
+    const handleGlobalMouseUp = useCallback(() => { // Event arg not strictly needed if not used
         if (!isDrawing) return;
-        // No preventDefault/stopPropagation here
         setIsDrawingState(false);
         if (currentDrawing && (currentDrawing.width < 0.001 || currentDrawing.height < 0.001)) {
-            setCurrentDrawing(null); // Area too small, discard
+            setCurrentDrawing(null); 
         }
     }, [isDrawing, currentDrawing]);
 
-    // Expose handlers to parent via ref
     useImperativeHandle(ref, () => ({
         handleGlobalMouseMove,
         handleGlobalMouseUp
     }));
-
 
     const handleSelectAreaFromList = (areaId) => {
         setSelectedAreaId(areaId);
@@ -171,30 +179,29 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
             width: Number(currentDrawing.width), height: Number(currentDrawing.height),
         };
         if (selectedAreaId) {
-            setAreas(areas.map(a => a.id === selectedAreaId ? { ...a, ...areaData } : a));
+            setAreas(prevAreas => prevAreas.map(a => a.id === selectedAreaId ? { ...a, ...areaData } : a));
         } else {
-            setAreas([...areas, { id: uuidv4(), ...areaData }]);
+            setAreas(prevAreas => [...prevAreas, { id: uuidv4(), ...areaData }]);
         }
         setSelectedAreaId(null); setEditingAreaName(''); setCurrentDrawing(null); setError('');
     };
 
     const handleDeleteSelectedArea = () => {
         if (selectedAreaId) {
-            setAreas(areas.filter(a => a.id !== selectedAreaId));
+            setAreas(prevAreas => prevAreas.filter(a => a.id !== selectedAreaId));
             setSelectedAreaId(null); setEditingAreaName(''); setCurrentDrawing(null); setError('');
         }
     };
     
     const handleStartNewAreaDefinition = () => {
         setSelectedAreaId(null); setEditingAreaName(''); setCurrentDrawing(null); setError('');
-        setIsDrawingState(false); // Ensure drawing state is reset
+        setIsDrawingState(false);
     };
 
     const handleMainSaveAllAreas = () => {
-        console.log("[HeatmapModal v2.4] handleMainSaveAllAreas called."); 
+        console.log("[HeatmapModal v2.5] handleMainSaveAllAreas called."); 
         if (areas.some(a => !a.name || a.name.trim() === '')) { 
             setError("All defined areas must have a name."); 
-            console.warn("[HeatmapModal v2.4] Save aborted: Some areas have no name.");
             return; 
         }
         const finalAreasToSave = areas.map(a => ({
@@ -202,19 +209,15 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
             x: Number(a.x), y: Number(a.y),
             width: Number(a.width), height: Number(a.height),
         }));
-        console.log("[HeatmapModal v2.4] Calling onSaveAreas with:", JSON.stringify(finalAreasToSave));
         if (typeof onSaveAreas === 'function') {
             onSaveAreas(finalAreasToSave);
         } else {
-            console.error("[HeatmapModal v2.4] onSaveAreas is not a function! Type:", typeof onSaveAreas);
+            console.error("[HeatmapModal v2.5] onSaveAreas is not a function!");
         }
+        // onClose(); // The parent (SBP) will handle closing after save.
     };
 
-    // If parent isn't "open" (though it primarily controls visibility via conditional rendering),
-    // this component effectively renders nothing, or its state is reset by useEffect above.
-    // The actual visibility is controlled by LogicConditionEditor.
-    if (!isOpen && !areas.length) return null;
-
+    if (!isOpen) return null; // Parent controls rendering
 
     const activeRectangleToDisplay = currentDrawing;
     const selectionBoxStyle = activeRectangleToDisplay ? {
@@ -226,15 +229,12 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
         border: '2px dashed var(--primary-color, red)',
         backgroundColor: 'var(--primary-color-alpha, rgba(255, 0, 0, 0.2))',
         boxSizing: 'border-box',
-        pointerEvents: 'none', // Crucial: this should not interfere with mouse events on drawingCanvasRef
+        pointerEvents: 'none', 
         zIndex: 10,
     } : { display: 'none' };
 
     return (
-        // Removed the outermost modalBackdrop div. Parent (LogicConditionEditor) now provides this.
-        // The mouse move/up/leave handlers that were on the backdrop are now handled by LogicConditionEditor
-        // and will call the exposed handleGlobalMouseMove/Up methods.
-        <div className={`${styles.modalContent} ${styles.heatmapAreaModalContent}`}> {/* This is now the root */}
+        <div className={`${styles.modalContent} ${styles.heatmapAreaModalContent}`}>
             <div className={styles.modalHeader}>
                 <h3>Manage Heatmap Areas</h3>
                 <button onClick={onClose} className={styles.modalCloseButton}>&times;</button>
@@ -274,8 +274,7 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
                     <div
                         ref={drawingCanvasRef}
                         className={styles.heatmapImageContainer}
-                        onMouseDown={handleMouseDownOnCanvas} // MouseDown is specific to the canvas
-                        // MouseMove and MouseUp are now handled by the backdrop in LogicConditionEditor
+                        onMouseDown={handleMouseDownOnCanvas}
                     >
                         <img
                             ref={imageRef}
@@ -283,6 +282,7 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
                             alt="Heatmap for area selection"
                             draggable="false"
                             className={styles.heatmapSelectableImage}
+                            onLoad={updateImageRenderedSize} // Added onLoad here for re-renders/src changes
                         />
                         {imageRenderedSize.width > 0 && areas.map(area => (
                             <div key={`display-${area.id}`} style={{
@@ -338,7 +338,7 @@ const HeatmapAreaSelectorModal = forwardRef(({ // Use forwardRef to expose metho
             </div>
         </div>
     );
-}); // Close forwardRef
+});
 
 export default HeatmapAreaSelectorModal;
-// ----- END OF UPDATED FILE (v2.4 - Adapted for external backdrop and event handling) -----
+// ----- END OF UPDATED FILE (v2.5 - Confirmed for SurveyBuildPage hosting) -----

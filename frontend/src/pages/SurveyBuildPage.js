@@ -1,6 +1,6 @@
 // frontend/src/pages/SurveyBuildPage.js
-// ----- START OF COMPLETE UPDATED FILE (v1.3 - Send full question objects on save) -----
-import React, { useState, useEffect, useCallback } from 'react';
+// ----- START OF COMPLETE UPDATED FILE (v1.4 - Integrated Heatmap Area Manager Modal) -----
+import React, { useState, useEffect, useCallback, useRef } from 'react'; // Added useRef
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -11,9 +11,10 @@ import QuestionPropertiesPanel from '../components/QuestionEditPanel';
 import SurveyLogicPanel from '../components/SurveyLogicPanel';
 import SurveySettingsPanel from '../components/SurveySettingsPanel';
 import QuestionListItem from '../components/QuestionListItem';
+import CollectorsPanel from '../components/CollectorsPanel';
+import HeatmapAreaSelectorModal from '../components/logic/HeatmapAreaSelectorModal'; // Import the modal
 import styles from './SurveyBuildPage.module.css';
 import surveyApi from '../api/surveyApi';
-import CollectorsPanel from '../components/CollectorsPanel';
 
 const SurveyBuildPage = () => {
     const { surveyId: routeSurveyId } = useParams();
@@ -30,8 +31,17 @@ const SurveyBuildPage = () => {
     const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
     const [isCollectorsPanelOpen, setIsCollectorsPanelOpen] = useState(false);
 
+    // --- State for Heatmap Area Manager Modal ---
+    const [isAreaManagerModalOpen, setIsAreaManagerModalOpen] = useState(false);
+    const [questionForAreaManagement, setQuestionForAreaManagement] = useState(null); // Stores the full question object
+    const [isHeatmapDrawingForModal, setIsHeatmapDrawingForModal] = useState(false);
+    const heatmapModalRef = useRef();
+
+
     const [collectors, setCollectors] = useState([]);
     const [isLoadingCollectors, setIsLoadingCollectors] = useState(false);
+
+    const ensureArray = (value) => (Array.isArray(value) ? value : (value === undefined || value === null ? [] : [value]));
 
     const fetchSurveyData = useCallback(async (options = {}) => {
         if (!routeSurveyId) {
@@ -180,29 +190,21 @@ const SurveyBuildPage = () => {
             title: survey.title.trim(), 
             description: survey.description || '', 
             status: survey.status || 'draft',
-            // +++ CHANGE HERE: Send the full question objects from the local state +++
-            questions: survey.questions || [], // This now sends full objects, including definedHeatmapAreas
-            
+            questions: survey.questions || [], 
             globalSkipLogic: survey.globalSkipLogic || [], 
             settings: survey.settings || {},
             randomizationLogic: survey.randomizationLogic || {},
             welcomeMessage: survey.welcomeMessage || { text: "Welcome to the survey!" },
             thankYouMessage: survey.thankYouMessage || { text: "Thank you for completing the survey!" },
         };
-
-        console.log("[SurveyBuildPage v1.3] Payload for handleSaveSurvey (API call):", JSON.stringify(payload, null, 2));
-
+        console.log("[SurveyBuildPage v1.4] Payload for handleSaveSurvey (API call):", JSON.stringify(payload, null, 2));
         try {
             const response = await surveyApi.updateSurvey(survey._id, payload); 
-            
             if (response && response.success && response.data) {
                 const updatedApiSurvey = response.data;
-                // If the API returns populated questions, use them. Otherwise, retain local.
-                // This logic is good and should handle the response correctly.
                 const questionsToSet = (updatedApiSurvey.questions && updatedApiSurvey.questions.length > 0 && typeof updatedApiSurvey.questions[0] === 'object')
                                      ? updatedApiSurvey.questions
                                      : survey.questions; 
-
                 setSurvey(prev => ({
                     ...prev, 
                     ...updatedApiSurvey, 
@@ -229,7 +231,7 @@ const SurveyBuildPage = () => {
     };
 
     const handleSaveLogic = (updatedLogicRules) => {
-        console.log("[SurveyBuildPage] handleSaveLogic called with rules:", JSON.stringify(updatedLogicRules, null, 2));
+        console.log("[SurveyBuildPage v1.4] handleSaveLogic called with rules:", JSON.stringify(updatedLogicRules, null, 2));
         setSurvey(prev => ({ 
             ...prev, 
             globalSkipLogic: updatedLogicRules 
@@ -248,27 +250,56 @@ const SurveyBuildPage = () => {
     const handleQuestionClick = (id) => { setShowAddQuestionPanel(false); setSelectedQuestionId(id); };
     const handleCancelEditPanel = () => { setSelectedQuestionId(null); setShowAddQuestionPanel(false); };
     
-    const handleUpdateQuestionDefinitionForLogic = useCallback(async (questionId, updatedFields) => {
-        console.log("[SBP] handleUpdateQuestionDefinitionForLogic triggered for Q_ID:", questionId, "With fields:", JSON.stringify(updatedFields, null, 2));
+    // This function is passed down to LogicConditionEditor to update question definitions (like heatmap areas)
+    // It now also handles closing the AreaManagerModal if it was the source of the update.
+    const handleUpdateQuestionDefinition = useCallback((questionId, updatedFields) => {
+        console.log("[SBP v1.4] handleUpdateQuestionDefinitionForLogic triggered for Q_ID:", questionId, "With fields:", JSON.stringify(updatedFields, null, 2));
         setSurvey(prevSurvey => {
             if (!prevSurvey || !prevSurvey.questions) {
-                console.warn("[SBP] prevSurvey or prevSurvey.questions is null/undefined in handleUpdateQuestionDefinitionForLogic");
+                console.warn("[SBP v1.4] prevSurvey or prevSurvey.questions is null/undefined in handleUpdateQuestionDefinition");
                 return prevSurvey;
             }
             const updatedQuestions = prevSurvey.questions.map(q => {
                 if (q._id === questionId) {
                     const newQState = { ...q, ...updatedFields };
-                    console.log(`[SBP] Updating question ${questionId}. Old areas:`, q.definedHeatmapAreas, "New areas:", newQState.definedHeatmapAreas);
+                    console.log(`[SBP v1.4] Updating question ${questionId}. Old areas:`, q.definedHeatmapAreas, "New areas:", newQState.definedHeatmapAreas);
                     return newQState;
                 }
                 return q;
             });
-            const qAfterUpdateInMap = updatedQuestions.find(q => q._id === questionId);
-            console.log(`[SBP] Question ${questionId} in new 'updatedQuestions' array. Areas:`, qAfterUpdateInMap?.definedHeatmapAreas);
-            toast.info(`Local question definition updated for logic. Save survey structure to persist.`);
+            toast.info(`Local question definition updated. Save survey structure to persist.`);
             return { ...prevSurvey, questions: updatedQuestions };
         });
+        // If this update came from the heatmap area manager, ensure the managed question reflects changes
+        if (questionForAreaManagement && questionForAreaManagement._id === questionId) {
+            setQuestionForAreaManagement(prev => prev ? { ...prev, ...updatedFields } : null);
+        }
+    }, [questionForAreaManagement]);
+
+
+    // --- Functions for Heatmap Area Manager Modal ---
+    const openAreaManagerModal = useCallback((questionToManage) => {
+        if (questionToManage && questionToManage.type === 'heatmap' && questionToManage.imageUrl) {
+            setQuestionForAreaManagement(questionToManage);
+            setIsAreaManagerModalOpen(true);
+        } else {
+            toast.error("Cannot manage areas for this question type or image is missing.");
+        }
     }, []);
+
+    const handleSaveAreasFromModal = useCallback((updatedAreas) => {
+        if (questionForAreaManagement) {
+            console.log(`[SBP v1.4] Saving areas for Q_ID ${questionForAreaManagement._id}:`, JSON.stringify(updatedAreas));
+            handleUpdateQuestionDefinition(questionForAreaManagement._id, { definedHeatmapAreas: updatedAreas });
+        }
+        setIsAreaManagerModalOpen(false);
+        setQuestionForAreaManagement(null);
+    }, [questionForAreaManagement, handleUpdateQuestionDefinition]);
+
+    const handleHeatmapModalDrawingStateChange = useCallback((drawingState) => {
+        setIsHeatmapDrawingForModal(drawingState);
+    }, []);
+
 
     const selectedQData = survey?.questions?.find(q => q._id === selectedQuestionId);
     const shouldMakeSpaceForPanel = showAddQuestionPanel || !!selectedQData;
@@ -326,7 +357,32 @@ const SurveyBuildPage = () => {
                                 onClose={() => setIsLogicPanelOpen(false)} 
                                 isLoading={saving} 
                                 surveyId={survey._id}
-                                onUpdateQuestionDefinition={handleUpdateQuestionDefinitionForLogic}
+                                onUpdateQuestionDefinition={handleUpdateQuestionDefinition} // Pass this down
+                                onOpenAreaManager={openAreaManagerModal} // Pass function to open heatmap modal
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Heatmap Area Manager Modal - Rendered at SurveyBuildPage level */}
+                {isAreaManagerModalOpen && questionForAreaManagement && (
+                    <div 
+                        className={styles.modalBackdrop} 
+                        onClick={() => { setIsAreaManagerModalOpen(false); setQuestionForAreaManagement(null);}}
+                        onMouseMove={isHeatmapDrawingForModal && heatmapModalRef.current?.handleGlobalMouseMove ? heatmapModalRef.current.handleGlobalMouseMove : null}
+                        onMouseUp={isHeatmapDrawingForModal && heatmapModalRef.current?.handleGlobalMouseUp ? heatmapModalRef.current.handleGlobalMouseUp : null}
+                        onMouseLeave={isHeatmapDrawingForModal && heatmapModalRef.current?.handleGlobalMouseUp ? heatmapModalRef.current.handleGlobalMouseUp : null}
+                    >
+                        <div className={styles.modalContentWrapper} onClick={e => e.stopPropagation()}>
+                            <HeatmapAreaSelectorModal
+                                ref={heatmapModalRef}
+                                isOpen={isAreaManagerModalOpen}
+                                onClose={() => { setIsAreaManagerModalOpen(false); setQuestionForAreaManagement(null); }}
+                                onSaveAreas={handleSaveAreasFromModal}
+                                imageUrl={questionForAreaManagement.imageUrl}
+                                initialAreas={ensureArray(questionForAreaManagement.definedHeatmapAreas)}
+                                styles={styles}
+                                onDrawingStateChange={handleHeatmapModalDrawingStateChange}
                             />
                         </div>
                     </div>
@@ -351,4 +407,4 @@ const SurveyBuildPage = () => {
     );
 };
 export default SurveyBuildPage;
-// ----- END OF COMPLETE UPDATED FILE (v1.3 - Send full question objects on save) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.4 - Integrated Heatmap Area Manager Modal) -----
