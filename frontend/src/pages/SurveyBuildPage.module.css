@@ -1,11 +1,8 @@
 /* frontend/src/pages/SurveyBuildPage.module.css */
-/* ----- START OF COMPLETE MODIFIED FILE (v3.16 - Increase Image Min-Height) ----- */
+/* ----- START OF COMPLETE MODIFIED FILE (v3.12 - Diagnostic Height) ----- */
 
-.modalOpenNoScroll {
-  overflow: hidden !important; 
-}
-
-/* ... (Generic styles for .surveyBuildPage up to .noQuestionsMessage - unchanged) ... */
+.modalOpenNoScroll { overflow: hidden !important; }
+/* ... (unchanged CSS from v3.11 up to .selectedAreaItem) ... */
 .surveyBuildPage { display: flex; flex-direction: column; max-width: 100%; margin: 0 auto; position: relative; background-color: var(--page-background, #e9ecef); }
 .surveyBuildPageInner { padding: 20px; padding-top: 80px; }
 .surveyHeader { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; margin-bottom: 25px; position: sticky; top: 60px; background-color: var(--background-color, #ffffff); z-index: 1000; border-radius: var(--border-radius-lg, 8px); box-shadow: var(--shadow-md, 0 4px 10px rgba(0,0,0,0.07)); margin-left: 0; margin-right: 0; }
@@ -22,66 +19,19 @@
 .questionsContainer { background-color: var(--background-color, #fff); padding: 25px; border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg); box-shadow: var(--shadow-md, 0 4px 10px rgba(0,0,0,0.07)); flex-grow: 1; border: 1px solid var(--border-color, #e0e0e0); border-top: none; }
 .noQuestionsMessage { font-style: italic; color: var(--text-muted); text-align: center; padding: 40px 20px; background-color: transparent; border-radius: var(--border-radius); margin-top: 0; }
 
+.modalBackdrop { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.65); z-index: 1040; display: flex; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; overflow: hidden; }
+.modalContentWrapper { max-width: 95%; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; background-color: var(--background-secondary, #ffffff); border-radius: var(--border-radius-lg, 8px); box-shadow: var(--shadow-xl, 0 8px 25px rgba(0,0,0,0.15)); }
 
-/* --- Generic Modal Styles --- */
-.modalBackdrop {
-  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-  background-color: rgba(0, 0, 0, 0.65); z-index: 1040;
-  display: flex; justify-content: center; align-items: center;
-  padding: 20px; box-sizing: border-box; 
-  overflow: hidden; 
-}
-
-.modalContentWrapper { 
-  max-width: 95%; max-height: 90vh; 
-  display: flex; flex-direction: column;
-  overflow: auto; 
-  background-color: var(--background-secondary, #ffffff);
-  border-radius: var(--border-radius-lg, 8px);
-  box-shadow: var(--shadow-xl, 0 8px 25px rgba(0,0,0,0.15));
-}
-
-/* --- Styles specifically for the Heatmap Area Manager Modal --- */
-.heatmapModalSpecificContentWrapper {
-  width: 85vw; 
-  max-width: 1200px; 
-  height: 85vh; 
-  max-height: calc(100vh - 80px); 
-  
-  overflow: hidden; 
-  display: flex; flex-direction: column;
-  background-color: var(--background-secondary, #ffffff);
-  border-radius: var(--border-radius-xl, 12px);
-  box-shadow: var(--shadow-xl, 0 8px 25px rgba(0,0,0,0.15));
-}
-
-.heatmapAreaModalContent { 
-    display: flex; flex-direction: column;
-    width: 100%; height: 100%; 
-    overflow: hidden; 
-    color: var(--text-color);
-}
+.heatmapModalSpecificContentWrapper { width: 85vw; max-width: 1200px; height: 90vh; overflow: hidden; display: flex; flex-direction: column; background-color: var(--background-secondary, #ffffff); border-radius: var(--border-radius-xl, 12px); box-shadow: var(--shadow-xl, 0 8px 25px rgba(0,0,0,0.15)); }
+.heatmapAreaModalContent { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; color: var(--text-color); }
 
 .heatmapAreaModalContent > .modalHeader { padding: 15px 25px; border-bottom: 1px solid var(--border-color-light, #dee2e6); background-color: var(--background-accent, #f8f9fa); flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; }
 .heatmapAreaModalContent > .modalHeader h3 { margin: 0; font-size: 1.3em; font-weight: 600; color: var(--text-color-strong); }
 .heatmapAreaModalContent > .modalHeader .modalCloseButton { background: none; border: none; font-size: 1.8em; font-weight: bold; color: var(--text-muted); cursor: pointer; padding: 0 5px; line-height: 1; }
 .heatmapAreaModalContent > .modalHeader .modalCloseButton:hover { color: var(--text-color-strong); }
 
-.heatmapAreaModalBody { 
-    display: flex; flex-direction: row; 
-    flex-grow: 1; 
-    padding: 20px 25px; gap: 25px; 
-    overflow-y: auto; 
-    min-height: 0; 
-}
-
-.heatmapAreaListPanel { 
-    flex: 0 0 300px; display: flex; flex-direction: column; 
-    gap: 10px; padding-right: 15px; 
-    border-right: 1px solid var(--border-color-light, #dee2e6); 
-    min-height: 0; 
-    overflow-y: auto; 
-}
+.heatmapAreaModalBody { display: flex; flex-direction: row; flex-grow: 1; padding: 20px 25px; gap: 25px; overflow-y: auto; min-height: 0; }
+.heatmapAreaListPanel { flex: 0 0 300px; display: flex; flex-direction: column; gap: 10px; padding-right: 15px; border-right: 1px solid var(--border-color-light, #dee2e6); min-height: 0; overflow-y: auto; }
 .heatmapAreaListPanel h4 { margin-top: 0; margin-bottom: 10px; font-size: 1.1em; color: var(--text-color-strong); }
 .heatmapDefinedAreasList { list-style: none; padding: 0; margin: 0; flex-grow: 1; }
 .heatmapDefinedAreasList li { padding: 10px 12px; border: 1px solid var(--border-color-light, #dee2e6); border-radius: var(--border-radius-md); margin-bottom: 8px; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; font-size: 0.95em; }
@@ -92,62 +42,46 @@
     flex-grow: 1; 
     display: flex;
     flex-direction: column;
-    overflow: hidden; 
+    gap: 15px; 
+    overflow: hidden; /* Keep this hidden, its content (image container) will grow */
     min-width: 0;
+    /* MODIFIED: Force a large min-height for diagnostic purposes */
+    min-height: 800px; /* Example: Make this larger than the likely available height */
 }
 
-.modalInstructions { 
-    font-size: 0.9em; color: var(--text-muted); margin-top: 0; 
-    padding: 8px 12px; background-color: var(--background-accent, #f8f9fa); 
-    border-radius: var(--border-radius-sm); flex-shrink: 0; 
-    margin-bottom: 15px; 
-}
+.modalInstructions { font-size: 0.9em; color: var(--text-muted); margin-top: 0; padding: 8px 12px; background-color: var(--background-accent, #f8f9fa); border-radius: var(--border-radius-sm); flex-shrink: 0; }
 
-.heatmapImageContainer { 
+.heatmapImageContainer {
     flex-grow: 1; 
     display: flex; justify-content: center; align-items: center;
     background-color: var(--background-color-darker, #dddddd); 
     border-radius: var(--border-radius-md);
     border: 1px solid var(--border-color, #ced4da);
-    min-height: 550px; /* MODIFIED: Increased significantly. This is the main lever now. */
+    /* min-height: 350px; Keep this, but the parent's min-height will be more dominant if larger */
+    min-height: 350px; /* Or even remove this if parent's min-height is the test */
     overflow: hidden; position: relative;
-    margin-bottom: 15px; 
 }
+/* ... (Rest of CSS unchanged from v3.11) ... */
 .heatmapSelectableImage { display: block; max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; cursor: crosshair; }
 .heatmapAreaLabelOnImage { position: absolute; bottom: 2px; left: 2px; background-color: rgba(0, 0, 0, 0.6); color: white; padding: 2px 5px; font-size: 0.75em; border-radius: var(--border-radius-sm); pointer-events: none; }
-
-.heatmapAreaControls { 
-    display: flex; align-items: center; gap: 10px; 
-    padding-top: 10px; 
-    border-top: 1px solid var(--border-color-light, #dee2e6); 
-    flex-shrink: 0; 
-    margin-bottom: 10px; 
-    min-height: 40px; 
-}
+.heatmapAreaControls { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--border-color-light, #dee2e6); flex-shrink: 0; }
 .heatmapAreaControls .formControl { flex-grow: 1; }
-
-.heatmapCoordsDisplay { 
-    font-size: 0.8em; color: var(--text-muted); text-align: right; 
-    flex-shrink: 0; padding-top: 5px; 
-}
-
+.heatmapCoordsDisplay { font-size: 0.8em; color: var(--text-muted); text-align: right; flex-shrink: 0; padding-top: 5px; }
 .heatmapAreaModalContent > .modalFooter { padding: 15px 25px; border-top: 1px solid var(--border-color-light, #dee2e6); background-color: var(--background-accent, #f8f9fa); flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
-
 .formControl { padding: 0.5rem 0.75rem; font-size: 0.95rem; line-height: 1.5; color: var(--input-color, #212529); background-color: var(--input-bg, #fff); background-clip: padding-box; border: 1px solid var(--input-border-color, #ced4da); border-radius: var(--border-radius-md, 0.375rem); transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out; }
 .formControl:focus { border-color: var(--primary-color-light); outline: 0; box-shadow: 0 0 0 0.2rem var(--primary-color-alpha); }
 .textMuted { color: var(--text-muted, #6c757d); }
 .invalidFeedback { width: 100%; margin-top: .25rem; font-size: .875em; color: var(--danger-color, #dc3545); }
 
-/* --- Media Queries --- */
 @media (max-width: 1024px) {
   .mainContentWrapper { flex-direction: column; }
   .rightColumnSizer { min-width: 100%; max-width: 100%; flex-basis: auto; }
   .leftColumnWithPanelSpace { flex-basis: auto; }
-
-  .heatmapModalSpecificContentWrapper { width: 90vw; height: 85vh; max-height: calc(100vh - 70px); }
+  .heatmapModalSpecificContentWrapper { width: 90vw; height: 85vh; }
   .heatmapAreaModalBody { flex-direction: column; }
   .heatmapAreaListPanel { flex: 0 0 auto; max-height: 180px; border-right: none; border-bottom: 1px solid var(--border-color-light, #dee2e6); padding-right: 0; margin-bottom: 15px; }
-  .heatmapImageContainer { min-height: 500px; /* Tablet image min height */ }
+  .heatmapAreaDrawingPanel { min-height: 600px; /* Adjusted for tablet diagnostic */ }
+  .heatmapImageContainer { min-height: 250px; }
 }
 @media (max-width: 768px) {
   .surveyBuildPageInner { padding: 15px; padding-top: 70px; }
@@ -157,11 +91,11 @@
   .headerActions .button { flex-grow: 1; min-width: 110px; font-size: 0.85em; margin-bottom: 8px; }
   .questionListHeader { padding: 15px 20px; }
   .questionsContainer { padding: 20px; }
-
-  .heatmapModalSpecificContentWrapper { width: 95vw; height: 85vh; max-height: calc(100vh - 60px); }
+  .heatmapModalSpecificContentWrapper { width: 95vw; height: 88vh; }
   .heatmapAreaModalBody { padding: 15px; gap: 15px; }
-  .heatmapAreaControls { flex-direction: column; align-items: stretch; min-height: 60px; }
+  .heatmapAreaControls { flex-direction: column; align-items: stretch; }
   .heatmapAreaListPanel { max-height: 150px; }
-  .heatmapImageContainer { min-height: 480px; /* Mobile image min height */ }
+  .heatmapAreaDrawingPanel { min-height: 500px; /* Adjusted for mobile diagnostic */ } 
+  .heatmapImageContainer { min-height: 200px; }
 }
-/* ----- END OF COMPLETE MODIFIED FILE (v3.16) ----- */
+/* ----- END OF COMPLETE MODIFIED FILE (v3.12) ----- */
