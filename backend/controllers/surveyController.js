@@ -1,13 +1,14 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE UPDATED FILE (vNext21 - Log Response Schema Paths) -----
+// ----- START OF COMPLETE UPDATED FILE (vNext22 - Corrected logic function call) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
 const Question = require('../models/Question');
 const Answer = require('../models/Answer');
 const Collector = require('../models/Collector');
-const Response = require('../models/Response'); // Make sure this is the correct model
-const { evaluateAllLogic, evaluateSurveyLogic } = require('../utils/logicEvaluator');
+const Response = require('../models/Response');
+// Correctly import based on what's exported and used
+const { evaluateAllLogic } = require('../utils/logicEvaluator'); // evaluateSurveyLogic was not exported
 const axios = require('axios');
 const ipRangeCheck = require('ip-range-check');
 
@@ -458,18 +459,13 @@ exports.submitSurveyAnswers = async (req, res) => {
             isTestResponse: isOwnerPreviewingDraft,
         };
 
-        // +++ ADDED SCHEMA PATH LOGGING FOR RESPONSE MODEL +++
         if (Response && Response.schema && typeof Response.schema.eachPath === 'function') {
             let schemaPaths = [];
-            Response.schema.eachPath((pathname, schemaType) => {
-                schemaPaths.push({ path: pathname, type: schemaType.instance });
-            });
+            Response.schema.eachPath((pathname, schemaType) => { schemaPaths.push({ path: pathname, type: schemaType.instance }); });
             console.log('[B_SUBMIT_SCHEMA_CHECK] Response schema paths:', JSON.stringify(schemaPaths, null, 2));
         } else {
-            console.log('[B_SUBMIT_SCHEMA_CHECK] Could not retrieve Response schema paths. Response model or schema might be undefined.');
+            console.log('[B_SUBMIT_SCHEMA_CHECK] Could not retrieve Response schema paths.');
         }
-        // +++ END SCHEMA PATH LOGGING +++
-
 
         console.log("[B_SUBMIT_DB_UPSERT_RESPONSE] Attempting Response.findOneAndUpdate (upsert)... Filter and Data:", JSON.stringify({filter: { survey: survey._id, collector: collector._id, sessionId: sessionIdToUse }, data: responseUpdateData}, null, 2).substring(0, 500));
         const updatedResponse = await Response.findOneAndUpdate(
@@ -484,7 +480,10 @@ exports.submitSurveyAnswers = async (req, res) => {
             console.log("[B_SUBMIT_LOGIC_GLOBAL] Evaluating global logic...");
             const allAnswersForLogic = await Answer.find({ survey: survey._id, collector: collector._id, sessionId: sessionIdToUse }).session(mongoSession);
             const currentAnswersForLogic = allAnswersForLogic.reduce((acc, cur) => { acc[String(cur.questionId)] = cur.answerValue; return acc; }, {});
-            triggeredAction = evaluateSurveyLogic(survey.globalSkipLogic, currentAnswersForLogic, survey.questions);
+            
+            // *** CORRECTED FUNCTION CALL HERE ***
+            triggeredAction = evaluateAllLogic(survey.globalSkipLogic, currentAnswersForLogic, survey.questions); 
+            
             console.log("[B_SUBMIT_LOGIC_GLOBAL] Global logic evaluation result:", JSON.stringify(triggeredAction));
             if (triggeredAction && triggeredAction.type === 'disqualifyRespondent' && updatedResponse) {
                 console.log(`[B_SUBMIT_LOGIC_GLOBAL] Disqualification triggered. Updating response ${updatedResponse._id} status to 'disqualified'.`);
@@ -585,7 +584,7 @@ exports.getSurveyResults = async (req, res) => {
         }
         const queryOptions = { survey: survey._id };
         if (status) queryOptions.status = status;
-        if (collectorId) queryOptions.collector = collectorId; // Use the variable holding the ID
+        if (collectorId) queryOptions.collector = collectorId;
         if (startDate || endDate) {
             queryOptions.submittedAt = {};
             if (startDate) queryOptions.submittedAt.$gte = new Date(startDate);
@@ -644,7 +643,7 @@ exports.exportSurveyResults = async (req, res) => {
             return res.status(403).json({ success: false, message: 'Not authorized.' });
         }
         const responseQuery = { survey: survey._id };
-        if (collectorId) responseQuery.collector = collectorId; // Use the variable holding the ID
+        if (collectorId) responseQuery.collector = collectorId;
         if (status) responseQuery.status = status;
         if (startDate || endDate) {
             responseQuery.submittedAt = {};
@@ -698,4 +697,4 @@ exports.exportSurveyResults = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error exporting survey results.' });
     }
 };
-// ----- END OF COMPLETE UPDATED FILE (vNext21 - Log Response Schema Paths) -----
+// ----- END OF COMPLETE UPDATED FILE (vNext22 - Corrected logic function call) -----
