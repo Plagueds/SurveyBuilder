@@ -1,6 +1,7 @@
 // frontend/src/pages/SurveyBuildPage.js
-// ----- START OF COMPLETE UPDATED FILE (v1.6 - Specific classes for Heatmap Modal) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.7 - Body scroll prevention) -----
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+// ... (other imports remain the same as v1.6) ...
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -13,10 +14,12 @@ import SurveySettingsPanel from '../components/SurveySettingsPanel';
 import QuestionListItem from '../components/QuestionListItem';
 import CollectorsPanel from '../components/CollectorsPanel';
 import HeatmapAreaSelectorModal from '../components/logic/HeatmapAreaSelectorModal';
-import styles from './SurveyBuildPage.module.css'; // Contains all modal styles
+import styles from './SurveyBuildPage.module.css'; 
 import surveyApi from '../api/surveyApi';
 
+
 const SurveyBuildPage = () => {
+    // ... (all state variables remain the same as v1.6) ...
     const { surveyId: routeSurveyId } = useParams();
     const navigate = useNavigate();
 
@@ -33,15 +36,28 @@ const SurveyBuildPage = () => {
 
     const [isAreaManagerModalOpen, setIsAreaManagerModalOpen] = useState(false);
     const [questionForAreaManagement, setQuestionForAreaManagement] = useState(null);
-    const [isHeatmapDrawingForModal, setIsHeatmapDrawingForModal] = useState(false); // Kept for now
+    const [isHeatmapDrawingForModal, setIsHeatmapDrawingForModal] = useState(false); 
 
     const [collectors, setCollectors] = useState([]);
     const [isLoadingCollectors, setIsLoadingCollectors] = useState(false);
 
-    const ensureArray = (value) => (Array.isArray(value) ? value : (value === undefined || value === null ? [] : [value]));
+    // NEW: Effect to manage body scroll based on any modal being open
+    useEffect(() => {
+        const anyModalOpen = isLogicPanelOpen || isSettingsPanelOpen || isCollectorsPanelOpen || isAreaManagerModalOpen;
+        if (anyModalOpen) {
+            document.body.classList.add(styles.modalOpenNoScroll); // Use class from module
+        } else {
+            document.body.classList.remove(styles.modalOpenNoScroll);
+        }
+        // Cleanup function to remove the class if the component unmounts while a modal is open
+        return () => {
+            document.body.classList.remove(styles.modalOpenNoScroll);
+        };
+    }, [isLogicPanelOpen, isSettingsPanelOpen, isCollectorsPanelOpen, isAreaManagerModalOpen, styles.modalOpenNoScroll]);
 
-    // --- fetchSurveyData, truncateText, handleCreateQuestionFromPanel, updateQuestion, deleteQuestion, moveQuestion, handleSaveSurvey, handleSaveLogic, handleSaveSettings, handleOpenAddQuestionPanel, handleQuestionClick, handleCancelEditPanel ---
-    // ... (These functions remain unchanged from v1.5) ...
+
+    // ... (ensureArray, fetchSurveyData, truncateText, handleCreateQuestionFromPanel, updateQuestion, deleteQuestion, moveQuestion, handleSaveSurvey, handleSaveLogic, handleSaveSettings, handleOpenAddQuestionPanel, handleQuestionClick, handleCancelEditPanel, handleUpdateQuestionDefinition, openAreaManagerModal, handleSaveAreasFromModal, handleHeatmapModalDrawingStateChange - all remain unchanged from v1.6)
+    const ensureArray = (value) => (Array.isArray(value) ? value : (value === undefined || value === null ? [] : [value]));
     const fetchSurveyData = useCallback(async (options = {}) => {
         if (!routeSurveyId) {
             setPageError("No survey ID found. Please select a survey.");
@@ -272,10 +288,9 @@ const SurveyBuildPage = () => {
     }, [questionForAreaManagement, handleUpdateQuestionDefinition]);
 
     const handleHeatmapModalDrawingStateChange = useCallback((drawingState) => {
-        setIsHeatmapDrawingForModal(drawingState); // Keep for now, might be useful for other UI
-        console.log('[SBP v1.6] Heatmap modal drawing state changed:', drawingState);
+        setIsHeatmapDrawingForModal(drawingState); 
+        console.log('[SBP v1.7] Heatmap modal drawing state changed:', drawingState);
     }, []);
-
 
     const selectedQData = survey?.questions?.find(q => q._id === selectedQuestionId);
     const shouldMakeSpaceForPanel = showAddQuestionPanel || !!selectedQData;
@@ -287,9 +302,9 @@ const SurveyBuildPage = () => {
     return (
         <DndProvider backend={HTML5Backend}>
             <ToastContainer position="top-right" autoClose={3000} newestOnTop theme="colored" />
+            {/* JSX structure remains the same as v1.6 */}
             <div className={styles.surveyBuildPage}>
                 <div className={styles.surveyBuildPageInner}>
-                    {/* ... (header, main content, question list, etc. - unchanged) ... */}
                     <header className={styles.surveyHeader}>
                         <input type="text" value={survey.title || ''} onChange={e => setSurvey(s => ({ ...s, title: e.target.value }))} className={styles.surveyTitleInput} placeholder="Survey Title" disabled={saving || loading || !survey._id} />
                         <div className={styles.headerActions}>
@@ -323,7 +338,6 @@ const SurveyBuildPage = () => {
                 {showAddQuestionPanel && survey?._id && (<QuestionPropertiesPanel key="add-new-question-panel" questionData={null} mode="add" onSave={handleCreateQuestionFromPanel} onCancel={handleCancelEditPanel} isSaving={saving} allQuestions={survey.questions || []} questionIndex={-1} surveyId={survey._id} />)}
                 {selectedQData && !showAddQuestionPanel && survey?._id && (<QuestionPropertiesPanel key={selectedQData._id} questionData={selectedQData} mode="edit" onSave={(payload) => updateQuestion(selectedQData._id, payload)} onCancel={handleCancelEditPanel} isSaving={saving} allQuestions={survey.questions || []} questionIndex={(survey.questions || []).findIndex(q => q._id === selectedQData._id)} surveyId={survey._id} />)}
                 
-                {/* Survey Logic Panel - Uses generic modal backdrop and content wrapper */}
                 {isLogicPanelOpen && survey?._id && (
                     <div className={styles.modalBackdrop} onClick={() => setIsLogicPanelOpen(false)}>
                         <div className={styles.modalContentWrapper} onClick={e => e.stopPropagation()}>
@@ -342,13 +356,12 @@ const SurveyBuildPage = () => {
                     </div>
                 )}
 
-                {/* Heatmap Area Manager Modal - Uses NEW specific backdrop and content wrapper classes */}
                 {isAreaManagerModalOpen && questionForAreaManagement && (
                     <div 
-                        className={`${styles.modalBackdrop} ${styles.heatmapModalBackdrop}`} // ADDED specific class
+                        className={`${styles.modalBackdrop} ${styles.heatmapModalBackdrop}`} 
                         onClick={() => { setIsAreaManagerModalOpen(false); setQuestionForAreaManagement(null);}}
                     >
-                        <div className={`${styles.modalContentWrapper} ${styles.heatmapModalSpecificContentWrapper}`} // ADDED specific class
+                        <div className={`${styles.modalContentWrapper} ${styles.heatmapModalSpecificContentWrapper}`} 
                              onClick={e => e.stopPropagation()}>
                             <HeatmapAreaSelectorModal
                                 isOpen={isAreaManagerModalOpen}
@@ -379,4 +392,4 @@ const SurveyBuildPage = () => {
     );
 };
 export default SurveyBuildPage;
-// ----- END OF COMPLETE UPDATED FILE (v1.6 - Specific classes for Heatmap Modal) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.7 - Body scroll prevention) -----
