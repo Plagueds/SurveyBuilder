@@ -1,6 +1,6 @@
 // frontend/src/pages/SurveyBuildPage.js
-// ----- START OF COMPLETE UPDATED FILE (v1.4 - Integrated Heatmap Area Manager Modal) -----
-import React, { useState, useEffect, useCallback, useRef } from 'react'; // Added useRef
+// ----- START OF COMPLETE UPDATED FILE (v1.5 - Adjusted Heatmap Modal event handling) -----
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -12,7 +12,7 @@ import SurveyLogicPanel from '../components/SurveyLogicPanel';
 import SurveySettingsPanel from '../components/SurveySettingsPanel';
 import QuestionListItem from '../components/QuestionListItem';
 import CollectorsPanel from '../components/CollectorsPanel';
-import HeatmapAreaSelectorModal from '../components/logic/HeatmapAreaSelectorModal'; // Import the modal
+import HeatmapAreaSelectorModal from '../components/logic/HeatmapAreaSelectorModal';
 import styles from './SurveyBuildPage.module.css';
 import surveyApi from '../api/surveyApi';
 
@@ -31,11 +31,13 @@ const SurveyBuildPage = () => {
     const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
     const [isCollectorsPanelOpen, setIsCollectorsPanelOpen] = useState(false);
 
-    // --- State for Heatmap Area Manager Modal ---
     const [isAreaManagerModalOpen, setIsAreaManagerModalOpen] = useState(false);
-    const [questionForAreaManagement, setQuestionForAreaManagement] = useState(null); // Stores the full question object
-    const [isHeatmapDrawingForModal, setIsHeatmapDrawingForModal] = useState(false);
-    const heatmapModalRef = useRef();
+    const [questionForAreaManagement, setQuestionForAreaManagement] = useState(null);
+    // isHeatmapDrawingForModal state might still be useful if SBP needs to react to drawing state
+    // but it's no longer used to attach listeners for the modal's drawing.
+    // const [isHeatmapDrawingForModal, setIsHeatmapDrawingForModal] = useState(false); 
+    // heatmapModalRef is also likely not needed by SBP anymore if modal handles all its drawing events
+    // const heatmapModalRef = useRef(); 
 
 
     const [collectors, setCollectors] = useState([]);
@@ -197,7 +199,7 @@ const SurveyBuildPage = () => {
             welcomeMessage: survey.welcomeMessage || { text: "Welcome to the survey!" },
             thankYouMessage: survey.thankYouMessage || { text: "Thank you for completing the survey!" },
         };
-        console.log("[SurveyBuildPage v1.4] Payload for handleSaveSurvey (API call):", JSON.stringify(payload, null, 2));
+        console.log("[SurveyBuildPage v1.5] Payload for handleSaveSurvey:", JSON.stringify(payload, null, 2));
         try {
             const response = await surveyApi.updateSurvey(survey._id, payload); 
             if (response && response.success && response.data) {
@@ -231,7 +233,7 @@ const SurveyBuildPage = () => {
     };
 
     const handleSaveLogic = (updatedLogicRules) => {
-        console.log("[SurveyBuildPage v1.4] handleSaveLogic called with rules:", JSON.stringify(updatedLogicRules, null, 2));
+        console.log("[SurveyBuildPage v1.5] handleSaveLogic called with rules:", JSON.stringify(updatedLogicRules, null, 2));
         setSurvey(prev => ({ 
             ...prev, 
             globalSkipLogic: updatedLogicRules 
@@ -250,19 +252,17 @@ const SurveyBuildPage = () => {
     const handleQuestionClick = (id) => { setShowAddQuestionPanel(false); setSelectedQuestionId(id); };
     const handleCancelEditPanel = () => { setSelectedQuestionId(null); setShowAddQuestionPanel(false); };
     
-    // This function is passed down to LogicConditionEditor to update question definitions (like heatmap areas)
-    // It now also handles closing the AreaManagerModal if it was the source of the update.
     const handleUpdateQuestionDefinition = useCallback((questionId, updatedFields) => {
-        console.log("[SBP v1.4] handleUpdateQuestionDefinitionForLogic triggered for Q_ID:", questionId, "With fields:", JSON.stringify(updatedFields, null, 2));
+        console.log("[SBP v1.5] handleUpdateQuestionDefinition triggered for Q_ID:", questionId, "With fields:", JSON.stringify(updatedFields, null, 2));
         setSurvey(prevSurvey => {
             if (!prevSurvey || !prevSurvey.questions) {
-                console.warn("[SBP v1.4] prevSurvey or prevSurvey.questions is null/undefined in handleUpdateQuestionDefinition");
+                console.warn("[SBP v1.5] prevSurvey or prevSurvey.questions is null/undefined in handleUpdateQuestionDefinition");
                 return prevSurvey;
             }
             const updatedQuestions = prevSurvey.questions.map(q => {
                 if (q._id === questionId) {
                     const newQState = { ...q, ...updatedFields };
-                    console.log(`[SBP v1.4] Updating question ${questionId}. Old areas:`, q.definedHeatmapAreas, "New areas:", newQState.definedHeatmapAreas);
+                    console.log(`[SBP v1.5] Updating question ${questionId}. Old areas:`, q.definedHeatmapAreas, "New areas:", newQState.definedHeatmapAreas);
                     return newQState;
                 }
                 return q;
@@ -270,14 +270,11 @@ const SurveyBuildPage = () => {
             toast.info(`Local question definition updated. Save survey structure to persist.`);
             return { ...prevSurvey, questions: updatedQuestions };
         });
-        // If this update came from the heatmap area manager, ensure the managed question reflects changes
         if (questionForAreaManagement && questionForAreaManagement._id === questionId) {
             setQuestionForAreaManagement(prev => prev ? { ...prev, ...updatedFields } : null);
         }
     }, [questionForAreaManagement]);
 
-
-    // --- Functions for Heatmap Area Manager Modal ---
     const openAreaManagerModal = useCallback((questionToManage) => {
         if (questionToManage && questionToManage.type === 'heatmap' && questionToManage.imageUrl) {
             setQuestionForAreaManagement(questionToManage);
@@ -289,15 +286,18 @@ const SurveyBuildPage = () => {
 
     const handleSaveAreasFromModal = useCallback((updatedAreas) => {
         if (questionForAreaManagement) {
-            console.log(`[SBP v1.4] Saving areas for Q_ID ${questionForAreaManagement._id}:`, JSON.stringify(updatedAreas));
+            console.log(`[SBP v1.5] Saving areas for Q_ID ${questionForAreaManagement._id}:`, JSON.stringify(updatedAreas));
             handleUpdateQuestionDefinition(questionForAreaManagement._id, { definedHeatmapAreas: updatedAreas });
         }
         setIsAreaManagerModalOpen(false);
         setQuestionForAreaManagement(null);
     }, [questionForAreaManagement, handleUpdateQuestionDefinition]);
 
+    // This function is passed to the modal, but SBP doesn't need to do anything with the drawing state itself
+    // unless there's other UI logic in SBP that depends on it.
     const handleHeatmapModalDrawingStateChange = useCallback((drawingState) => {
-        setIsHeatmapDrawingForModal(drawingState);
+        // setIsHeatmapDrawingForModal(drawingState); // No longer strictly needed for attaching listeners
+        console.log('[SBP v1.5] Heatmap modal drawing state changed:', drawingState);
     }, []);
 
 
@@ -357,31 +357,29 @@ const SurveyBuildPage = () => {
                                 onClose={() => setIsLogicPanelOpen(false)} 
                                 isLoading={saving} 
                                 surveyId={survey._id}
-                                onUpdateQuestionDefinition={handleUpdateQuestionDefinition} // Pass this down
-                                onOpenAreaManager={openAreaManagerModal} // Pass function to open heatmap modal
+                                onUpdateQuestionDefinition={handleUpdateQuestionDefinition}
+                                onOpenAreaManager={openAreaManagerModal}
                             />
                         </div>
                     </div>
                 )}
 
-                {/* Heatmap Area Manager Modal - Rendered at SurveyBuildPage level */}
                 {isAreaManagerModalOpen && questionForAreaManagement && (
                     <div 
                         className={styles.modalBackdrop} 
                         onClick={() => { setIsAreaManagerModalOpen(false); setQuestionForAreaManagement(null);}}
-                        onMouseMove={isHeatmapDrawingForModal && heatmapModalRef.current?.handleGlobalMouseMove ? heatmapModalRef.current.handleGlobalMouseMove : null}
-                        onMouseUp={isHeatmapDrawingForModal && heatmapModalRef.current?.handleGlobalMouseUp ? heatmapModalRef.current.handleGlobalMouseUp : null}
-                        onMouseLeave={isHeatmapDrawingForModal && heatmapModalRef.current?.handleGlobalMouseUp ? heatmapModalRef.current.handleGlobalMouseUp : null}
+                        // REMOVED: onMouseMove, onMouseUp, onMouseLeave from here
+                        // The modal (v2.5.5+) now handles its own drawing listeners internally.
                     >
                         <div className={styles.modalContentWrapper} onClick={e => e.stopPropagation()}>
                             <HeatmapAreaSelectorModal
-                                ref={heatmapModalRef}
+                                // ref={heatmapModalRef} // No longer strictly needed by SBP for drawing events
                                 isOpen={isAreaManagerModalOpen}
                                 onClose={() => { setIsAreaManagerModalOpen(false); setQuestionForAreaManagement(null); }}
                                 onSaveAreas={handleSaveAreasFromModal}
                                 imageUrl={questionForAreaManagement.imageUrl}
                                 initialAreas={ensureArray(questionForAreaManagement.definedHeatmapAreas)}
-                                styles={styles}
+                                styles={styles} // This should be SurveyBuildPage.module.css
                                 onDrawingStateChange={handleHeatmapModalDrawingStateChange}
                             />
                         </div>
@@ -407,4 +405,4 @@ const SurveyBuildPage = () => {
     );
 };
 export default SurveyBuildPage;
-// ----- END OF COMPLETE UPDATED FILE (v1.4 - Integrated Heatmap Area Manager Modal) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.5 - Adjusted Heatmap Modal event handling) -----
