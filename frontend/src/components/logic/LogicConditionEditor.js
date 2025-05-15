@@ -1,5 +1,5 @@
 // frontend/src/components/logic/LogicConditionEditor.js
-// ----- START OF UPDATED FILE (v1.7 - Added more granular debug logs for heatmap save) -----
+// ----- START OF UPDATED FILE (v1.8 - Wrapped HeatmapModal for consistent presentation) -----
 import React, { useState, useEffect, useMemo } from 'react';
 import { getOperatorsForQuestionType, getConditionValueInputDetails } from './logicConstants';
 import HeatmapAreaSelectorModal from './HeatmapAreaSelectorModal'; // Ensure this path is correct
@@ -11,11 +11,11 @@ function LogicConditionEditor({
     onRemoveCondition,
     availableSourceQuestions,
     allQuestions,
-    styles,
+    styles, // This comes from SurveyBuildPage.module.css
     truncateText,
     getQuestionTypeLabel,
     ensureArray,
-    onUpdateQuestionDefinition // This prop comes from SurveyBuildPage via SurveyLogicPanel & LogicRuleEditor
+    onUpdateQuestionDefinition
 }) {
     const [isAreaManagerModalOpen, setIsAreaManagerModalOpen] = useState(false);
     const [selectedMatrixRow, setSelectedMatrixRow] = useState('');
@@ -25,12 +25,13 @@ function LogicConditionEditor({
     const [selectedCardSortCard, setSelectedCardSortCard] = useState('');
     const [selectedCardSortCategory, setSelectedCardSortCategory] = useState('');
 
+    // For HeatmapAreaSelectorModal's mouse events when drawing
+    const [isHeatmapDrawing, setIsHeatmapDrawing] = useState(false); 
+
+
     const derivedSelectedQuestion = useMemo(() => {
-        // console.log("[LCE v1.7 useMemo] Deriving selectedQuestion. SourceID:", condition.sourceQuestionId, "allQuestions count:", allQuestions.length);
         if (condition.sourceQuestionId) {
-            const foundQ = allQuestions.find(q => q._id === condition.sourceQuestionId) || null;
-            // console.log("[LCE v1.7 useMemo] Found question:", foundQ?._id, "Areas:", foundQ?.definedHeatmapAreas?.length);
-            return foundQ;
+            return allQuestions.find(q => q._id === condition.sourceQuestionId) || null;
         }
         return null;
     }, [allQuestions, condition.sourceQuestionId]);
@@ -44,9 +45,7 @@ function LogicConditionEditor({
 
     const derivedValueInputDetails = useMemo(() => {
         if (derivedSelectedQuestion && condition.conditionOperator) {
-            // console.log("[LCE v1.7 useMemo] Deriving valueInputDetails. SelectedQ ID:", derivedSelectedQuestion._id, "Areas:", derivedSelectedQuestion.definedHeatmapAreas);
             const details = getConditionValueInputDetails(derivedSelectedQuestion, condition.conditionOperator);
-            // console.log("[LCE v1.7 useMemo] Calculated details for dropdown:", JSON.stringify(details));
             return details;
         }
         return { type: 'none' };
@@ -111,28 +110,28 @@ function LogicConditionEditor({
     const handleCardSortValueChange = (part, val) => { let card = part === 'card' ? val : selectedCardSortCard; let cat = part === 'category' ? val : selectedCardSortCategory; setSelectedCardSortCard(card); setSelectedCardSortCategory(cat); onUpdateCondition(conditionIndex, { ...condition, conditionValue: (card && cat) ? `${card};${cat}` : '' }); };
 
     const handleDefinedAreasSavedFromModal = (updatedAreas) => {
-        console.log("[LCE v1.7] handleDefinedAreasSavedFromModal called with areas:", JSON.stringify(updatedAreas)); // DEBUG
-        console.log("[LCE v1.7] derivedSelectedQuestion at this point:", derivedSelectedQuestion ? derivedSelectedQuestion._id : "null"); // DEBUG
-        console.log("[LCE v1.7] typeof onUpdateQuestionDefinition:", typeof onUpdateQuestionDefinition); // DEBUG
-
+        console.log("[LCE v1.8] handleDefinedAreasSavedFromModal called with areas:", JSON.stringify(updatedAreas));
         if (derivedSelectedQuestion && typeof onUpdateQuestionDefinition === 'function') {
-            console.log("[LCE v1.7] Calling onUpdateQuestionDefinition for Q_ID:", derivedSelectedQuestion._id); // DEBUG
+            console.log("[LCE v1.8] Calling onUpdateQuestionDefinition for Q_ID:", derivedSelectedQuestion._id);
             onUpdateQuestionDefinition(derivedSelectedQuestion._id, { definedHeatmapAreas: updatedAreas });
-            
             const currentAreaIdIsValid = updatedAreas.some(area => area.id === condition.conditionValue);
             if (!currentAreaIdIsValid && condition.conditionValue) {
                 onUpdateCondition(conditionIndex, { ...condition, conditionValue: '' });
             }
         } else {
-            console.error(
-                "[LCE v1.7] FAILED TO CALL onUpdateQuestionDefinition. derivedSelectedQuestion valid:", 
-                !!derivedSelectedQuestion, 
-                "onUpdateQuestionDefinition is function:", 
-                typeof onUpdateQuestionDefinition === 'function'
-            ); // DEBUG
+            console.error("[LCE v1.8] FAILED TO CALL onUpdateQuestionDefinition.");
         }
         setIsAreaManagerModalOpen(false);
     };
+    
+    // Callback for HeatmapAreaSelectorModal to inform LCE about drawing state
+    // This is needed to attach mouse move/up listeners to the backdrop
+    const handleHeatmapDrawingStateChange = useCallback((drawingState) => {
+        setIsHeatmapDrawing(drawingState);
+    }, []);
+
+    // Refs for HeatmapAreaSelectorModal's event handlers
+    const heatmapModalRef = useRef(); // To call methods on HeatmapAreaSelectorModal if needed
 
     const renderCoreValueInput = () => {
         if (derivedValueInputDetails.type === 'none' || !derivedSelectedQuestion) return null;
@@ -160,39 +159,54 @@ function LogicConditionEditor({
     const operatorDropdownOptions = useMemo(() => derivedCurrentOperators.map(op => ( <option key={op.value} value={op.value}>{op.label}</option> )), [derivedCurrentOperators]);
 
     return (
-        <div className={`${styles.logicConditionItem}`}>
-            <div className={styles.logicConditionTopRow}>
-                <select value={condition.sourceQuestionId || ''} onChange={handleSourceQuestionChange} className={styles.formControl} title="Select the question this condition depends on">
-                    <option value="">-- Select Source Question --</option>
-                    {sourceQuestionOptions}
-                    {availableSourceQuestions.length === 0 && <option disabled>No previous questions</option>}
-                </select>
+        <> {/* Use Fragment to avoid adding extra div to the DOM for the condition item itself */}
+            <div className={`${styles.logicConditionItem}`}>
+                <div className={styles.logicConditionTopRow}>
+                    <select value={condition.sourceQuestionId || ''} onChange={handleSourceQuestionChange} className={styles.formControl} title="Select the question this condition depends on">
+                        <option value="">-- Select Source Question --</option>
+                        {sourceQuestionOptions}
+                        {availableSourceQuestions.length === 0 && <option disabled>No previous questions</option>}
+                    </select>
 
-                <select value={condition.conditionOperator || ''} onChange={handleOperatorChange} className={styles.formControl} title="Select the comparison operator" disabled={!derivedSelectedQuestion}>
-                    {derivedSelectedQuestion ? (operatorDropdownOptions.length > 0 ? operatorDropdownOptions : <option disabled>No operators</option>) : (<option value="">-- Select Source First --</option>)}
-                </select>
+                    <select value={condition.conditionOperator || ''} onChange={handleOperatorChange} className={styles.formControl} title="Select the comparison operator" disabled={!derivedSelectedQuestion}>
+                        {derivedSelectedQuestion ? (operatorDropdownOptions.length > 0 ? operatorDropdownOptions : <option disabled>No operators</option>) : (<option value="">-- Select Source First --</option>)}
+                    </select>
 
-                {derivedSelectedQuestion && derivedValueInputDetails.type !== 'none' && ( renderCoreValueInput() )}
+                    {derivedSelectedQuestion && derivedValueInputDetails.type !== 'none' && ( renderCoreValueInput() )}
 
-                {derivedSelectedQuestion && derivedSelectedQuestion.type === 'heatmap' && condition.conditionOperator === 'clickInArea' && derivedSelectedQuestion.imageUrl && (
-                     <button type="button" onClick={() => { console.log("[LCE v1.7] 'Manage Areas' button clicked. Opening modal for Q_ID:", derivedSelectedQuestion._id); setIsAreaManagerModalOpen(true); }} className={`button button-secondary ${styles.manageAreasButton}`} title="Manage defined areas for this heatmap question">Manage Areas</button>
-                )}
+                    {derivedSelectedQuestion && derivedSelectedQuestion.type === 'heatmap' && condition.conditionOperator === 'clickInArea' && derivedSelectedQuestion.imageUrl && (
+                         <button type="button" onClick={() => { console.log("[LCE v1.8] 'Manage Areas' button clicked."); setIsAreaManagerModalOpen(true); }} className={`button button-secondary ${styles.manageAreasButton}`} title="Manage defined areas for this heatmap question">Manage Areas</button>
+                    )}
 
-                <button type="button" onClick={() => onRemoveCondition(conditionIndex)} className={`button button-danger button-small ${styles.logicRemoveButton}`} title="Remove this condition">&times;</button>
+                    <button type="button" onClick={() => onRemoveCondition(conditionIndex)} className={`button button-danger button-small ${styles.logicRemoveButton}`} title="Remove this condition">&times;</button>
+                </div>
             </div>
 
-            {derivedSelectedQuestion && derivedSelectedQuestion.type === 'heatmap' && derivedSelectedQuestion.imageUrl && isAreaManagerModalOpen && (
-                <HeatmapAreaSelectorModal
-                    isOpen={isAreaManagerModalOpen}
-                    onClose={() => setIsAreaManagerModalOpen(false)}
-                    onSaveAreas={handleDefinedAreasSavedFromModal} // This is connected to the modal's save button
-                    imageUrl={derivedSelectedQuestion.imageUrl}
-                    initialAreas={ensureArray(derivedSelectedQuestion.definedHeatmapAreas)}
-                    styles={styles} // Assuming styles are passed down correctly for modal styling
-                />
+            {/* Modal for Heatmap Area Selection - Wrapped for consistent styling */}
+            {isAreaManagerModalOpen && derivedSelectedQuestion && derivedSelectedQuestion.type === 'heatmap' && derivedSelectedQuestion.imageUrl && (
+                <div 
+                    className={styles.modalBackdrop} 
+                    onClick={() => setIsAreaManagerModalOpen(false)}
+                    onMouseMove={isHeatmapDrawing && heatmapModalRef.current?.handleGlobalMouseMove ? heatmapModalRef.current.handleGlobalMouseMove : null}
+                    onMouseUp={isHeatmapDrawing && heatmapModalRef.current?.handleGlobalMouseUp ? heatmapModalRef.current.handleGlobalMouseUp : null}
+                    onMouseLeave={isHeatmapDrawing && heatmapModalRef.current?.handleGlobalMouseUp ? heatmapModalRef.current.handleGlobalMouseUp : null} // Use mouseup for leave as well
+                >
+                    <div className={styles.modalContentWrapper} onClick={e => e.stopPropagation()}>
+                        <HeatmapAreaSelectorModal
+                            ref={heatmapModalRef} // Assign ref
+                            isOpen={isAreaManagerModalOpen} // Pass isOpen to modal for its internal logic if any still depends on it
+                            onClose={() => setIsAreaManagerModalOpen(false)}
+                            onSaveAreas={handleDefinedAreasSavedFromModal}
+                            imageUrl={derivedSelectedQuestion.imageUrl}
+                            initialAreas={ensureArray(derivedSelectedQuestion.definedHeatmapAreas)}
+                            styles={styles} // Pass styles for internal consistency if needed, though modalBackdrop/ContentWrapper are now primary
+                            onDrawingStateChange={handleHeatmapDrawingStateChange} // For LCE to know if modal is drawing
+                        />
+                    </div>
+                </div>
             )}
-        </div>
+        </>
     );
 }
 export default LogicConditionEditor;
-// ----- END OF UPDATED FILE (v1.7 - Added more granular debug logs for heatmap save) -----
+// ----- END OF UPDATED FILE (v1.8 - Wrapped HeatmapModal for consistent presentation) -----
