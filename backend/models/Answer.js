@@ -1,9 +1,9 @@
 // backend/models/Answer.js
-// ----- START OF COMPLETE MODIFIED FILE -----
+// ----- START OF COMPLETE UPDATED FILE -----
 const mongoose = require('mongoose');
 
 const answerSchema = new mongoose.Schema({
-    surveyId: {
+    survey: { // Changed from surveyId
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Survey',
         required: true,
@@ -27,11 +27,12 @@ const answerSchema = new mongoose.Schema({
         type: String,
         trim: true,
     },
-    collectorId: { // To track which collector was used for this response
+    collector: { // Changed from collectorId
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Collector',
         index: true,
         // Not strictly required for an answer to exist, but highly recommended for tracking
+        // Consider if this should be required: true if every answer MUST be associated with a collector directly
     },
     // Timestamps
     createdAt: {
@@ -51,8 +52,10 @@ answerSchema.pre('save', function(next) {
 });
 
 // Index for common queries
-answerSchema.index({ surveyId: 1, sessionId: 1 });
+answerSchema.index({ survey: 1, sessionId: 1 }); // Changed from surveyId
 answerSchema.index({ questionId: 1, answerValue: 1 }); // Example, adjust as needed
+// Consider a compound index if you frequently query by survey, collector, and sessionId together for answers
+// answerSchema.index({ survey: 1, collector: 1, sessionId: 1 });
 
 module.exports = mongoose.model('Answer', answerSchema);
-// ----- END OF COMPLETE MODIFIED FILE -----
+// ----- END OF COMPLETE UPDATED FILE -----
