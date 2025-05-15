@@ -1,41 +1,42 @@
 // frontend/src/components/logic/HeatmapAreaSelectorModal.js
-// ----- START OF MODIFIED FILE (v2.5.5 - Internalize mousemove, refine mouseup) -----
-import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
+// ----- START OF MODIFIED FILE (v2.5.6 - Stabilize callbacks, use ref for mouseMoved) -----
+import React, { useState, useEffect, useRef, useCallback } from 'react'; // Removed forwardRef, useImperativeHandle for now
 import { v4 as uuidv4 } from 'uuid';
 
-const HeatmapAreaSelectorModal = forwardRef(({
+const HeatmapAreaSelectorModal = ({ // Removed forwardRef for now
     isOpen,
     onClose,
     onSaveAreas,
     imageUrl,
     initialAreas = [],
     styles, 
-    onDrawingStateChange // This prop is for SurveyBuildPage to know about drawing state
-}, ref) => {
+    onDrawingStateChange
+}) => {
     const [areas, setAreas] = useState([]);
     const [selectedAreaId, setSelectedAreaId] = useState(null);
     const [editingAreaName, setEditingAreaName] = useState('');
     const [currentDrawing, setCurrentDrawing] = useState(null);
-    const [isDrawingInternal, setIsDrawingInternal] = useState(false); // Internal drawing state
+    const [isDrawingInternal, setIsDrawingInternal] = useState(false);
     const [startPoint, setStartPoint] = useState({ x: 0, y: 0 });
     const [imageRenderedData, setImageRenderedData] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0, top: 0, left: 0 });
     const [error, setError] = useState('');
-    const [mouseMovedAfterDown, setMouseMovedAfterDown] = useState(false);
+    
+    // Use a ref for mouseMovedAfterDown to avoid stale closures in callbacks
+    const mouseMovedAfterDownRef = useRef(false);
 
     const imageRef = useRef(null);
-    const drawingCanvasRef = useRef(null); // This is the container (grey box)
+    const drawingCanvasRef = useRef(null);
 
-    // Effect to call the prop when internal drawing state changes
     useEffect(() => {
         if (typeof onDrawingStateChange === 'function') {
             onDrawingStateChange(isDrawingInternal);
         }
     }, [isDrawingInternal, onDrawingStateChange]);
 
-    console.log('[HeatmapModal LOG v2.5.5] Render. isOpen:', isOpen, 'isDrawingInternal:', isDrawingInternal, 'currentDrawing:', currentDrawing, 'imageRenderedData:', imageRenderedData);
+    console.log('[HeatmapModal LOG v2.5.6] Render. isOpen:', isOpen, 'isDrawingInternal:', isDrawingInternal, 'currentDrawing:', currentDrawing);
 
     useEffect(() => {
-        console.log('[HeatmapModal LOG v2.5.5] useEffect for isOpen/initialAreas. isOpen:', isOpen);
+        console.log('[HeatmapModal LOG v2.5.6] useEffect for isOpen/initialAreas. isOpen:', isOpen);
         if (isOpen) {
             const processedAreas = initialAreas.map(area => ({ ...area, id: area.id || uuidv4() }));
             setAreas(processedAreas);
@@ -44,25 +45,21 @@ const HeatmapAreaSelectorModal = forwardRef(({
             setCurrentDrawing(null);
             setError('');
             setIsDrawingInternal(false); 
-            setMouseMovedAfterDown(false);
+            mouseMovedAfterDownRef.current = false; // Reset ref
             setImageRenderedData({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0, top: 0, left: 0 });
-            console.log('[HeatmapModal LOG v2.5.5] Modal opened, state reset. Initial areas:', processedAreas.length);
+            console.log('[HeatmapModal LOG v2.5.6] Modal opened, state reset.');
         } else {
-             // Ensure drawing is stopped if modal is closed externally while drawing
-            if (isDrawingInternal) {
-                setIsDrawingInternal(false);
-            }
+            if (isDrawingInternal) setIsDrawingInternal(false);
         }
-    }, [initialAreas, isOpen]); // Removed isDrawingInternal from deps here as it caused loops
+    }, [initialAreas, isOpen]);
 
     const updateImageRenderedData = useCallback(() => {
-        // ... (same as v2.5.4)
-        console.log('[HeatmapModal LOG v2.5.5] updateImageRenderedData called.');
+        console.log('[HeatmapModal LOG v2.5.6] updateImageRenderedData called.');
         if (imageRef.current && imageRef.current.complete && imageRef.current.naturalWidth > 0) {
             const imgElement = imageRef.current;
             const containerElement = drawingCanvasRef.current;
             if (!containerElement) {
-                console.warn('[HeatmapModal LOG v2.5.5] updateImageRenderedData: drawingCanvasRef.current is null.');
+                console.warn('[HeatmapModal LOG v2.5.6] updateImageRenderedData: drawingCanvasRef is null.');
                 return;
             }
             const containerRect = containerElement.getBoundingClientRect();
@@ -72,17 +69,16 @@ const HeatmapAreaSelectorModal = forwardRef(({
                 naturalWidth: imgElement.naturalWidth, naturalHeight: imgElement.naturalHeight,
                 top: imgRect.top - containerRect.top, left: imgRect.left - containerRect.left,
             };
-            console.log('[HeatmapModal LOG v2.5.5] Image ready, new calculated data:', newData);
+            console.log('[HeatmapModal LOG v2.5.6] Image ready, new data:', newData);
             if (newData.width > 0 && newData.height > 0) setImageRenderedData(newData);
-            else console.warn('[HeatmapModal LOG v2.5.5] updateImageRenderedData: Calculated newData has zero width or height.', newData);
-        } else if (imageRef.current) console.warn('[HeatmapModal LOG v2.5.5] updateImageRenderedData: Image ref exists but not ready.');
-        else console.warn('[HeatmapModal LOG v2.5.5] updateImageRenderedData: imageRef.current is null.');
+            else console.warn('[HeatmapModal LOG v2.5.6] updateImageRenderedData: Zero width/height.', newData);
+        } else if (imageRef.current) console.warn('[HeatmapModal LOG v2.5.6] Image ref exists but not ready.');
+        else console.warn('[HeatmapModal LOG v2.5.6] imageRef is null.');
     }, []);
 
     useEffect(() => {
-        // ... (same as v2.5.4, uses updateImageRenderedData)
         const imgElement = imageRef.current;
-        const handleLoad = () => { console.log("[HeatmapModal LOG v2.5.5] Image 'load' event fired."); updateImageRenderedData(); };
+        const handleLoad = () => { console.log("[HeatmapModal LOG v2.5.6] Image 'load' event."); updateImageRenderedData(); };
         if (isOpen && imgElement) {
             if (imgElement.complete && imgElement.naturalWidth > 0 && imgElement.offsetWidth > 0) updateImageRenderedData();
             else imgElement.addEventListener('load', handleLoad);
@@ -95,7 +91,6 @@ const HeatmapAreaSelectorModal = forwardRef(({
     }, [isOpen, updateImageRenderedData]);
 
     const getMousePositionOnImageElement = useCallback((event) => {
-        // ... (same as v2.5.4, uses imageRenderedData)
         if (!imageRef.current || !drawingCanvasRef.current || imageRenderedData.width === 0 || imageRenderedData.height === 0) {
             return { x: 0, y: 0, valid: false };
         }
@@ -109,30 +104,29 @@ const HeatmapAreaSelectorModal = forwardRef(({
         x = Math.max(0, Math.min(x, imageRenderedData.width));
         y = Math.max(0, Math.min(y, imageRenderedData.height));
         return { x, y, valid: isValidClickOnImage };
-    }, [imageRenderedData]);
+    }, [imageRenderedData]); // imageRenderedData is the only dependency from component scope
 
-    const handleMouseDownOnCanvas = (event) => {
-        // ... (same as v2.5.4, but sets isDrawingInternal)
-        console.log('[HeatmapModal LOG v2.5.5] handleMouseDownOnCanvas triggered.');
+    const handleMouseDownOnCanvas = useCallback((event) => {
+        console.log('[HeatmapModal LOG v2.5.6] handleMouseDownOnCanvas.');
         if (event.button !== 0 || !imageRenderedData.width || !imageRenderedData.height) return;
         const pos = getMousePositionOnImageElement(event);
-        if (!pos.valid) { console.warn("[HeatmapModal LOG v2.5.5] Mouse down was outside image. Ignoring."); return; }
+        if (!pos.valid) { console.warn("[HeatmapModal LOG v2.5.6] Mouse down outside image."); return; }
         event.preventDefault(); event.stopPropagation();
-        setIsDrawingInternal(true); // Use internal state
-        setMouseMovedAfterDown(false);
+        
+        setIsDrawingInternal(true);
+        mouseMovedAfterDownRef.current = false; // Reset ref on new mousedown
         setStartPoint({ x: pos.x, y: pos.y });
         setCurrentDrawing({ x: pos.x / imageRenderedData.width, y: pos.y / imageRenderedData.height, width: 0, height: 0 });
         setError('');
-        console.log('[HeatmapModal LOG v2.5.5] Drawing started. Start (pixels on image):', {x: pos.x, y: pos.y});
-    };
+        console.log('[HeatmapModal LOG v2.5.6] Drawing started. Start (pixels):', {x: pos.x, y: pos.y});
+    }, [imageRenderedData, getMousePositionOnImageElement]); // Dependencies for useCallback
 
-    // MODIFIED: handleGlobalMouseMove is now internal to the component
     const handleMouseMoveInternal = useCallback((event) => {
-        // No need to check isDrawingInternal here, as listener is added/removed based on it
-        if (!imageRenderedData.width || !imageRenderedData.height) return;
+        if (!isDrawingInternal || !imageRenderedData.width || !imageRenderedData.height) return; // Check isDrawingInternal here
         
-        console.log('[HeatmapModal LOG v2.5.5] handleMouseMoveInternal triggered.'); // New log
-        setMouseMovedAfterDown(true);
+        console.log('[HeatmapModal LOG v2.5.6] handleMouseMoveInternal triggered.');
+        mouseMovedAfterDownRef.current = true; // Set ref to true
+        
         const currentPos = getMousePositionOnImageElement(event);
         const rectXpixels = Math.min(startPoint.x, currentPos.x);
         const rectYpixels = Math.min(startPoint.y, currentPos.y);
@@ -145,63 +139,54 @@ const HeatmapAreaSelectorModal = forwardRef(({
             width: rectWidthPixels / imageRenderedData.width,
             height: rectHeightPixels / imageRenderedData.height
         });
-    }, [imageRenderedData, startPoint, getMousePositionOnImageElement]); // isDrawingInternal not needed as dependency due to listener management
+    }, [isDrawingInternal, imageRenderedData, startPoint, getMousePositionOnImageElement]); // Added isDrawingInternal
 
-    // MODIFIED: handleGlobalMouseUp is now internal
     const handleMouseUpInternal = useCallback(() => {
-        // No need to check isDrawingInternal here, as listener is added/removed based on it
-        console.log('[HeatmapModal LOG v2.5.5] handleMouseUpInternal. MouseMoved:', mouseMovedAfterDown, 'CurrentDrawing before check:', JSON.stringify(currentDrawing));
-        setIsDrawingInternal(false); // Stop drawing FIRST
+        if (!isDrawingInternal) return; // Check isDrawingInternal here
+        console.log('[HeatmapModal LOG v2.5.6] handleMouseUpInternal. MouseMovedRef:', mouseMovedAfterDownRef.current, 'CurrentDrawing:', JSON.stringify(currentDrawing));
         
         const minPixelDimension = 1;
         let drawingIsValid = false;
         if (currentDrawing && imageRenderedData.width > 0 && imageRenderedData.height > 0) {
             const drawnWidthInPixels = currentDrawing.width * imageRenderedData.width;
             const drawnHeightInPixels = currentDrawing.height * imageRenderedData.height;
-            console.log('[HeatmapModal LOG v2.5.5] MouseUp: Drawn pixels W:', drawnWidthInPixels, 'H:', drawnHeightInPixels);
+            console.log('[HeatmapModal LOG v2.5.6] MouseUp: Drawn pixels W:', drawnWidthInPixels, 'H:', drawnHeightInPixels);
             if (drawnWidthInPixels >= minPixelDimension && drawnHeightInPixels >= minPixelDimension) {
                 drawingIsValid = true;
             }
         }
 
-        if (!mouseMovedAfterDown || !drawingIsValid) {
+        // Use the ref's current value here
+        if (!mouseMovedAfterDownRef.current || !drawingIsValid) {
             setCurrentDrawing(null); 
-            console.log('[HeatmapModal LOG v2.5.5] Drawing cleared (was click or too small). Valid:', drawingIsValid, 'Moved:', mouseMovedAfterDown);
+            console.log('[HeatmapModal LOG v2.5.6] Drawing cleared. Valid:', drawingIsValid, 'MovedRef:', mouseMovedAfterDownRef.current);
         } else {
-            console.log('[HeatmapModal LOG v2.5.5] Drawing ended. Final currentDrawing:', JSON.stringify(currentDrawing));
+            console.log('[HeatmapModal LOG v2.5.6] Drawing ended. Final currentDrawing:', JSON.stringify(currentDrawing));
         }
-        // setMouseMovedAfterDown(false); // Resetting this in setIsDrawingInternal effect or mousedown
-    }, [currentDrawing, imageRenderedData, mouseMovedAfterDown]);
+        setIsDrawingInternal(false); // Stop drawing AFTER processing
+    }, [isDrawingInternal, currentDrawing, imageRenderedData]); // Added isDrawingInternal
 
-
-    // Effect to manage global mouse listeners based on isDrawingInternal
     useEffect(() => {
         if (isDrawingInternal) {
-            console.log('[HeatmapModal LOG v2.5.5] Adding internal mousemove/mouseup listeners.');
+            console.log('[HeatmapModal LOG v2.5.6] Adding window mouse listeners.');
+            // mouseMovedAfterDownRef.current = false; // Already reset in mousedown
             window.addEventListener('mousemove', handleMouseMoveInternal);
             window.addEventListener('mouseup', handleMouseUpInternal);
-            setMouseMovedAfterDown(false); // Reset here when drawing starts
         } else {
-            console.log('[HeatmapModal LOG v2.5.5] Removing internal mousemove/mouseup listeners.');
+            console.log('[HeatmapModal LOG v2.5.6] Removing window mouse listeners.');
             window.removeEventListener('mousemove', handleMouseMoveInternal);
             window.removeEventListener('mouseup', handleMouseUpInternal);
         }
         return () => {
-            console.log('[HeatmapModal LOG v2.5.5] Cleanup: Removing internal mousemove/mouseup listeners.');
+            console.log('[HeatmapModal LOG v2.5.6] Cleanup: Removing window mouse listeners from effect.');
             window.removeEventListener('mousemove', handleMouseMoveInternal);
             window.removeEventListener('mouseup', handleMouseUpInternal);
         };
-    }, [isDrawingInternal, handleMouseMoveInternal, handleMouseUpInternal]);
+    }, [isDrawingInternal, handleMouseMoveInternal, handleMouseUpInternal]); // Callbacks are now stable
 
-    // useImperativeHandle is no longer needed to expose these mouse handlers
-    // If SurveyBuildPage needs to trigger something on the modal, other methods can be exposed.
-    // For now, we remove it to simplify, as drawing is self-contained.
-    useImperativeHandle(ref, () => ({
-        // expose other methods if needed by parent, e.g., a method to manually clear drawing
-    }));
-
-    const handleSelectAreaFromList = (areaId) => { /* ... unchanged from v2.5.4 ... */
-        console.log('[HeatmapModal LOG v2.5.5] handleSelectAreaFromList clicked for areaId:', areaId);
+    // ... (handleSelectAreaFromList, handleSaveOrUpdateArea, handleDeleteSelectedArea, handleStartNewAreaDefinition, handleMainSaveAllAreas remain the same as v2.5.5)
+    const handleSelectAreaFromList = (areaId) => {
+        console.log('[HeatmapModal LOG v2.5.6] handleSelectAreaFromList clicked for areaId:', areaId);
         setSelectedAreaId(areaId);
         const area = areas.find(a => a.id === areaId);
         if (area) {
@@ -211,8 +196,8 @@ const HeatmapAreaSelectorModal = forwardRef(({
         setError('');
     };
     
-    const handleSaveOrUpdateArea = () => { /* ... unchanged from v2.5.4, uses imageRenderedData ... */
-        console.log('[HeatmapModal LOG v2.5.5] handleSaveOrUpdateArea button clicked.');
+    const handleSaveOrUpdateArea = () => {
+        console.log('[HeatmapModal LOG v2.5.6] handleSaveOrUpdateArea button clicked.');
         if (!editingAreaName.trim()) { setError("Area name cannot be empty."); return; }
         const minPixelDimension = 1;
         if (!currentDrawing || (imageRenderedData.width > 0 && currentDrawing.width * imageRenderedData.width < minPixelDimension) || (imageRenderedData.height > 0 && currentDrawing.height * imageRenderedData.height < minPixelDimension)) {
@@ -224,30 +209,31 @@ const HeatmapAreaSelectorModal = forwardRef(({
         } else { const newArea = { ...areaData, id: uuidv4() }; setAreas([...areas, newArea]); setSelectedAreaId(newArea.id); }
     };
 
-    const handleDeleteSelectedArea = () => { /* ... unchanged from v2.5.4 ... */
-        console.log('[HeatmapModal LOG v2.5.5] handleDeleteSelectedArea button clicked.');
+    const handleDeleteSelectedArea = () => {
+        console.log('[HeatmapModal LOG v2.5.6] handleDeleteSelectedArea button clicked.');
         if (selectedAreaId) {
             setAreas(areas.filter(a => a.id !== selectedAreaId));
             setSelectedAreaId(null); setEditingAreaName(''); setCurrentDrawing(null); setError('');
         } else { setError("No area selected to delete."); }
     };
 
-    const handleStartNewAreaDefinition = () => { /* ... unchanged from v2.5.4 ... */
-        console.log('[HeatmapModal LOG v2.5.5] handleStartNewAreaDefinition button clicked.');
+    const handleStartNewAreaDefinition = () => {
+        console.log('[HeatmapModal LOG v2.5.6] handleStartNewAreaDefinition button clicked.');
         setSelectedAreaId(null); setEditingAreaName(''); setCurrentDrawing(null); 
-        setIsDrawingInternal(false); setMouseMovedAfterDown(false); setError('');
+        setIsDrawingInternal(false); mouseMovedAfterDownRef.current = false; setError('');
     };
     
-    const handleMainSaveAllAreas = () => { /* ... unchanged from v2.5.4, uses imageRenderedData ... */
-        console.log('[HeatmapModal LOG v2.5.5] handleMainSaveAllAreas button clicked.');
+    const handleMainSaveAllAreas = () => {
+        console.log('[HeatmapModal LOG v2.5.6] handleMainSaveAllAreas button clicked.');
         const minPixelDimension = 1;
         const validAreas = areas.filter(area => area.name && area.name.trim() !== '' && (imageRenderedData.width > 0 && area.width * imageRenderedData.width >= minPixelDimension) && (imageRenderedData.height > 0 && area.height * imageRenderedData.height >= minPixelDimension));
         if (validAreas.length !== areas.length) { setError(`Cannot save: ${areas.length - validAreas.length} area(s) are unnamed or too small.`); return; }
         setError(''); onSaveAreas(validAreas); onClose();
     };
 
+
     if (!isOpen) return null;
-    // ... (JSX is the same as v2.5.4, ensure it uses imageRenderedData and currentDrawing correctly)
+    // ... (JSX is the same as v2.5.5)
     const activeRectangleToDisplay = currentDrawing;
     const selectionBoxStyle = activeRectangleToDisplay && imageRenderedData.width > 0 ? {
         position: 'absolute',
@@ -294,7 +280,7 @@ const HeatmapAreaSelectorModal = forwardRef(({
                         <img ref={imageRef} src={imageUrl} alt="Heatmap for area selection" draggable="false"
                             className={styles.heatmapSelectableImage}
                             onLoad={() => { 
-                                console.log("[HeatmapModal LOG v2.5.5] Inline img onLoad triggered.");
+                                console.log("[HeatmapModal LOG v2.5.6] Inline img onLoad triggered.");
                                 updateImageRenderedData();
                             }}
                             onError={() => { setError("Failed to load heatmap image."); }} />
@@ -346,6 +332,6 @@ const HeatmapAreaSelectorModal = forwardRef(({
             </div>
         </div>
     );
-});
+};
 export default HeatmapAreaSelectorModal;
-// ----- END OF MODIFIED FILE (v2.5.5) -----
+// ----- END OF MODIFIED FILE (v2.5.6) -----
