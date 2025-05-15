@@ -1,5 +1,5 @@
 /* frontend/src/App.css */
-/* ----- START OF COMPLETE MERGED FILE (incorporating Navbar.css concepts) ----- */
+/* ----- START OF COMPLETE MERGED FILE (incorporating Navbar.css concepts AND ProgressBar styles) ----- */
 
 /* Basic Reset & Body Styles */
 *, *::before, *::after {
@@ -60,6 +60,12 @@
   --primary-color: var(--button-primary-bg);
   --primary-color-light: color-mix(in srgb, var(--primary-color) 80%, white);
   --primary-color-alpha: color-mix(in srgb, var(--primary-color) 25%, transparent);
+
+  /* --- NEW: Progress Bar Variables (Light Theme) --- */
+  --progressbar-track-bg: #e0e0e0;
+  --progressbar-fill-bg: var(--primary-color); /* Use primary color for fill */
+  --progressbar-text-color: var(--text-secondary);
+  /* --- END NEW --- */
 }
 
 .dark-mode {
@@ -72,7 +78,7 @@
   --text-muted: #888888;
   --border-color: #444444;
   --border-color-heavy: #555555;
-  --link-color: #5dade2; /* Lighter blue for dark mode links */
+  --link-color: #5dade2;
   --navbar-bg: #1f2b38;
   --navbar-text: #bdc3c7;
   --navbar-hover-bg: #2c3e50;
@@ -112,6 +118,12 @@
   --primary-color: var(--button-primary-bg);
   --primary-color-light: color-mix(in srgb, var(--primary-color) 80%, #2c2c2c);
   --primary-color-alpha: color-mix(in srgb, var(--primary-color) 30%, transparent);
+
+  /* --- NEW: Progress Bar Variables (Dark Theme) --- */
+  --progressbar-track-bg: #555555;
+  --progressbar-fill-bg: var(--primary-color); /* Use primary color for fill */
+  --progressbar-text-color: var(--text-secondary);
+  /* --- END NEW --- */
 }
 
 /* Apply base styles using variables */
@@ -144,18 +156,16 @@ code {
 /* ========== NAVBAR STYLES (Consolidated) ========== */
 .main-navbar {
   background-color: var(--navbar-bg);
-  padding: 0 25px; /* Using 25px from previous App.css, adjust if 20px from Navbar.css is preferred */
+  padding: 0 25px;
   box-shadow: var(--shadow-medium);
-  border-bottom: 1px solid var(--border-color); /* From Navbar.css, using theme variable */
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 1000;
+  z-index: 1000; /* Ensure navbar is above progress bar if progress bar is also sticky/fixed */
   width: 100%;
   box-sizing: border-box;
-  /* margin-bottom: 20px; /* From Navbar.css - adds space below navbar. Uncomment if desired. */
-                          /* I'll keep it commented for now to let main-content handle top margin */
 }
 
 .navbar-brand {
@@ -164,11 +174,11 @@ code {
   font-size: 1.3rem;
   text-decoration: none;
   margin-right: 25px;
-  padding: 12px 0; /* Give brand vertical padding similar to links if navbar padding is 0 top/bottom */
+  padding: 12px 0;
   white-space: nowrap;
 }
 .navbar-brand:hover {
-  color: var(--link-color); 
+  color: var(--link-color);
 }
 
 .navbar-links-list {
@@ -177,7 +187,7 @@ code {
   padding: 0;
   display: flex;
   align-items: center;
-  gap: 5px; /* Reduced gap slightly, adjust as needed */
+  gap: 5px;
 }
 
 .nav-link {
@@ -185,9 +195,9 @@ code {
   text-decoration: none;
   font-size: 1rem;
   font-weight: 500;
-  padding: 15px 20px; /* Using padding from your Navbar.css for larger tabs */
-  border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0; /* Rounded top corners if desired */
-  border-bottom: 3px solid transparent; /* From Navbar.css for active indicator placeholder */
+  padding: 15px 20px;
+  border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0;
+  border-bottom: 3px solid transparent;
   transition: color 0.2s ease-in-out, background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
   display: block;
   white-space: nowrap;
@@ -196,16 +206,16 @@ code {
 .nav-link:hover,
 .nav-link:focus {
   background-color: var(--navbar-hover-bg);
-  color: #ffffff; 
-  border-bottom-color: transparent; /* Keep border transparent on hover unless it's active */
+  color: #ffffff;
+  border-bottom-color: transparent;
   outline: none;
 }
 
 .nav-link.active {
-  background-color: var(--navbar-hover-bg); /* Or a different color for active, e.g., var(--background-secondary) */
-  color: var(--link-color); /* Use theme's link color for active text */
+  background-color: var(--navbar-hover-bg);
+  color: var(--link-color);
   font-weight: 600;
-  border-bottom-color: var(--navbar-active-border); /* Blue underline for active tab from Navbar.css concept */
+  border-bottom-color: var(--navbar-active-border);
 }
 
 .navbar-theme-toggle-container {
@@ -242,7 +252,7 @@ code {
   flex-grow: 1;
   max-width: 1100px;
   width: 100%;
-  margin: 30px auto; /* This margin-top provides space below navbar if navbar itself doesn't have margin-bottom */
+  margin: 30px auto;
   padding: 25px 30px;
   background-color: var(--background-secondary);
   border-radius: var(--border-radius);
@@ -414,8 +424,6 @@ label {
 /* --- Component Specific Styles --- */
 
 /* Table Styles using Variables */
-
-/* ... (Keep all your existing table styles) ... */
 .question-list-container {
   margin-top: 20px;
   overflow-x: auto;
@@ -473,8 +481,6 @@ label {
 }
 
 /* --- Toastify Dark Mode Compatibility --- */
-
-/* ... (Keep all your existing Toastify styles) ... */
 .Toastify__toast-theme--colored.Toastify__toast--default {
   background: var(--background-secondary); color: var(--text-primary);
 }
@@ -499,7 +505,6 @@ label {
 
 /* Utility Classes (Optional) */
 .text-center { text-align: center; }
-/* ... (Keep all your existing utility classes) ... */
 .mt-1 { margin-top: 0.5rem; }
 .mt-2 { margin-top: 1rem; }
 .mb-1 { margin-bottom: 0.5rem; }
@@ -512,27 +517,23 @@ label {
   justify-content: center;
   align-items: center;
   height: 100vh;
-  background-color: var(--background-primary, #f8f9fa); /* Use theme variable */
-  color: var(--text-primary, #212529); /* Use theme variable */
+  background-color: var(--background-primary, #f8f9fa);
+  color: var(--text-primary, #212529);
 }
 
 .spinner {
-  border: 4px solid rgba(0, 0, 0, 0.1); /* Light border for the spinner track */
+  border: 4px solid rgba(0, 0, 0, 0.1);
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border-left-color: var(--primary-color, #007bff); /* Use theme's primary color for spinner */
+  border-left-color: var(--primary-color, #007bff);
   animation: spin 1s ease infinite;
   margin-bottom: 20px;
 }
 
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* Adjust main content padding based on Navbar presence */
@@ -543,4 +544,40 @@ label {
 .main-content.without-navbar {
   padding-top: 20px; /* Or whatever default padding you want */
 }
+
+/* --- NEW: Progress Bar Styles --- */
+/* These can also go into SurveyTakingPage.module.css if preferred */
+/* Ensure these styles are defined in SurveyTakingPage.module.css if you use them there */
+/* For global App.css: */
+/*
+.progressBarContainer {
+  width: 100%;
+  margin: 15px 0 25px;
+  padding: 0 10px;
+}
+
+.progressBarTrack {
+  background-color: var(--progressbar-track-bg);
+  border-radius: var(--border-radius-sm);
+  height: 10px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progressBarFill {
+  background-color: var(--progressbar-fill-bg);
+  height: 100%;
+  border-radius: var(--border-radius-sm);
+  transition: width 0.3s ease-in-out;
+}
+
+.progressBarText {
+  text-align: center;
+  font-size: 0.85em;
+  color: var(--progressbar-text-color);
+  margin-top: 6px;
+}
+*/
+/* --- END NEW --- */
+
 /* ----- END OF COMPLETE MERGED FILE ----- */

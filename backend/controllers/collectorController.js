@@ -1,5 +1,5 @@
 // backend/controllers/collectorController.js
-// ----- START OF COMPLETE UPDATED FILE (v1.3 - Handle allowBackButton Setting) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.4 - Handle ProgressBar Settings) -----
 const mongoose = require('mongoose');
 const Collector = require('../models/Collector');
 const Survey = require('../models/Survey');
@@ -30,29 +30,34 @@ exports.createCollector = async (req, res) => {
         };
 
         if (collectorData.type === 'web_link') {
-            collectorData.settings.web_link = {}; 
+            collectorData.settings.web_link = {};
             if (settings && settings.web_link) {
-                // --- MODIFIED: Added allowBackButton to allowedKeys ---
+                // --- MODIFIED: Added progressBarEnabled & progressBarStyle to allowedKeys ---
                 const allowedKeys = [
-                    'customSlug', 'password', 'openDate', 'closeDate', 
-                    'maxResponses', 'allowMultipleResponses', 'anonymousResponses', 
-                    'enableRecaptcha', 'recaptchaSiteKey', 
+                    'customSlug', 'password', 'openDate', 'closeDate',
+                    'maxResponses', 'allowMultipleResponses', 'anonymousResponses',
+                    'enableRecaptcha', 'recaptchaSiteKey',
                     'ipAllowlist', 'ipBlocklist',
-                    'allowBackButton' // <<< ADDED
+                    'allowBackButton',
+                    'progressBarEnabled', // <<< ADDED
+                    'progressBarStyle'  // <<< ADDED
                 ];
                 for (const key of allowedKeys) {
                     if (settings.web_link.hasOwnProperty(key)) {
                         if (key === 'password' && settings.web_link.password === '') {
-                            collectorData.settings.web_link.password = undefined; 
+                            collectorData.settings.web_link.password = undefined;
                         } else if (key === 'maxResponses') {
                             const parsedMax = parseInt(settings.web_link.maxResponses, 10);
                             collectorData.settings.web_link.maxResponses = (isNaN(parsedMax) || parsedMax <=0) ? null : parsedMax;
                         } else if (key === 'ipAllowlist' || key === 'ipBlocklist') {
-                            collectorData.settings.web_link[key] = Array.isArray(settings.web_link[key]) 
-                                ? settings.web_link[key].filter(ip => typeof ip === 'string' && ip.trim() !== '') 
+                            collectorData.settings.web_link[key] = Array.isArray(settings.web_link[key])
+                                ? settings.web_link[key].filter(ip => typeof ip === 'string' && ip.trim() !== '')
                                 : [];
-                        } else if (key === 'allowBackButton' || key === 'enableRecaptcha' || key === 'allowMultipleResponses' || key === 'anonymousResponses') {
+                        } else if (key === 'allowBackButton' || key === 'enableRecaptcha' || key === 'allowMultipleResponses' || key === 'anonymousResponses' || key === 'progressBarEnabled') { // <<< MODIFIED: Added progressBarEnabled
                             collectorData.settings.web_link[key] = !!settings.web_link[key]; // Ensure boolean
+                        } else if (key === 'progressBarStyle') {
+                            const validStyles = ['percentage', 'pages'];
+                            collectorData.settings.web_link[key] = validStyles.includes(settings.web_link[key]) ? settings.web_link[key] : 'percentage';
                         }
                         else {
                             collectorData.settings.web_link[key] = settings.web_link[key];
@@ -71,7 +76,7 @@ exports.createCollector = async (req, res) => {
                     }
                 }
             }
-        } else if (collectorData.type) { 
+        } else if (collectorData.type) {
             if (settings && settings[collectorData.type]) {
                  collectorData.settings[collectorData.type] = { ...settings[collectorData.type] };
             }
@@ -127,12 +132,12 @@ exports.getCollectorsForSurvey = async (req, res) => {
     const { surveyId } = req.params;
     try {
         const collectors = await Collector.find({ survey: surveyId })
-            .select('-settings.web_link.password') 
+            .select('-settings.web_link.password')
             .sort({ createdAt: -1 });
         res.status(200).json({
             success: true,
             count: collectors.length,
-            data: collectors 
+            data: collectors
         });
     } catch (error) {
         console.error(`[collectorController.getCollectorsForSurvey] Error for survey ${surveyId}:`, error);
@@ -180,7 +185,7 @@ exports.updateCollector = async (req, res) => {
 
     try {
         let collector = await Collector.findOne({ _id: collectorId, survey: surveyId })
-                                     .select('+settings.web_link.password') 
+                                     .select('+settings.web_link.password')
                                      .session(session);
 
         if (!collector) {
@@ -196,19 +201,21 @@ exports.updateCollector = async (req, res) => {
         if (status !== undefined) collector.status = status;
 
         if (settings) {
-            const effectiveType = type !== undefined ? type : collector.type; 
+            const effectiveType = type !== undefined ? type : collector.type;
             if (effectiveType === 'web_link') {
-                if (!collector.settings.web_link) collector.settings.web_link = {}; 
-                
+                if (!collector.settings.web_link) collector.settings.web_link = {};
+
                 if (settings.web_link) {
                     const newWebLinkSettings = settings.web_link;
-                    // --- MODIFIED: Added allowBackButton to allowedWebLinkKeys ---
+                    // --- MODIFIED: Added progressBarEnabled & progressBarStyle to allowedWebLinkKeys ---
                     const allowedWebLinkKeys = [
-                        'customSlug', 'password', 'openDate', 'closeDate', 
-                        'maxResponses', 'allowMultipleResponses', 'anonymousResponses', 
+                        'customSlug', 'password', 'openDate', 'closeDate',
+                        'maxResponses', 'allowMultipleResponses', 'anonymousResponses',
                         'enableRecaptcha', 'recaptchaSiteKey',
                         'ipAllowlist', 'ipBlocklist',
-                        'allowBackButton' // <<< ADDED
+                        'allowBackButton',
+                        'progressBarEnabled', // <<< ADDED
+                        'progressBarStyle'  // <<< ADDED
                     ];
 
                     for (const key of allowedWebLinkKeys) {
@@ -218,12 +225,15 @@ exports.updateCollector = async (req, res) => {
                             } else if (key === 'maxResponses') {
                                 const parsedMax = parseInt(newWebLinkSettings.maxResponses, 10);
                                 collector.settings.web_link.maxResponses = (isNaN(parsedMax) || parsedMax <=0) ? null : parsedMax;
-                            } else if (key === 'enableRecaptcha' || key === 'allowMultipleResponses' || key === 'anonymousResponses' || key === 'allowBackButton') { // <<< MODIFIED: Added allowBackButton here
+                            } else if (key === 'enableRecaptcha' || key === 'allowMultipleResponses' || key === 'anonymousResponses' || key === 'allowBackButton' || key === 'progressBarEnabled') { // <<< MODIFIED: Added progressBarEnabled
                                 collector.settings.web_link[key] = !!newWebLinkSettings[key]; // Ensure boolean
                             } else if (key === 'ipAllowlist' || key === 'ipBlocklist') {
-                                collector.settings.web_link[key] = Array.isArray(newWebLinkSettings[key]) 
-                                    ? newWebLinkSettings[key].filter(ip => typeof ip === 'string' && ip.trim() !== '') 
+                                collector.settings.web_link[key] = Array.isArray(newWebLinkSettings[key])
+                                    ? newWebLinkSettings[key].filter(ip => typeof ip === 'string' && ip.trim() !== '')
                                     : [];
+                            } else if (key === 'progressBarStyle') {
+                                const validStyles = ['percentage', 'pages'];
+                                collector.settings.web_link[key] = validStyles.includes(newWebLinkSettings[key]) ? newWebLinkSettings[key] : 'percentage';
                             }
                             else {
                                 collector.settings.web_link[key] = newWebLinkSettings[key];
@@ -234,7 +244,7 @@ exports.updateCollector = async (req, res) => {
                     if (newWebLinkSettings.customSlug && newWebLinkSettings.customSlug !== (collector.settings.web_link && collector.settings.web_link.customSlug)) {
                          const existingSlug = await Collector.findOne({
                             'settings.web_link.customSlug': newWebLinkSettings.customSlug,
-                            _id: { $ne: collectorId } 
+                            _id: { $ne: collectorId }
                         }).session(session);
                         if (existingSlug) {
                             await session.abortTransaction();
@@ -244,7 +254,7 @@ exports.updateCollector = async (req, res) => {
                     }
                 }
             }
-            collector.markModified('settings'); 
+            collector.markModified('settings');
         }
 
         const updatedCollector = await collector.save({ session });
@@ -267,7 +277,7 @@ exports.updateCollector = async (req, res) => {
             const messages = Object.values(error.errors).map(val => val.message);
             return res.status(400).json({ success: false, message: messages.join('. '), errors: error.errors });
         }
-        if (error.code === 11000) { 
+        if (error.code === 11000) {
              if (error.keyValue && error.keyValue['settings.web_link.customSlug']) {
                 return res.status(400).json({ success: false, message: 'This custom slug is already in use (database constraint).' });
             }
@@ -298,7 +308,7 @@ exports.deleteCollector = async (req, res) => {
         await Survey.findByIdAndUpdate(
             surveyId,
             { $pull: { collectors: collectorId } },
-            { session, new: true } 
+            { session, new: true }
         );
         await session.commitTransaction();
         session.endSession();
@@ -312,4 +322,4 @@ exports.deleteCollector = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error deleting collector.' });
     }
 };
-// ----- END OF COMPLETE UPDATED FILE (v1.3 - Handle allowBackButton Setting) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.4 - Handle ProgressBar Settings) -----

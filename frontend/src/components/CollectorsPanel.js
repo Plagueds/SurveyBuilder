@@ -1,5 +1,5 @@
 // frontend/src/components/CollectorsPanel.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.4 - Display "Allow Back Button" Info) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.5 - Display ProgressBar Info) -----
 import React, { useState } from 'react';
 import styles from './CollectorsPanel.module.css';
 import surveyApi from '../api/surveyApi';
@@ -34,7 +34,7 @@ const CollectorsPanel = ({
     const handleDeleteCollector = async (collectorId) => {
         const collectorToDelete = initialCollectors.find(c => c._id === collectorId);
         const collectorName = collectorToDelete ? collectorToDelete.name : "this collector";
-        
+
         if (!window.confirm(`Are you sure you want to delete the collector "${collectorName}"? This action cannot be undone.`)) {
             return;
         }
@@ -42,19 +42,19 @@ const CollectorsPanel = ({
             await surveyApi.deleteCollector(surveyId, collectorId);
             toast.success(`Collector "${collectorName}" deleted successfully!`);
             if (onCollectorsUpdate) {
-                onCollectorsUpdate(); 
+                onCollectorsUpdate();
             }
         } catch (error) {
             console.error("Error deleting collector:", error);
             toast.error(`Failed to delete collector: ${error.response?.data?.message || error.message || 'Unknown error'}`);
         }
     };
-    
+
     const handleFormModalSave = () => {
         setIsFormModalOpen(false);
         setEditingCollector(null);
         if (onCollectorsUpdate) {
-            onCollectorsUpdate(); 
+            onCollectorsUpdate();
         }
     };
 
@@ -78,20 +78,26 @@ const CollectorsPanel = ({
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
         try {
-            return new Date(dateString).toLocaleString(undefined, { 
-                year: 'numeric', month: 'short', day: 'numeric', 
-                hour: 'numeric', minute: '2-digit', hour12: true 
+            return new Date(dateString).toLocaleString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: 'numeric', minute: '2-digit', hour12: true
             });
         } catch (e) {
             return 'Invalid Date';
         }
     };
 
-    const getIpFilterStatus = (list) => { // Removed 'type' param as it's not used
+    const getIpFilterStatus = (list) => {
         if (Array.isArray(list) && list.length > 0) {
             return `Active (${list.length} rule${list.length === 1 ? '' : 's'})`;
         }
         return 'None';
+    };
+
+    const getProgressBarStyleDisplay = (style) => {
+        if (style === 'percentage') return 'Percentage';
+        if (style === 'pages') return 'Pages X of Y';
+        return 'N/A';
     };
 
     return (
@@ -135,8 +141,15 @@ const CollectorsPanel = ({
                                                 {collector.responseCount || 0}
                                                 {collector.settings?.web_link?.maxResponses > 0 ? ` / ${collector.settings.web_link.maxResponses}` : ''}
                                             </span>
-                                            {/* --- ADDED: Display for Allow Back Button --- */}
                                             <span>Back Button:</span><span>{typeof collector.settings?.web_link?.allowBackButton === 'boolean' ? (collector.settings.web_link.allowBackButton ? 'Allowed' : 'Disallowed') : 'Allowed (Default)'}</span>
+                                            {/* --- ADDED: Display for ProgressBar settings --- */}
+                                            <span>Progress Bar:</span>
+                                            <span>
+                                                {collector.settings?.web_link?.progressBarEnabled
+                                                    ? `Enabled (${getProgressBarStyleDisplay(collector.settings.web_link.progressBarStyle)})`
+                                                    : 'Disabled'}
+                                            </span>
+                                            {/* --- END ADDED --- */}
                                             <span>Open Date:</span><span>{formatDate(collector.settings?.web_link?.openDate)}</span>
                                             <span>Close Date:</span><span>{formatDate(collector.settings?.web_link?.closeDate)}</span>
                                             <span>Multiple Responses:</span><span>{collector.settings?.web_link?.allowMultipleResponses ? 'Allowed' : 'Not Allowed'}</span>
@@ -146,7 +159,7 @@ const CollectorsPanel = ({
                                             <span>IP Allowlist:</span><span>{getIpFilterStatus(collector.settings?.web_link?.ipAllowlist)}</span>
                                             <span>IP Blocklist:</span><span>{getIpFilterStatus(collector.settings?.web_link?.ipBlocklist)}</span>
                                         </div>
-                                        
+
                                         {collector.type === 'web_link' && (collector.linkId || collector.settings?.web_link?.customSlug) && (
                                             <div className={styles.collectorLinkSection}>
                                                 <span>Link:</span>
@@ -164,7 +177,7 @@ const CollectorsPanel = ({
                         </ul>
                     )}
                 </div>
-                
+
                 {isFormModalOpen && (
                     <CollectorFormModal
                         isOpen={isFormModalOpen}
@@ -187,4 +200,4 @@ const CollectorsPanel = ({
 };
 
 export default CollectorsPanel;
-// ----- END OF COMPLETE MODIFIED FILE (v1.4 - Display "Allow Back Button" Info) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.5 - Display ProgressBar Info) -----

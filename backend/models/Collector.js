@@ -1,5 +1,5 @@
 // backend/models/Collector.js
-// ----- START OF COMPLETE UPDATED FILE (v1.4 - Add allowBackButton setting) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.5 - Add ProgressBar settings) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 const { v4: uuidv4 } = require('uuid');
@@ -27,7 +27,7 @@ const webLinkCollectorSettingsSchema = new Schema({
     enableRecaptcha: { type: Boolean, default: false },
     recaptchaSiteKey: { type: String, trim: true, default: '' },
     ipAllowlist: {
-        type: [String], 
+        type: [String],
         default: [],
         validate: {
             validator: function(arr) {
@@ -38,7 +38,7 @@ const webLinkCollectorSettingsSchema = new Schema({
         }
     },
     ipBlocklist: {
-        type: [String], 
+        type: [String],
         default: [],
         validate: {
             validator: function(arr) {
@@ -48,8 +48,14 @@ const webLinkCollectorSettingsSchema = new Schema({
             message: 'IP Blocklist must be an array of valid IP addresses or CIDR ranges.'
         }
     },
-    // --- NEW: Allow Back Button Setting ---
-    allowBackButton: { type: Boolean, default: true } 
+    allowBackButton: { type: Boolean, default: true },
+    // --- NEW: Progress Bar Settings ---
+    progressBarEnabled: { type: Boolean, default: false },
+    progressBarStyle: {
+        type: String,
+        enum: ['percentage', 'pages'],
+        default: 'percentage'
+    }
     // --- END NEW ---
 });
 
@@ -149,11 +155,11 @@ collectorSchema.methods.comparePassword = async function(enteredPassword) {
     }
     const collectorWithPassword = await mongoose.model('Collector').findById(this._id).select('+settings.web_link.password').exec();
     if (!collectorWithPassword || !collectorWithPassword.settings || !collectorWithPassword.settings.web_link || !collectorWithPassword.settings.web_link.password) {
-        return false; 
+        return false;
     }
     return await bcrypt.compare(enteredPassword, collectorWithPassword.settings.web_link.password);
 };
 
 const Collector = mongoose.model('Collector', collectorSchema);
 module.exports = Collector;
-// ----- END OF COMPLETE UPDATED FILE (v1.4 - Add allowBackButton setting) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.5 - Add ProgressBar settings) -----

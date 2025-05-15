@@ -449,4 +449,35 @@ input[type="text"].surveyInput {
 .disabledOption input { cursor: not-allowed; }
 /* --- END: Disabled State Styles --- */    
 
+/* --- ADD THESE STYLES for Progress Bar --- */
+.progressBarContainer {
+  width: 100%;
+  margin: 15px 0 25px; /* Adjust margin as needed */
+  padding: 0 10px; /* Optional padding if you want space around the bar within its container */
+  box-sizing: border-box;
+}
+
+.progressBarTrack {
+  background-color: var(--progressbar-track-bg, #e0e0e0); /* Fallback if CSS var not loaded */
+  border-radius: var(--border-radius-sm, 4px);
+  height: 10px; /* Or your preferred height */
+  overflow: hidden; /* Ensures the fill doesn't exceed rounded corners */
+  width: 100%;
+}
+
+.progressBarFill {
+  background-color: var(--progressbar-fill-bg, #3498db); /* Fallback */
+  height: 100%;
+  border-radius: var(--border-radius-sm, 4px); /* Match track's border-radius */
+  transition: width 0.3s ease-in-out; /* Smooth animation for width changes */
+}
+
+.progressBarText {
+  text-align: center;
+  font-size: 0.85em;
+  color: var(--progressbar-text-color, #555555); /* Fallback */
+  margin-top: 6px;
+}
+/* --- END Progress Bar Styles --- */
+
 /* ----- END OF COMPLETE UPDATED FILE (v11.1) ----- */

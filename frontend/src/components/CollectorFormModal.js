@@ -1,5 +1,5 @@
 // frontend/src/components/CollectorFormModal.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.4 - Added "Allow Back Button" UI) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.5 - Added ProgressBar UI) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import surveyApiFunctions from '../api/surveyApi';
 import { toast } from 'react-toastify';
@@ -27,7 +27,11 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     recaptchaSiteKey: '',
                     ipAllowlistString: '',
                     ipBlocklistString: '',
-                    allowBackButton: true, // <<< ADDED: Default for new collectors
+                    allowBackButton: true,
+                    // --- NEW: ProgressBar Defaults ---
+                    progressBarEnabled: false,
+                    progressBarStyle: 'percentage',
+                    // --- END NEW ---
                 }
             }
         };
@@ -46,10 +50,14 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                 recaptchaSiteKey: existingWebLinkSettings.recaptchaSiteKey || '',
                 ipAllowlistString: Array.isArray(existingWebLinkSettings.ipAllowlist) ? existingWebLinkSettings.ipAllowlist.join('\n') : '',
                 ipBlocklistString: Array.isArray(existingWebLinkSettings.ipBlocklist) ? existingWebLinkSettings.ipBlocklist.join('\n') : '',
-                // --- MODIFIED: Initialize allowBackButton ---
-                allowBackButton: typeof existingWebLinkSettings.allowBackButton === 'boolean' 
-                                 ? existingWebLinkSettings.allowBackButton 
-                                 : true, // Default to true if not present
+                allowBackButton: typeof existingWebLinkSettings.allowBackButton === 'boolean'
+                                 ? existingWebLinkSettings.allowBackButton
+                                 : true,
+                // --- MODIFIED: Initialize ProgressBar settings ---
+                progressBarEnabled: typeof existingWebLinkSettings.progressBarEnabled === 'boolean'
+                                    ? existingWebLinkSettings.progressBarEnabled
+                                    : false, // Default to false if not present
+                progressBarStyle: existingWebLinkSettings.progressBarStyle || 'percentage', // Default to 'percentage'
             };
 
             return {
@@ -112,9 +120,9 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
     const parseIpListString = (ipString) => {
         if (!ipString || typeof ipString !== 'string') return [];
         return ipString
-            .split(/[\n,]+/) 
+            .split(/[\n,]+/)
             .map(ip => ip.trim())
-            .filter(ip => ip.length > 0); 
+            .filter(ip => ip.length > 0);
     };
 
 
@@ -140,9 +148,9 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
         if (isNaN(maxResponsesNum) || maxResponsesNum < 0) {
             newErrors.web_link_maxResponses = "Max responses must be a non-negative number.";
         }
-        
+
         const allowlist = parseIpListString(formData.settings.web_link.ipAllowlistString);
-        if (allowlist.some(ip => ip.includes(' '))) { 
+        if (allowlist.some(ip => ip.includes(' '))) {
             newErrors.web_link_ipAllowlistString = "IPs in allowlist should not contain spaces.";
         }
         const blocklist = parseIpListString(formData.settings.web_link.ipBlocklistString);
@@ -175,25 +183,25 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
             status: formData.status,
             settings: {
                 web_link: {
-                    // Spread all current web_link settings from formData first
-                    ...formData.settings.web_link, 
-                    // Then override specific ones that need parsing/cleaning
+                    ...formData.settings.web_link,
                     customSlug: formData.settings.web_link.customSlug || undefined,
                     openDate: formData.settings.web_link.openDate ? new Date(formData.settings.web_link.openDate).toISOString() : null,
                     closeDate: formData.settings.web_link.closeDate ? new Date(formData.settings.web_link.closeDate).toISOString() : null,
                     maxResponses: maxResponsesToSend,
-                    password: formData.settings.web_link.passwordProtectionEnabled && formData.settings.web_link.password 
-                                ? formData.settings.web_link.password 
+                    password: formData.settings.web_link.passwordProtectionEnabled && formData.settings.web_link.password
+                                ? formData.settings.web_link.password
                                 : undefined,
                     ipAllowlist: ipAllowlistArray,
                     ipBlocklist: ipBlocklistArray,
-                    // allowBackButton is already a boolean in formData.settings.web_link
+                    // allowBackButton is already a boolean
+                    // progressBarEnabled is already a boolean
+                    // progressBarStyle is already a string
                 }
             }
         };
-        
+
         if (!formData.settings.web_link.passwordProtectionEnabled) {
-             payload.settings.web_link.password = null; 
+             payload.settings.web_link.password = null;
         }
         delete payload.settings.web_link.ipAllowlistString;
         delete payload.settings.web_link.ipBlocklistString;
@@ -207,12 +215,12 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                 await surveyApiFunctions.createCollector(surveyId, payload);
                 toast.success("Collector created successfully!");
             }
-            onSave(); 
+            onSave();
         } catch (error) {
             console.error("Error saving collector:", error.response?.data || error.message);
             const errorData = error.response?.data;
             let errorMessage = `Failed to save collector: ${errorData?.message || error.message || 'Unknown server error'}`;
-            if (errorData && errorData.errors) { 
+            if (errorData && errorData.errors) {
                 const backendErrors = {};
                  Object.entries(errorData.errors).forEach(([key, value]) => {
                     const fieldKey = key.replace('settings.web_link.', 'web_link_');
@@ -278,21 +286,55 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                                 <small className={styles.fieldDescription}>Unique identifier for the link. Letters, numbers, hyphens, underscores.</small>
                                 {renderError("web_link_customSlug")}
                             </div>
-                            {/* --- ADDED: Allow Back Button Checkbox --- */}
+
                             <div className={styles.formGroupCheckbox}>
-                                <input 
-                                    type="checkbox" 
-                                    id="settings.web_link.allowBackButton" 
-                                    name="settings.web_link.allowBackButton" 
-                                    checked={formData.settings.web_link.allowBackButton} 
-                                    onChange={handleChange} 
-                                    disabled={isSaving} 
+                                <input
+                                    type="checkbox"
+                                    id="settings.web_link.allowBackButton"
+                                    name="settings.web_link.allowBackButton"
+                                    checked={formData.settings.web_link.allowBackButton}
+                                    onChange={handleChange}
+                                    disabled={isSaving}
                                 />
                                 <label htmlFor="settings.web_link.allowBackButton">Allow "Back" Button for Respondents</label>
                                 <small className={styles.fieldDescription}>If checked, respondents can navigate to previous questions.</small>
                                 {renderError("web_link_allowBackButton")}
                             </div>
-                            {/* --- END: Allow Back Button Checkbox --- */}
+
+                            {/* --- NEW: Progress Bar UI Elements --- */}
+                            <div className={styles.formGroupCheckbox}>
+                                <input
+                                    type="checkbox"
+                                    id="settings.web_link.progressBarEnabled"
+                                    name="settings.web_link.progressBarEnabled"
+                                    checked={formData.settings.web_link.progressBarEnabled}
+                                    onChange={handleChange}
+                                    disabled={isSaving}
+                                />
+                                <label htmlFor="settings.web_link.progressBarEnabled">Enable Progress Bar</label>
+                                <small className={styles.fieldDescription}>Show respondents their progress through the survey.</small>
+                                {renderError("web_link_progressBarEnabled")}
+                            </div>
+
+                            {formData.settings.web_link.progressBarEnabled && (
+                                <div className={styles.formGroup}>
+                                    <label htmlFor="settings.web_link.progressBarStyle">Progress Bar Style</label>
+                                    <select
+                                        id="settings.web_link.progressBarStyle"
+                                        name="settings.web_link.progressBarStyle"
+                                        value={formData.settings.web_link.progressBarStyle}
+                                        onChange={handleChange}
+                                        disabled={isSaving}
+                                    >
+                                        <option value="percentage">Percentage (e.g., 50% Complete)</option>
+                                        <option value="pages">Pages (e.g., Page 3 of 5)</option>
+                                    </select>
+                                    {renderError("web_link_progressBarStyle")}
+                                </div>
+                            )}
+                            {/* --- END NEW: Progress Bar UI Elements --- */}
+
+
                             <div className={styles.formGroup}>
                                 <label htmlFor="settings.web_link.openDate">Open Date (Optional)</label>
                                 <input type="datetime-local" id="settings.web_link.openDate" name="settings.web_link.openDate" value={formData.settings.web_link.openDate} onChange={handleChange} disabled={isSaving} />
@@ -350,7 +392,7 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                                 <small className={styles.fieldDescription}>Helps prevent automated submissions.</small>
                                 {renderError("web_link_enableRecaptcha")}
                             </div>
-                            <div className={styles.formGroup}> 
+                            <div className={styles.formGroup}>
                                 <label htmlFor="settings.web_link.recaptchaSiteKey">reCAPTCHA Site Key (Optional)</label>
                                 <input type="text" id="settings.web_link.recaptchaSiteKey" name="settings.web_link.recaptchaSiteKey" value={formData.settings.web_link.recaptchaSiteKey} onChange={handleChange} placeholder="Overrides global key if set" disabled={isSaving}/>
                                 <small className={styles.fieldDescription}>Leave blank to use the site-wide reCAPTCHA key.</small>
@@ -374,4 +416,4 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
 };
 
 export default CollectorFormModal;
-// ----- END OF COMPLETE MODIFIED FILE (v1.4 - Added "Allow Back Button" UI) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.5 - Added ProgressBar UI) -----
