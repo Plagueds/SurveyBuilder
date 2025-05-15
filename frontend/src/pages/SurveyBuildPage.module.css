@@ -1,7 +1,6 @@
 /* frontend/src/pages/SurveyBuildPage.module.css */
-/* ----- START OF COMPLETE MODIFIED FILE (v3.5 - Image Sizing Tweaks & Button Debug Prep) ----- */
+/* ----- START OF COMPLETE MODIFIED FILE (v3.6 - Aggressive Image Sizing) ----- */
 
-/* ... (all previous CSS from v3.4 remains the same up to .modalHeader) ... */
 .surveyBuildPage {
     display: flex;
     flex-direction: column;
@@ -151,24 +150,25 @@
 
 .modalContentWrapper {
   max-width: 95%;
-  max-height: 90vh;
+  max-height: 90vh; /* Overall constraint for the modal */
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: hidden; /* Wrapper should not scroll */
   border-radius: var(--border-radius-xl, 12px);
   box-shadow: var(--shadow-xl, 0 10px 25px rgba(0,0,0,0.15), 0 5px 10px rgba(0,0,0,0.1));
 }
 
 .heatmapAreaModalContent {
     background-color: var(--background-color-light, #fff);
-    border-radius: var(--border-radius-xl, 12px);
+    border-radius: var(--border-radius-xl, 12px); /* Match wrapper or be slightly less if wrapper has padding */
     display: flex;
     flex-direction: column;
-    width: 80vw; 
-    max-width: 1200px; 
-    height: 85vh; 
-    max-height: 800px; 
-    overflow: hidden; 
+    width: 80vw; /* Desired width */
+    max-width: 1200px; /* Max pixel width */
+    height: 85vh; /* Desired height of the modal content itself */
+    /* max-height is effectively controlled by modalContentWrapper, but this reinforces it for the content box */
+    max-height: calc(90vh - 40px); /* e.g. wrapper's max-height minus some internal padding/margins */
+    overflow: hidden; /* This main container should not scroll; its children will */
     color: var(--text-color);
 }
 
@@ -179,7 +179,8 @@
     padding: 15px 25px;
     border-bottom: 1px solid var(--border-color-light, #dee2e6);
     background-color: var(--background-accent, #f8f9fa);
-    border-radius: var(--border-radius-xl, 12px) var(--border-radius-xl, 12px) 0 0;
+    border-radius: var(--border-radius-xl, 12px) var(--border-radius-xl, 12px) 0 0; /* Top corners */
+    flex-shrink: 0; /* Prevent header from shrinking if content below grows */
 }
 
 .modalHeader h3 {
@@ -206,20 +207,21 @@
 .heatmapAreaModalBody {
     display: flex;
     flex-direction: row; 
-    flex-grow: 1; 
+    flex-grow: 1; /* Body takes up remaining vertical space in modalContent */
     padding: 20px 25px;
     gap: 25px;
-    overflow: hidden; 
+    overflow: hidden; /* Body itself should not scroll; its children (panels) will */
 }
 
 .heatmapAreaListPanel {
-    flex: 0 0 300px; 
+    flex: 0 0 300px; /* Fixed width for the list panel */
     display: flex;
     flex-direction: column;
     gap: 10px;
     padding-right: 15px; 
     border-right: 1px solid var(--border-color-light, #dee2e6);
-    overflow-y: auto; 
+    overflow-y: auto; /* Allow this panel to scroll if content exceeds height */
+    min-height: 0; /* Important for flex children that might scroll */
 }
 .heatmapAreaListPanel h4 {
     margin-top: 0;
@@ -232,7 +234,7 @@
     list-style: none;
     padding: 0;
     margin: 0;
-    flex-grow: 1; 
+    flex-grow: 1; /* Allow list to take space before button */
 }
 
 .heatmapDefinedAreasList li {
@@ -258,11 +260,12 @@
 }
 
 .heatmapAreaDrawingPanel {
-    flex-grow: 1; 
+    flex-grow: 1; /* Takes the rest of the horizontal space in modalBody */
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    overflow: hidden; 
+    gap: 15px; /* Space between instructions, image container, and controls */
+    overflow: hidden; /* This panel should not scroll; its children will */
+    min-width: 0; /* Important for flex children */
 }
 
 .modalInstructions { 
@@ -272,31 +275,28 @@
     padding: 8px 12px;
     background-color: var(--background-accent, #f8f9fa);
     border-radius: var(--border-radius-sm);
+    flex-shrink: 0; /* Prevent instructions from shrinking */
 }
 
 .heatmapImageContainer {
-    flex-grow: 1; 
+    flex-grow: 1; /* CRITICAL: This should make it take all available vertical space in drawingPanel */
     position: relative; 
-    overflow: hidden; /* Changed from auto to hidden to prevent scrollbars if image is larger */
     display: flex; 
     justify-content: center;
     align-items: center;
-    background-color: var(--background-color-darker, #e0e0e0); 
+    background-color: var(--background-color-darker, #dddddd); 
     border-radius: var(--border-radius-md);
     border: 1px solid var(--border-color, #ced4da);
-    min-height: 200px; /* Ensure it has some minimum height */
-    /* Add this line for testing the aspect ratio */
-    /* It will try to make the container square-ish based on its width */
-    /* This might make the image larger if width is available */
-    aspect-ratio: 1 / 1; /* For a square image */
+    min-height: 200px; /* Fallback minimum height */
+    /* aspect-ratio: 1 / 1; */ /* REMOVED - Let flexbox determine height */
+    overflow: hidden; 
 }
-
 
 .heatmapSelectableImage {
     display: block; 
-    width: 100%;  /* Make image try to fill container width */
-    height: 100%; /* Make image try to fill container height */
-    object-fit: contain; 
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain; /* This will ensure aspect ratio is maintained AND it fits */
     user-select: none; 
     cursor: crosshair; 
 }
@@ -317,9 +317,9 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding-top: 10px;
+    padding-top: 10px; /* Space above controls */
     border-top: 1px solid var(--border-color-light, #dee2e6);
-    flex-shrink: 0; 
+    flex-shrink: 0; /* Prevent controls from shrinking */
 }
 
 .heatmapAreaControls .formControl { 
@@ -330,7 +330,8 @@
     font-size: 0.8em;
     color: var(--text-muted);
     text-align: right;
-    flex-shrink: 0;
+    flex-shrink: 0; /* Prevent from shrinking */
+    padding-top: 5px; /* Some space */
 }
 
 .modalFooter { 
@@ -342,6 +343,7 @@
     background-color: var(--background-accent, #f8f9fa);
     border-radius: 0 0 var(--border-radius-xl, 12px) var(--border-radius-xl, 12px); 
     gap: 10px;
+    flex-shrink: 0; /* Prevent footer from shrinking */
 }
 
 .formControl {
@@ -372,26 +374,99 @@
     color: var(--danger-color, #dc3545);
 }
 
+/* Media Queries for Responsiveness */
 @media (max-width: 1024px) {
-  .mainContentWrapper { flex-direction: column; }
-  .rightColumnSizer { min-width: 100%; max-width: 100%; flex-basis: auto; }
-  .leftColumnWithPanelSpace { flex-basis: auto; }
-  .heatmapAreaModalContent { width: 90vw; height: 80vh; }
-  .heatmapAreaModalBody { flex-direction: column; overflow-y: auto; }
-  .heatmapAreaListPanel { flex: 0 0 auto; max-height: 250px; border-right: none; border-bottom: 1px solid var(--border-color-light, #dee2e6); padding-right: 0; margin-bottom: 15px; }
-  .heatmapAreaDrawingPanel { min-height: 300px; }
+  .mainContentWrapper {
+    flex-direction: column;
+  }
+  .rightColumnSizer {
+    min-width: 100%; 
+    max-width: 100%;
+    flex-basis: auto;
+  }
+  .leftColumnWithPanelSpace {
+    flex-basis: auto;
+  }
+
+  .heatmapAreaModalContent { /* Adjust modal size for tablets */
+    width: 90vw;
+    /* Let height be more determined by content up to max-height */
+    min-height: 70vh; /* Ensure it has a good minimum height */
+  }
+  .heatmapAreaModalBody {
+    flex-direction: column; /* Stack panels vertically */
+    overflow-y: auto; /* Allow body to scroll if content overflows */
+  }
+  .heatmapAreaListPanel {
+    flex: 0 0 auto; /* Don't fix width, let it be natural or 100% */
+    max-height: 200px; /* Max height for list panel before it scrolls */
+    border-right: none;
+    border-bottom: 1px solid var(--border-color-light, #dee2e6);
+    padding-right: 0;
+    margin-bottom: 15px;
+  }
+  .heatmapAreaDrawingPanel {
+    min-height: 350px; /* Give more explicit min height to drawing panel */
+    flex-grow: 1; /* Ensure it tries to take available space */
+  }
+  .heatmapImageContainer {
+     min-height: 250px; /* Explicit min height for image container */
+     /* flex-grow: 1 is already set, which is good */
+  }
 }
 
 @media (max-width: 768px) {
-  .surveyBuildPageInner { padding: 15px; padding-top: 70px; }
-  .surveyHeader { flex-direction: column; align-items: flex-start; gap: 15px; padding: 15px; top: 50px; border-radius: var(--border-radius-md); }
-  .surveyTitleInput { width: 100%; margin-right: 0; font-size: 1.4em; padding: 10px; }
-  .headerActions { width: 100%; justify-content: space-between; flex-wrap: wrap; }
-  .headerActions .button { flex-grow: 1; min-width: 110px; font-size: 0.85em; margin-bottom: 8px; }
-  .questionListHeader { padding: 15px 20px; }
-  .questionsContainer { padding: 20px; }
-  .heatmapAreaModalContent { width: 95vw; height: auto; max-height: 85vh; }
-  .heatmapAreaModalBody { padding: 15px; gap: 15px; }
-  .heatmapAreaControls { flex-direction: column; align-items: stretch; }
+  .surveyBuildPageInner {
+    padding: 15px;
+    padding-top: 70px;
+  }
+  .surveyHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+    padding: 15px;
+    top: 50px; 
+    border-radius: var(--border-radius-md);
+  }
+  .surveyTitleInput {
+    width: 100%;
+    margin-right: 0;
+    font-size: 1.4em;
+    padding: 10px;
+  }
+  .headerActions {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .headerActions .button {
+    flex-grow: 1;
+    min-width: 110px;
+    font-size: 0.85em;
+    margin-bottom: 8px;
+  }
+  .questionListHeader {
+    padding: 15px 20px;
+  }
+  .questionsContainer {
+    padding: 20px;
+  }
+
+  .heatmapAreaModalContent { /* Adjust modal size for mobile */
+    width: 95vw;
+    height: auto; /* Let content define height, up to max-height of wrapper */
+    max-height: 85vh; 
+  }
+  .heatmapAreaModalBody {
+    padding: 15px;
+    gap: 15px;
+  }
+  .heatmapAreaControls {
+    flex-direction: column;
+    align-items: stretch; 
+  }
+  .heatmapAreaListPanel { max-height: 150px; }
+  .heatmapAreaDrawingPanel { min-height: 300px; } /* Ensure drawing panel has space */
+  .heatmapImageContainer { min-height: 200px; } /* Ensure image container has space */
 }
-/* ----- END OF COMPLETE MODIFIED FILE (v3.5) ----- */
+/* ----- END OF COMPLETE MODIFIED FILE (v3.6) ----- */
