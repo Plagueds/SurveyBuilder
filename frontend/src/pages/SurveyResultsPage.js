@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyResultsPage.js
-// ----- START OF COMPLETE MODIFIED FILE (v3.9.1 - Added Conjoint Debug Logs) -----
+// ----- START OF COMPLETE MODIFIED FILE (v3.9.2 - Updated Conjoint Processing) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Bar, Pie } from 'react-chartjs-2';
@@ -43,7 +43,7 @@ function SurveyResultsPage() {
     };
 
     const processAllAnswers = useCallback((surveyDefinition, allRawAnswersFromDb) => {
-        console.log("[ResultsPage v3.9.1] Processing raw answers...", { numAnswers: allRawAnswersFromDb.length });
+        console.log("[ResultsPage v3.9.2] Processing raw answers...", { numAnswers: allRawAnswersFromDb.length });
         if (!surveyDefinition || !surveyDefinition.questions || !allRawAnswersFromDb || !Array.isArray(allRawAnswersFromDb)) {
             return {};
         }
@@ -53,7 +53,7 @@ function SurveyResultsPage() {
 
         surveyDefinition.questions.forEach(question => {
             if (!question || !question._id || !question.type) {
-                console.warn("[ResultsPage v3.9.1] Skipping invalid question object in surveyDefinition:", question);
+                console.warn("[ResultsPage v3.9.2] Skipping invalid question object in surveyDefinition:", question);
                 return;
             }
             const questionId = question._id;
@@ -153,41 +153,69 @@ function SurveyResultsPage() {
                         });
                         break;
                     case 'conjoint':
-                        // ----- START OF ADDED CONSOLE LOGS -----
+                        // ----- START OF UPDATED CONJOINT PROCESSING LOGIC -----
                         console.log(`[Conjoint Processing QID ${questionId}] Starting processing for ${questionAnswersFromDb.length} answers.`);
-                        stats.levelCounts = {};
+                        stats.levelCounts = {}; // { attributeName: { levelName: count } }
+                        let totalConjointTasksAnswered = 0;
+
                         questionAnswersFromDb.forEach((ans, ansIndex) => {
+                            // ans.answerValue is expected to be like:
+                            // { "task_0": {"Brand": "Apple", "Price": "$999"}, "task_1": "none", ... }
+                            // OR, if old data, it might be {"task_0": 0} or an empty object {}
+
                             console.log(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1}] Raw answerValue:`, ans.answerValue);
                             console.log(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1}] Type of answerValue:`, typeof ans.answerValue);
 
-                            const chosenProfile = (typeof ans.answerValue === 'string')
-                                ? safeJsonParse(ans.answerValue, {})
-                                : (typeof ans.answerValue === 'object' && ans.answerValue !== null ? ans.answerValue : {});
+                            const respondentChoicesPerTask = (typeof ans.answerValue === 'object' && ans.answerValue !== null)
+                                ? ans.answerValue
+                                : {}; // Default to empty object if answerValue is not a valid object
 
-                            console.log(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1}] Parsed chosenProfile:`, JSON.parse(JSON.stringify(chosenProfile))); // Deep copy for logging
+                            // Iterate over each task's choice made by this respondent
+                            Object.entries(respondentChoicesPerTask).forEach(([taskId, chosenValueForTask]) => {
+                                console.log(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1} Task ${taskId}] Value:`, chosenValueForTask);
 
-                            if (typeof chosenProfile === 'object' && chosenProfile !== null && Object.keys(chosenProfile).length > 0) {
-                                Object.entries(chosenProfile).forEach(([attribute, level]) => {
-                                    console.log(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1}] Attribute: "${attribute}" (type: ${typeof attribute}), Level: "${level}" (type: ${typeof level})`);
-                                    if (typeof attribute === 'string' && attribute.trim() !== '' && typeof level === 'string' && level.trim() !== '') {
-                                        if (!stats.levelCounts[attribute]) {
-                                            stats.levelCounts[attribute] = {};
+                                if (typeof chosenValueForTask === 'object' && chosenValueForTask !== null) {
+                                    // This is a chosen profile object, e.g., {"Brand": "Apple", "Price": "$999"}
+                                    totalConjointTasksAnswered++;
+                                    Object.entries(chosenValueForTask).forEach(([attribute, level]) => {
+                                        console.log(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1} Task ${taskId}] Attribute: "${attribute}" (type: ${typeof attribute}), Level: "${level}" (type: ${typeof level})`);
+                                        // Ensure attribute and level are strings and not empty
+                                        if (typeof attribute === 'string' && attribute.trim() !== '' &&
+                                            typeof level === 'string' && level.trim() !== '') {
+
+                                            if (!stats.levelCounts[attribute]) {
+                                                stats.levelCounts[attribute] = {};
+                                            }
+                                            stats.levelCounts[attribute][level] = (stats.levelCounts[attribute][level] || 0) + 1;
+                                            console.log(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1} Task ${taskId}] Incremented count for ${attribute} -> ${level}. New count: ${stats.levelCounts[attribute][level]}`);
+                                        } else {
+                                            console.warn(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1} Task ${taskId}] Skipping attribute/level due to invalid type or empty string. Attribute: "${attribute}", Level: "${level}"`);
                                         }
-                                        stats.levelCounts[attribute][level] = (stats.levelCounts[attribute][level] || 0) + 1;
-                                        console.log(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1}] Incremented count for ${attribute} -> ${level}. New count: ${stats.levelCounts[attribute][level]}`);
-                                    } else {
-                                        console.warn(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1}] Skipping attribute/level due to invalid type or empty string. Attribute: "${attribute}", Level: "${level}"`);
-                                    }
-                                });
-                            } else {
-                                console.warn(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1}] chosenProfile is not a valid object or is empty. chosenProfile:`, chosenProfile);
-                            }
+                                    });
+                                } else if (chosenValueForTask === 'none') {
+                                    // "None" option was chosen for this task.
+                                    totalConjointTasksAnswered++; // Still counts as an answered task.
+                                    // You might want to count "none" selections separately if relevant for analysis.
+                                    // For now, we just log it and it doesn't contribute to attribute.level counts.
+                                    console.log(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1} Task ${taskId}] "None" option was chosen.`);
+                                    // Example: Add a special counter for "none" if needed
+                                    // stats.levelCounts['__NONE_OPTION__'] = (stats.levelCounts['__NONE_OPTION__'] || {});
+                                    // stats.levelCounts['__NONE_OPTION__'][taskId] = (stats.levelCounts['__NONE_OPTION__'][taskId] || 0) + 1;
+                                } else if (typeof chosenValueForTask === 'number' || Object.keys(chosenValueForTask || {}).length === 0) {
+                                    // This handles old data format (like {"task_0": 0}) or empty objects {}
+                                    console.warn(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1} Task ${taskId}] Encountered old data format or empty choice for task. Value:`, chosenValueForTask);
+                                } else {
+                                     console.warn(`[Conjoint Processing QID ${questionId} Ans #${ansIndex+1} Task ${taskId}] Unexpected value for task choice. Value:`, chosenValueForTask);
+                                }
+                            });
                         });
+                        stats.totalConjointTasksAnswered = totalConjointTasksAnswered; // Store total tasks answered across all respondents
                         console.log(`[Conjoint Processing QID ${questionId}] Final stats.levelCounts after processing all answers for this question:`, JSON.parse(JSON.stringify(stats.levelCounts)));
-                        // ----- END OF ADDED CONSOLE LOGS -----
+                        console.log(`[Conjoint Processing QID ${questionId}] Total conjoint tasks answered across all respondents for this question: ${totalConjointTasksAnswered}`);
+                        // ----- END OF UPDATED CONJOINT PROCESSING LOGIC -----
                         break;
                     case 'cardsort':
-                        console.log(`[ResultsPage v3.9.1 CardSort QID ${questionId}] Processing...`);
+                        console.log(`[ResultsPage v3.9.2 CardSort QID ${questionId}] Processing...`);
                         stats.cardPlacementsByCard = {};
                         stats.cardPlacementsByCategory = { [CARD_SORT_UNASSIGNED_ID]: {} };
                         (question.cardSortCategories || []).forEach(catName => {
@@ -226,9 +254,9 @@ function SurveyResultsPage() {
                                 stats.cardPlacementsByCategory[categoryId][cardId] = (stats.cardPlacementsByCategory[categoryId][cardId] || 0) + 1;
                             });
                         });
-                        console.log(`[ResultsPage v3.9.1 CardSort QID ${questionId}] Final stats.cardPlacementsByCategory:`, JSON.parse(JSON.stringify(stats.cardPlacementsByCategory)));
+                        console.log(`[ResultsPage v3.9.2 CardSort QID ${questionId}] Final stats.cardPlacementsByCategory:`, JSON.parse(JSON.stringify(stats.cardPlacementsByCategory)));
                         break;
-                    default: console.warn(`[ResultsPage v3.9.1 QID ${questionId}] No processing logic defined for question type: ${questionType}`);
+                    default: console.warn(`[ResultsPage v3.9.2 QID ${questionId}] No processing logic defined for question type: ${questionType}`);
                 }
             } catch (processingError) { console.error(`Error processing answers for question ${questionId} (${questionType}):`, processingError); stats.processingError = processingError.message || "An unknown error occurred during processing."; }
             results[questionId] = { stats };
@@ -237,7 +265,7 @@ function SurveyResultsPage() {
         return results;
     }, []);
 
-    const fetchData = useCallback(async () => { setLoading(true); setError(null); setSurvey(null); setRawAnswers([]); setProcessedResults({}); if (!surveyId || !/^[a-f\d]{24}$/i.test(surveyId)) { setError(`Invalid Survey ID format: "${surveyId}"`); setLoading(false); return; } const token = localStorage.getItem('token'); if (!token) { setError("Authentication required. Please log in again."); setLoading(false); return; } const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }; try { const surveyResponse = await fetch(`${apiUrl}/surveys/${surveyId}`, { headers }); if (!surveyResponse.ok) { const errorBody = await surveyResponse.text(); let errorMessage = `Failed to fetch survey definition (Status: ${surveyResponse.status}).`; try { const parsedError = JSON.parse(errorBody); if (parsedError.message) errorMessage += ` Server: ${parsedError.message}`; } catch (e) { /* Ignore */ } throw new Error(errorMessage); } const surveyJsonResponse = await surveyResponse.json(); if (!surveyJsonResponse.success || !surveyJsonResponse.data || !surveyJsonResponse.data.questions) { throw new Error(surveyJsonResponse.message || "Survey data from server is invalid or missing questions."); } setSurvey(surveyJsonResponse.data); const answersResponse = await fetch(`${apiUrl}/answers/survey/${surveyId}`, { headers }); if (!answersResponse.ok) { const errorBody = await answersResponse.text(); let errorMessage = `Failed to fetch survey answers (Status: ${answersResponse.status}).`; try { const parsedError = JSON.parse(errorBody); if (parsedError.message) errorMessage += ` Server: ${parsedError.message}`; } catch (e) { /* Ignore */ } throw new Error(errorMessage); } const answersJsonResponse = await answersResponse.json(); let actualAnswersArray = []; if (answersJsonResponse && answersJsonResponse.success && Array.isArray(answersJsonResponse.data)) { actualAnswersArray = answersJsonResponse.data; } else if (answersJsonResponse && answersJsonResponse.success === false) { throw new Error(answersJsonResponse.message || "Fetching answers failed as indicated by server."); } else if (Array.isArray(answersJsonResponse)) { console.warn("[ResultsPage v3.9.1] answersResponse was a direct array, not the expected {success, data} object. Using it directly, but backend might need adjustment for consistency."); actualAnswersArray = answersJsonResponse; } else { throw new Error("Received unexpected data format for survey answers."); } setRawAnswers(actualAnswersArray); } catch (err) { setError(err.message || "An unexpected error occurred while loading results data."); } finally { setLoading(false); } }, [surveyId, apiUrl]);
+    const fetchData = useCallback(async () => { setLoading(true); setError(null); setSurvey(null); setRawAnswers([]); setProcessedResults({}); if (!surveyId || !/^[a-f\d]{24}$/i.test(surveyId)) { setError(`Invalid Survey ID format: "${surveyId}"`); setLoading(false); return; } const token = localStorage.getItem('token'); if (!token) { setError("Authentication required. Please log in again."); setLoading(false); return; } const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }; try { const surveyResponse = await fetch(`${apiUrl}/surveys/${surveyId}`, { headers }); if (!surveyResponse.ok) { const errorBody = await surveyResponse.text(); let errorMessage = `Failed to fetch survey definition (Status: ${surveyResponse.status}).`; try { const parsedError = JSON.parse(errorBody); if (parsedError.message) errorMessage += ` Server: ${parsedError.message}`; } catch (e) { /* Ignore */ } throw new Error(errorMessage); } const surveyJsonResponse = await surveyResponse.json(); if (!surveyJsonResponse.success || !surveyJsonResponse.data || !surveyJsonResponse.data.questions) { throw new Error(surveyJsonResponse.message || "Survey data from server is invalid or missing questions."); } setSurvey(surveyJsonResponse.data); const answersResponse = await fetch(`${apiUrl}/answers/survey/${surveyId}`, { headers }); if (!answersResponse.ok) { const errorBody = await answersResponse.text(); let errorMessage = `Failed to fetch survey answers (Status: ${answersResponse.status}).`; try { const parsedError = JSON.parse(errorBody); if (parsedError.message) errorMessage += ` Server: ${parsedError.message}`; } catch (e) { /* Ignore */ } throw new Error(errorMessage); } const answersJsonResponse = await answersResponse.json(); let actualAnswersArray = []; if (answersJsonResponse && answersJsonResponse.success && Array.isArray(answersJsonResponse.data)) { actualAnswersArray = answersJsonResponse.data; } else if (answersJsonResponse && answersJsonResponse.success === false) { throw new Error(answersJsonResponse.message || "Fetching answers failed as indicated by server."); } else if (Array.isArray(answersJsonResponse)) { console.warn("[ResultsPage v3.9.2] answersResponse was a direct array, not the expected {success, data} object. Using it directly, but backend might need adjustment for consistency."); actualAnswersArray = answersJsonResponse; } else { throw new Error("Received unexpected data format for survey answers."); } setRawAnswers(actualAnswersArray); } catch (err) { setError(err.message || "An unexpected error occurred while loading results data."); } finally { setLoading(false); } }, [surveyId, apiUrl]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -269,12 +297,14 @@ function SurveyResultsPage() {
         }
         if (stats.processingError) return <p style={styles.errorText}>Error processing results: {stats.processingError}</p>;
 
-        const qRespondents = stats.totalResponses || 0;
+        const qRespondents = stats.totalResponses || 0; // Number of respondents who answered this question
 
-        if (qRespondents === 0 && type !== 'heatmap' && type !== 'text' && type !== 'textarea') {
+        if (qRespondents === 0 && type !== 'heatmap' && type !== 'text' && type !== 'textarea' && type !== 'conjoint') {
              if (type === 'heatmap' && imageUrl) { /* allow heatmap to render base image */ }
              else return <p style={styles.noAnswerText}>No responses for this question.</p>;
         }
+        // For conjoint, we might have 0 qRespondents if all answers were old format/empty,
+        // but totalConjointTasksAnswered might be > 0 if some tasks were validly answered.
 
         const defaultPieChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, title: { display: false }, tooltip: { callbacks: { label: function(context) { let label = context.label || ''; if (label) { label += ': '; } if (context.parsed !== null && context.parsed !== undefined) { label += context.parsed.toLocaleString(); } const datasetData = context.chart?.data?.datasets?.[0]?.data; if (Array.isArray(datasetData)) { const total = datasetData.reduce((a, b) => (a || 0) + (b || 0), 0); const percentage = total > 0 && context.raw !== null && context.raw !== undefined ? ((context.raw / total) * 100).toFixed(1) + '%' : '0%'; return `${label} (${percentage})`; } return label; } } } } };
         const defaultBarChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, title: { display: false }, tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || context.label || ''; if (label) { label += ': '; } if (context.parsed?.y !== null && context.parsed?.y !== undefined) { label += context.parsed.y.toLocaleString(); } return label; } } } }, scales: { x: { beginAtZero: true, title: { display: false } }, y: { beginAtZero: true, title: { display: false }, ticks: { precision: 0 } } } };
@@ -345,26 +375,39 @@ function SurveyResultsPage() {
             case 'rating': { const ratingLabels = (options.length > 0 ? options.map((_, i) => String(i + 1)) : [1, 2, 3, 4, 5].map(String)); const ratingCounts = ratingLabels.map(score => stats.counts?.[String(score)] || 0); const avgRating = stats.average !== null && stats.average !== undefined ? Number(stats.average).toFixed(2) : 'N/A'; const backgroundColors = ratingLabels.map((_, i) => getChartColor(i, 0.8)); const borderColors = ratingLabels.map((_, i) => getSolidChartColor(i)); if (ratingCounts.some(v => typeof v !== 'number' || isNaN(v))) { return <p style={styles.noAnswerText}>Chart data incomplete for rating.</p>; } const chartDataRating = { labels: ratingLabels, datasets: [{ label: '# Responses', data: ratingCounts, backgroundColor: backgroundColors, borderColor: borderColors, borderWidth: 1 }] }; return ( <div style={styles.resultContainer}><p style={styles.summaryStat}>Average Rating: {avgRating}</p><div style={styles.chartContainerBar}><Bar options={defaultBarChartOptions} data={chartDataRating} /></div></div> ); }
             case 'nps': { const { promoters = 0, passives = 0, detractors = 0, npsScore = 0 } = stats; const totalNPSResponses = qRespondents; const promoterPercent = calculatePercentage(promoters, totalNPSResponses); const passivePercent = calculatePercentage(passives, totalNPSResponses); const detractorPercent = calculatePercentage(detractors, totalNPSResponses); const npsScoreLabels = Object.keys(stats.counts || {}).map(k => parseInt(k)).sort((a, b) => a - b).map(String); const npsScoreCounts = npsScoreLabels.map(score => stats.counts?.[score] || 0); const npsBackgroundColors = npsScoreLabels.map(score => { const s = parseInt(score); if (s >= 9) return styles.npsPromoterColor?.backgroundColor || getSolidChartColor(2); if (s >= 7) return styles.npsPassiveColor?.backgroundColor || getSolidChartColor(1); return styles.npsDetractorColor?.backgroundColor || getSolidChartColor(0); }); if (npsScoreCounts.some(v => typeof v !== 'number' || isNaN(v))) { return <p style={styles.noAnswerText}>NPS score distribution data incomplete.</p>; } const chartDataNpsScores = { labels: npsScoreLabels, datasets: [{ label: '# Responses', data: npsScoreCounts, backgroundColor: npsBackgroundColors, borderWidth: 1 }] }; const npsBarOptions = { ...defaultBarChartOptions, plugins: { ...defaultBarChartOptions.plugins, legend: { display: false } } }; return ( <div style={styles.resultContainer}><div style={styles.npsScoreContainer}><span style={styles.npsScoreLabel}>NPS® Score: {Number(npsScore).toFixed(0)}</span><div style={styles.npsCombinedBar}><div title={`Detractors: ${detractorPercent}`} style={{ ...styles.npsBarSegment, width: detractorPercent, backgroundColor: styles.npsDetractorColor?.backgroundColor }}></div><div title={`Passives: ${passivePercent}`} style={{ ...styles.npsBarSegment, width: passivePercent, backgroundColor: styles.npsPassiveColor?.backgroundColor }}></div><div title={`Promoters: ${promoterPercent}`} style={{ ...styles.npsBarSegment, width: promoterPercent, backgroundColor: styles.npsPromoterColor?.backgroundColor }}></div></div></div><table style={{...styles.resultsTable, marginTop: '20px', width: 'auto', minWidth: '400px', display: 'inline-table', marginRight: '30px'}}><tbody><tr><td style={{...styles.resultsTableCellValue, backgroundColor: styles.npsPromoterColor?.backgroundColor, color: styles.npsPromoterColor?.color || 'white' }}>Promoters (9-10)</td><td>{promoterPercent}<div style={styles.percentBarContainer}><div style={{...styles.percentBar, width: promoterPercent, backgroundColor: styles.npsPromoterColor?.backgroundColor }}></div></div></td><td>{promoters}</td></tr><tr><td style={{...styles.resultsTableCellValue, backgroundColor: styles.npsPassiveColor?.backgroundColor, color: styles.npsPassiveColor?.color || '#212529' }}>Passives (7-8)</td><td>{passivePercent}<div style={styles.percentBarContainer}><div style={{...styles.percentBar, width: passivePercent, backgroundColor: styles.npsPassiveColor?.backgroundColor }}></div></div></td><td>{passives}</td></tr><tr><td style={{...styles.resultsTableCellValue, backgroundColor: styles.npsDetractorColor?.backgroundColor, color: styles.npsDetractorColor?.color || 'white' }}>Detractors (0-6)</td><td>{detractorPercent}<div style={styles.percentBarContainer}><div style={{...styles.percentBar, width: detractorPercent, backgroundColor: styles.npsDetractorColor?.backgroundColor }}></div></div></td><td>{detractors}</td></tr></tbody><tfoot><tr><td colSpan="2" style={{textAlign: 'right'}}>Total Responses:</td><td>{totalNPSResponses}</td></tr></tfoot></table><div style={{...styles.chartContainerBar, height: '200px', marginTop: '20px'}}><p style={styles.infoText}>Score Distribution:</p><Bar options={npsBarOptions} data={chartDataNpsScores} /></div></div> ); }
             case 'slider': { const sliderValues = stats.values || []; const avgSlider = stats.average !== null && stats.average !== undefined ? Number(stats.average).toFixed(2) : 'N/A'; const minQVal = sliderMin !== undefined && sliderMin !== null ? parseFloat(sliderMin) : null; const maxQVal = sliderMax !== undefined && sliderMax !== null ? parseFloat(sliderMax) : null; const histData = createHistogramData(sliderValues, minQVal, maxQVal, 10); const backgroundColors = histData.labels.map((_, i) => getChartColor(i, 0.8)); const borderColors = histData.labels.map((_, i) => getSolidChartColor(i)); if (histData.data.some(v => typeof v !== 'number' || isNaN(v))) { return <p style={styles.noAnswerText}>Slider histogram data incomplete.</p>; } const chartDataSlider = { labels: histData.labels, datasets: [{ label: '# Responses', data: histData.data, backgroundColor: backgroundColors, borderColor: borderColors, borderWidth: 1, barPercentage: 1.0, categoryPercentage: 1.0, }] }; const sliderBarOptions = { ...defaultBarChartOptions, plugins: { ...defaultBarChartOptions.plugins, legend: { display: false } }, scales: { x: { grid: { display: false }, title: { display: true, text: `Range (${minQVal ?? 'Auto'}-${maxQVal ?? 'Auto'})`} }, y: { ticks: { precision: 0 }, title: { display: true, text: 'Frequency' } } } }; return ( <div style={styles.resultContainer}><p style={styles.summaryStat}>Average: {avgSlider} (Min: {stats.min ?? 'N/A'}, Max: {stats.max ?? 'N/A'})</p>{histData.labels.length > 0 && <div style={styles.chartContainerBar}><Bar options={sliderBarOptions} data={chartDataSlider} /></div>}</div> ); }
-            case 'text': case 'textarea': { const textResponses = stats.responses || []; if (textResponses.length === 0 && qRespondents > 0) { return <p style={styles.noAnswerText}>All responses were empty.</p>; } if (textResponses.length === 0 && qRespondents === 0) { return <p style={styles.noAnswerText}>No responses for this question.</p>; } const itemStyleBase = styles.textResponseItem || { padding: '8px 12px', borderBottom: '1px dotted #dee2e6' }; if (!styles.textResponseItem) { console.warn("[ResultsPage v3.9.1] styles.textResponseItem is undefined! Using fallback style. QID:", questionId); } return ( <ul style={styles.textResponseList || { listStyle: 'none', padding: 0 }}> {textResponses.map((response, index, arr) => { const currentItemStyle = { ...itemStyleBase }; if (index === arr.length - 1) { currentItemStyle.borderBottom = 'none'; } else { currentItemStyle.borderBottom = itemStyleBase.borderBottom || '1px dotted #dee2e6'; } return ( <li key={index} style={currentItemStyle}> {response || <i>(Empty)</i>} </li> ); })} </ul> ); }
+            case 'text': case 'textarea': { const textResponses = stats.responses || []; if (textResponses.length === 0 && qRespondents > 0) { return <p style={styles.noAnswerText}>All responses were empty.</p>; } if (textResponses.length === 0 && qRespondents === 0) { return <p style={styles.noAnswerText}>No responses for this question.</p>; } const itemStyleBase = styles.textResponseItem || { padding: '8px 12px', borderBottom: '1px dotted #dee2e6' }; if (!styles.textResponseItem) { console.warn("[ResultsPage v3.9.2] styles.textResponseItem is undefined! Using fallback style. QID:", questionId); } return ( <ul style={styles.textResponseList || { listStyle: 'none', padding: 0 }}> {textResponses.map((response, index, arr) => { const currentItemStyle = { ...itemStyleBase }; if (index === arr.length - 1) { currentItemStyle.borderBottom = 'none'; } else { currentItemStyle.borderBottom = itemStyleBase.borderBottom || '1px dotted #dee2e6'; } return ( <li key={index} style={currentItemStyle}> {response || <i>(Empty)</i>} </li> ); })} </ul> ); }
             case 'matrix': return ( <table style={styles.resultsTable}><thead><tr><th style={styles.resultsTableTh}></th>{(matrixColumns || []).map(col => <th key={col} style={styles.resultsTableTh}>{col}</th>)}<th style={styles.resultsTableTh}>Row Total</th>{matrixType === 'rating' && <th style={styles.resultsTableTh}>Avg. Rating</th>}</tr></thead><tbody>{(matrixRows || []).map(row => { const rowData = stats.rows?.[row]; const rowCounts = rowData?.counts || {}; const rowTotal = rowData?.total || 0; const rowAverage = rowData?.average !== null && rowData?.average !== undefined ? Number(rowData.average).toFixed(2) : 'N/A'; return ( <tr key={row}><td style={styles.rowHeader}>{row}</td>{(matrixColumns || []).map(col => <td key={col} style={styles.resultsTableCell}>{rowCounts[String(col)] || 0}</td>)}<td style={{...styles.resultsTableCell, fontWeight: 'bold'}}>{rowTotal}</td>{matrixType === 'rating' && <td style={styles.resultsTableCell}>{rowAverage}</td>}</tr> ); })}</tbody></table> );
             case 'ranking': { const rankOptions = options || []; const rankStats = rankOptions.map(opt => { const avgData = stats.averageRanks?.[opt]; const countsData = stats.rankCounts?.[opt] || {}; const avgRank = avgData?.average ? parseFloat(avgData.average).toFixed(2) : Infinity; const totalRankings = avgData?.count || 0; let score = 0; const N = rankOptions.length; for (let rank = 1; rank <= N; rank++) { score += (N - rank) * (countsData[rank] || 0); } return { option: opt, avgRank, score, totalRankings, counts: countsData }; }).sort((a, b) => (a.avgRank === Infinity ? 1 : (b.avgRank === Infinity ? -1 : a.avgRank - b.avgRank))); return ( <div style={styles.resultContainer}><table style={{...styles.resultsTable, tableLayout: 'fixed'}}><thead><tr><th style={{...styles.resultsTableTh, width: '25%'}}>Item</th><th style={{...styles.resultsTableTh, width: '10%'}}>Avg. Rank</th><th style={{...styles.resultsTableTh, width: '35%'}}>Rank Distribution</th><th style={{...styles.resultsTableTh, width: '15%'}}>Score</th><th style={{...styles.resultsTableTh, width: '15%'}}># Ranked</th></tr></thead><tbody>{rankStats.map((item, index) => { const rankDistributionData = []; const N = rankOptions.length; for (let rank = 1; rank <= N; rank++) { rankDistributionData.push(item.counts[rank] || 0); } const maxCountInDist = Math.max(...rankDistributionData, 0); return ( <tr key={item.option}><td style={styles.resultsTableCellValue}>{item.option}</td><td style={styles.resultsTableCellCount}>{item.avgRank === Infinity ? 'N/A' : item.avgRank}</td><td style={styles.resultsTableCell}><div style={styles.rankDistContainer}>{rankDistributionData.map((count, rankIndex) => ( <div key={rankIndex} style={{...styles.rankDistBar, height: maxCountInDist > 0 ? `${(count / maxCountInDist) * 90 + 10}%` : '10%' }} title={`Rank ${rankIndex + 1}: ${count} times`}></div> ))}</div><div style={styles.rankDistLabels}><span>1st</span><span>{N}th</span></div></td><td style={styles.resultsTableCellCount}>{item.score}</td><td style={styles.resultsTableCellCount}>{item.totalRankings}</td></tr> ); })}</tbody></table><p style={styles.infoText}>(Lower Avg. Rank is better. Score uses Borda-like count.)</p></div> );}
             case 'heatmap': { return ( <div style={{ marginTop: '10px' }}><p style={styles.infoText}>Heatmap showing {stats.clicks?.length || 0} clicks from {qRespondents} respondents.</p>{imageUrl ? ( <div style={{ ...styles.heatmapContainer, position: 'relative', display: 'inline-block' }}><img src={imageUrl} alt="Heatmap Base" style={styles.heatmapImage} />{(stats.clicks || []).map((click, index) => ( <div key={index} style={{ position: 'absolute', left: `${click.x * 100}%`, top: `${click.y * 100}%`, width: '8px', height: '8px', backgroundColor: 'rgba(255,0,0,0.5)', borderRadius: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}></div> ))}</div> ) : <p style={styles.noAnswerText}>Image URL missing for heatmap question.</p>}</div> );}
             case 'maxdiff': { const mdScores = (options || []).map(opt => { const most = stats.bestCounts?.[opt] || 0; const worst = stats.worstCounts?.[opt] || 0; return { option: opt, score: most - worst, most, worst }; }).sort((a, b) => b.score - a.score); return ( <div style={styles.resultContainer}><table style={styles.resultsTable}><thead><tr><th style={styles.resultsTableTh}>Item</th><th style={styles.resultsTableTh}>Best Count</th><th style={styles.resultsTableTh}>Worst Count</th><th style={styles.resultsTableTh}>Score (Best-Worst)</th></tr></thead><tbody>{mdScores.map(item => ( <tr key={item.option}><td style={styles.resultsTableCellValue}>{item.option}</td><td style={styles.resultsTableCellCount}>{item.most}</td><td style={styles.resultsTableCellCount}>{item.worst}</td><td style={styles.resultsTableCellCount}>{item.score}</td></tr> ))}</tbody></table></div> );}
             case 'conjoint': {
                 const levelCounts = stats.levelCounts || {};
-                // The console logs are already in processAllAnswers for data inspection.
-                // This rendering part assumes levelCounts is correctly populated.
-                if (Object.keys(levelCounts).length === 0 && qRespondents > 0) {
+                const totalTasksAnswered = stats.totalConjointTasksAnswered || 0;
+
+                if (Object.keys(levelCounts).length === 0 && totalTasksAnswered === 0 && qRespondents > 0) {
                     return (
                         <div>
-                            <p style={styles.infoText}>Attribute level counts from chosen profiles ({qRespondents} tasks completed).</p>
-                            <p style={styles.noAnswerText}>No attribute level data processed. Check console for details on answer values.</p>
+                            <p style={styles.infoText}>Conjoint Analysis Results ({qRespondents} respondents for this question).</p>
+                            <p style={styles.noAnswerText}>No valid conjoint task choices were processed. This might be due to old data format or all respondents choosing 'none' or skipping.</p>
                         </div>
                     );
                 }
+                 if (Object.keys(levelCounts).length === 0 && totalTasksAnswered > 0 && qRespondents > 0) {
+                    return (
+                        <div>
+                            <p style={styles.infoText}>Conjoint Analysis Results ({qRespondents} respondents, {totalTasksAnswered} tasks answered).</p>
+                            <p style={styles.noAnswerText}>No specific attribute levels were chosen (e.g., all respondents might have chosen 'None of these' for all tasks, or data is in an old format).</p>
+                        </div>
+                    );
+                }
+                 if (Object.keys(levelCounts).length === 0 && qRespondents === 0) { // No one answered this question
+                     return <p style={styles.noAnswerText}>No responses for this conjoint question.</p>;
+                 }
+
+
                 return (
                     <div>
-                        <p style={styles.infoText}>Attribute level counts from chosen profiles ({qRespondents} tasks completed).</p>
+                        <p style={styles.infoText}>Attribute level counts from chosen profiles ({totalTasksAnswered} tasks answered across {qRespondents} respondents).</p>
                         {Object.entries(levelCounts).map(([attrName, levels]) => (
                             <div key={attrName} style={{ marginBottom: '15px' }}>
                                 <strong>{attrName}</strong>
@@ -424,7 +467,7 @@ function SurveyResultsPage() {
                     return ( <div key={categoryId} style={styles.cardSortResultCategory}><h4 style={styles.cardSortCategoryTitle}>{categoryName}</h4>{sortedCards.length > 0 ? ( <ul style={styles.cardSortCardList}>{sortedCards.map(({ cardText, count }, idx, arr) => (<li key={cardText + "_" + idx} style={{...styles.cardSortCardItem, borderBottom: idx === arr.length - 1 ? 'none' : styles.cardSortCardItem.borderBottom}}><span style={styles.cardSortCardName}>{cardText}</span><span style={styles.cardSortCardCount}>({count} | {calculatePercentage(count, qRespondents)})</span></li>))}</ul> ) : ( <p style={styles.cardSortEmptyCategory}><i>(No cards placed here by respondents)</i></p> )}</div> );
                 })}</div> );
             }
-            default: console.warn(`[ResultsPage v3.9.1 QID ${questionId} Type ${type}] Unknown question type for results display.`); return <p>Visualization for type '{type}' is not implemented.</p>;
+            default: console.warn(`[ResultsPage v3.9.2 QID ${questionId} Type ${type}] Unknown question type for results display.`); return <p>Visualization for type '{type}' is not implemented.</p>;
         }
     };
 
@@ -441,4 +484,4 @@ function SurveyResultsPage() {
 }
 
 export default SurveyResultsPage;
-// ----- END OF COMPLETE MODIFIED FILE (v3.9.1 - Added Conjoint Debug Logs) -----
+// ----- END OF COMPLETE MODIFIED FILE (v3.9.2 - Updated Conjoint Processing) -----
