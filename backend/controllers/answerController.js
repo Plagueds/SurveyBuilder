@@ -1,5 +1,5 @@
 // backend/controllers/answerController.js
-// ----- START OF COMPLETE FILE (v1.1 - Confirmed Alignment with Model v1.1) -----
+// ----- START OF COMPLETE UPDATED FILE -----
 const mongoose = require('mongoose');
 const Answer = require('../models/Answer'); // Uses the updated Answer model
 const Survey = require('../models/Survey');
@@ -12,16 +12,16 @@ exports.getAllAnswers = async (req, res) => {
     let filter = {};
     if (questionId) {
         if (!mongoose.Types.ObjectId.isValid(questionId)) return res.status(400).json({ message: 'Invalid Question ID format.' });
-        filter.questionId = questionId; // Use correct field name
+        filter.questionId = questionId;
     }
     if (sessionId) {
         if (typeof sessionId !== 'string' || !sessionId.trim()) return res.status(400).json({ message: 'Session ID must be a non-empty string.' });
-        filter.sessionId = sessionId.trim(); // Use correct field name
+        filter.sessionId = sessionId.trim();
     }
     try {
-        const answers = await Answer.find(filter).sort({ createdAt: -1 }); // Sort by Mongoose timestamp
+        const answers = await Answer.find(filter).sort({ createdAt: -1 });
         console.log(`getAllAnswers: Found ${answers.length} answers matching filter:`, filter);
-        res.status(200).json(answers);
+        res.status(200).json(answers); // Assuming frontend expects array directly for this generic endpoint
     } catch (error) {
         console.error(`getAllAnswers: Error fetching answers:`, error);
         res.status(500).json({ message: 'Failed to fetch answers.' });
@@ -32,36 +32,29 @@ exports.getAllAnswers = async (req, res) => {
 exports.addAnswer = async (req, res) => {
      console.log("addAnswer: Received request to add answer:", req.body);
      // Destructure fields matching the frontend payload and the updated model
-     const { surveyId, questionId, answerValue, sessionId } = req.body;
+     // The field from frontend is surveyId, but in Answer model it's 'survey'
+     const { surveyId: surveyObjectId, questionId, answerValue, sessionId } = req.body; // Renamed surveyId to surveyObjectId for clarity
      try {
-         // Basic Input Validation (using the correct field names)
-         if (!surveyId || !mongoose.Types.ObjectId.isValid(surveyId)) return res.status(400).json({ message: 'Valid Survey ID is required.' });
+         if (!surveyObjectId || !mongoose.Types.ObjectId.isValid(surveyObjectId)) return res.status(400).json({ message: 'Valid Survey ID is required.' });
          if (!questionId || !mongoose.Types.ObjectId.isValid(questionId)) return res.status(400).json({ message: 'Valid Question ID is required.' });
-         // Allow answerValue to be potentially empty/null based on question type, but require the field itself
          if (answerValue === undefined) return res.status(400).json({ message: 'Answer value field is required.' });
          if (!sessionId || typeof sessionId !== 'string' || !sessionId.trim()) return res.status(400).json({ message: 'Session ID is required.' });
 
-         // Check if the associated survey is active
-         const survey = await Survey.findOne({ _id: surveyId, status: 'active' }).select('_id status');
-         if (!survey) {
-            console.warn(`addAnswer: Attempt to submit answer for inactive/non-existent survey ${surveyId}`);
+         const surveyDoc = await Survey.findOne({ _id: surveyObjectId, status: 'active' }).select('_id status');
+         if (!surveyDoc) {
+            console.warn(`addAnswer: Attempt to submit answer for inactive/non-existent survey ${surveyObjectId}`);
             return res.status(400).json({ message: 'Cannot submit answer. Survey is not active or does not exist.' });
          }
 
-         // Optional: Check if the question belongs to the survey (more robust)
-         // const questionExistsInSurvey = await Question.findOne({ _id: questionId, survey: surveyId }).select('_id');
-         // if (!questionExistsInSurvey) { ... }
-
-         // Create new Answer using the updated schema field names
          const newAnswer = new Answer({
-             surveyId,
+             survey: surveyObjectId, // Use 'survey' to match the schema
              questionId,
-             answerValue, // Matches schema
-             sessionId: sessionId.trim() // Matches schema
+             answerValue,
+             sessionId: sessionId.trim()
          });
 
-         const savedAnswer = await newAnswer.save(); // Mongoose validates against the updated schema
-         console.log("addAnswer: Successfully saved answer:", savedAnswer._id, "for survey:", surveyId, "session:", sessionId);
+         const savedAnswer = await newAnswer.save();
+         console.log("addAnswer: Successfully saved answer:", savedAnswer._id, "for survey:", surveyObjectId, "session:", sessionId);
          res.status(201).json(savedAnswer);
 
      } catch (error) {
@@ -77,31 +70,46 @@ exports.addAnswer = async (req, res) => {
 
 // GET All Answers for a Specific Survey
 exports.getAnswersBySurveyId = async (req, res) => {
-    const { surveyId } = req.params;
+    const { surveyId } = req.params; // This surveyId is the ObjectId string
     console.log(`getAnswersBySurveyId: Fetching all answers for survey ID: ${surveyId}`);
 
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
         console.warn(`getAnswersBySurveyId: Invalid Survey ID format: ${surveyId}`);
-        return res.status(400).json({ message: "Invalid Survey ID format." });
+        return res.status(400).json({ success: false, message: "Invalid Survey ID format." }); // Added success: false
     }
 
     try {
-        const surveyExists = await Survey.findById(surveyId).select('_id');
+        // First, check if the survey exists and if the user is authorized
+        // The authorizeSurveyAccess middleware (if correctly applied to the route) should handle this.
+        // However, a direct check here can be an additional safeguard or if middleware isn't used.
+        const surveyExists = await Survey.findById(surveyId).select('_id createdBy'); // Also fetch createdBy for auth check
         if (!surveyExists) {
             console.warn(`getAnswersBySurveyId: Survey not found: ${surveyId}`);
-            return res.status(200).json([]); // Return empty for consistency
+            return res.status(404).json({ success: false, message: "Survey not found." }); // Changed to 404 and added success: false
         }
 
-        // Fetch answers using the correct field name 'surveyId'
-        const answers = await Answer.find({ surveyId: surveyId }).sort({ createdAt: 1 }); // Sort by Mongoose timestamp
+        // Authorization check (redundant if authorizeSurveyAccess middleware is effective, but safe)
+        // Assuming req.user is populated by 'protect' middleware
+        if (req.user && String(surveyExists.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
+            console.warn(`getAnswersBySurveyId: User ${req.user.id} not authorized for survey ${surveyId}`);
+            return res.status(403).json({ success: false, message: 'Not authorized to access answers for this survey.' });
+        }
+
+
+        // Fetch answers using the correct field name 'survey'
+        const answers = await Answer.find({ survey: surveyId }).sort({ createdAt: 1 }).lean(); // Use .lean() for read-only
 
         console.log(`getAnswersBySurveyId: Found ${answers.length} answers for survey ${surveyId}.`);
-        res.status(200).json(answers);
+        // Return in the format expected by SurveyResultsPage
+        res.status(200).json({
+            success: true,
+            count: answers.length,
+            data: answers
+        });
 
     } catch (error) {
         console.error(`getAnswersBySurveyId: Error fetching answers for survey ${surveyId}:`, error);
-        res.status(500).json({ message: 'Failed to fetch answers for the survey.' });
+        res.status(500).json({ success: false, message: 'Failed to fetch answers for the survey.' });
     }
 };
-
-// ----- END OF COMPLETE FILE (v1.1 - Confirmed Alignment with Model v1.1) -----
+// ----- END OF COMPLETE UPDATED FILE -----
