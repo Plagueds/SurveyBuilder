@@ -1,0 +1,59 @@
+/* frontend/src/components/common/Modal.module.css */
+.modalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1050; /* Higher than settings panel */
+}
+
+.modalContent {
+    background-color: #fff;
+    padding: 0; /* Remove padding here, header/body will handle it */
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modalHeader {
+    padding: 15px 20px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modalTitle {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 500;
+}
+
+.closeButton {
+    background: none;
+    border: none;
+    font-size: 1.75rem;
+    font-weight: bold;
+    line-height: 1;
+    color: #555;
+    cursor: pointer;
+    padding: 0;
+}
+.closeButton:hover {
+    color: #000;
+}
+
+.modalBody {
+    padding: 20px;
+    overflow-y: auto;
+    flex-grow: 1;
+}

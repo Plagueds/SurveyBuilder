@@ -1,5 +1,5 @@
 // backend/models/Survey.js
-// ----- START OF COMPLETE UPDATED FILE (v1.7 - Added Behavior/Nav Settings) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.8 - Save & Continue, Custom Vars Settings) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -41,7 +41,7 @@ const actionSchema = new mongoose.Schema({
     type: {
         type: String,
         required: [true, 'Action type is required.'],
-        enum: ['skipToQuestion', 'hideQuestion', 'jumpToEndOfSurvey', 'disqualifyRespondent']
+        enum: ['skipToQuestion', 'hideQuestion', 'jumpToEndOfSurvey', 'disqualifyRespondent', 'markAsCompleted'] // Added markAsCompleted
     },
     targetQuestionId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -66,6 +66,19 @@ const logicRuleSchema = new mongoose.Schema({
    action: { type: actionSchema, required: [true, 'Action is required for the rule.'] }
 });
 // --- End Schemas for Global Skip Logic ---
+
+// +++ NEW: Schema for Custom Variables +++
+const customVariableSchema = new Schema({
+    _id: false, // No separate _id for these subdocuments unless needed
+    key: { 
+        type: String, 
+        required: [true, 'Custom variable key is required.'], 
+        trim: true,
+        match: [/^[a-zA-Z0-9_]+$/, 'Key can only contain alphanumeric characters and underscores.'] // Basic validation for URL-friendliness
+    },
+    label: { type: String, trim: true, default: '' }, // Optional descriptive label for UI
+    // defaultValue: { type: String, trim: true, default: '' } // Future: allow default values
+});
 
 
 const surveySchema = new Schema({
@@ -98,23 +111,20 @@ const surveySchema = new Schema({
             enum: ['none', 'all', 'blocks'],
             default: 'none'
         },
-        blocks: { // For 'blocks' type, this would be an array of arrays of question indices (relative to original survey.questions)
-            type: [[{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }]], // Storing actual ObjectIds
-            default: undefined // Only defined if type is 'blocks'
+        blocks: { 
+            type: [[{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }]], 
+            default: undefined 
         }
     },
     globalSkipLogic: {
         type: [logicRuleSchema],
         default: []
     },
-    // Survey-wide settings
     settings: {
-        surveyWide: { // Existing namespace, let's keep it for clarity or rename if preferred
-            allowRetakes: { type: Boolean, default: true }, // Example, might be collector specific mostly
-            // customCSS: { type: String, default: '' }, // Example
-            // showProgressBar: { type: Boolean, default: false }, // This was for collector, keep collector specific
+        surveyWide: { 
+            allowRetakes: { type: Boolean, default: true },
         },
-        completion: { // From your SurveySettingsPanel.js
+        completion: { 
             type: { type: String, default: 'thankYouPage' },
             thankYouMessage: { type: String, default: 'Thank you for completing the survey!' },
             showResponseSummary: { type: Boolean, default: false },
@@ -126,34 +136,38 @@ const surveySchema = new Schema({
             disqualificationRedirectUrl: { type: String, default: '' },
             surveyClosedMessage: { type: String, default: 'This survey is currently closed. Thank you for your interest.' },
         },
-        accessSecurity: { // From your SurveySettingsPanel.js
+        accessSecurity: { 
             linkExpirationDate: { type: Date, default: null },
             maxResponses: { type: Number, default: 0 },
             passwordProtectionEnabled: { type: Boolean, default: false },
             surveyPassword: { type: String, default: '' },
         },
-        // +++ NEW: Behavior and Navigation Settings +++
         behaviorNavigation: {
             autoAdvance: { type: Boolean, default: false },
             questionNumberingEnabled: { type: Boolean, default: true },
             questionNumberingFormat: {
                 type: String,
-                enum: ['123', 'ABC', 'roman', 'custom'], // '1. ', 'A. ', 'I. ', or custom prefix
+                enum: ['123', 'ABC', 'roman', 'custom'], 
                 default: '123'
             },
-            questionNumberingCustomPrefix: { type: String, default: '' }, // Used if format is 'custom'
-            // Back button is collector-specific, progress bar settings are also collector-specific
+            questionNumberingCustomPrefix: { type: String, default: '' },
+            // +++ NEW: Save and Continue Settings +++
+            saveAndContinueEnabled: { type: Boolean, default: false },
+            saveAndContinueEmailLinkExpiryDays: { type: Number, default: 7, min: 1, max: 90 },
         },
-        // appearance: {}, // Placeholder from SurveySettingsPanel
+        // +++ NEW: Custom Variables Setting +++
+        customVariables: {
+            type: [customVariableSchema],
+            default: []
+        },
+        // appearance: {}, // Placeholder
     },
-    welcomeMessage: { // Already exists
+    welcomeMessage: { 
         text: { type: String, default: "Welcome to the survey!" },
-        // Potentially add image, etc.
     },
-    thankYouMessage: { // Already exists, but completion settings are more detailed
+    thankYouMessage: { // Consider deprecating in favor of settings.completion fully
         text: { type: String, default: "Thank you for completing the survey!" },
-        redirectUrl: { type: String, default: '' }, // This might be redundant with settings.completion.redirectUrl
-        // Consider consolidating thankYouMessage fields into settings.completion
+        redirectUrl: { type: String, default: '' }, 
     },
     createdBy: {
         type: Schema.Types.ObjectId,
@@ -169,5 +183,13 @@ const surveySchema = new Schema({
 surveySchema.index({ status: 1 });
 surveySchema.index({ createdAt: -1 });
 
+// Ensure custom variable keys are unique within a survey
+surveySchema.path('settings.customVariables').validate(function(value) {
+    if (!value || value.length === 0) return true;
+    const keys = value.map(cv => cv.key);
+    return new Set(keys).size === keys.length;
+}, 'Custom variable keys must be unique within the survey.');
+
+
 module.exports = mongoose.model('Survey', surveySchema);
-// ----- END OF COMPLETE UPDATED FILE (v1.7 - Added Behavior/Nav Settings) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.8 - Save & Continue, Custom Vars Settings) -----

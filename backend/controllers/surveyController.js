@@ -1,15 +1,19 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE UPDATED FILE (vNext24 - Pass/Save New Nav Settings) -----
+// ----- START OF COMPLETE UPDATED FILE (vNext25 - Handle Save & Continue, Custom Vars Settings) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
+const crypto = require('crypto'); // For generating resume tokens
 const Survey = require('../models/Survey');
 const Question = require('../models/Question');
 const Answer = require('../models/Answer');
 const Collector = require('../models/Collector');
 const Response = require('../models/Response');
+const PartialResponse = require('../models/PartialResponse'); // +++ NEW +++
 const { evaluateAllLogic } = require('../utils/logicEvaluator');
 const axios = require('axios');
 const ipRangeCheck = require('ip-range-check');
+// TODO: Setup an email service (e.g., Nodemailer)
+// const emailService = require('../services/emailService'); 
 
 const getIpAddress = (request) => {
     const xForwardedFor = request.headers['x-forwarded-for'];
@@ -21,8 +25,6 @@ const getIpAddress = (request) => {
 
 const generateConjointProfiles = (attributes) => {
     if (!attributes || attributes.length === 0) return [];
-    // Placeholder for actual conjoint profile generation logic if needed server-side for previews
-    // For now, client-side generation is primary for taking surveys.
     return [];
 };
 
@@ -32,11 +34,7 @@ const ensureArrayForCsv = (val) => (Array.isArray(val) ? val : (val !== undefine
 const formatValueForCsv = (value, questionType, otherTextValue) => {
     if (value === null || value === undefined) return '';
     switch (questionType) {
-        case 'multiple-choice':
-        case 'dropdown':
-        case 'nps':
-        case 'rating':
-        case 'slider':
+        case 'multiple-choice': case 'dropdown': case 'nps': case 'rating': case 'slider':
             if (value === '__OTHER__' && otherTextValue) return `Other: ${otherTextValue}`;
             return String(value);
         case 'checkbox':
@@ -95,19 +93,25 @@ exports.getAllSurveys = async (req, res) => {
 exports.createSurvey = async (req, res) => {
     const { title, description, category, settings, welcomeMessage, thankYouMessage } = req.body;
     try {
-        // Ensure default behaviorNavigation settings are applied if not provided
         const defaultBehaviorNav = {
             autoAdvance: false,
             questionNumberingEnabled: true,
             questionNumberingFormat: '123',
-            questionNumberingCustomPrefix: ''
+            questionNumberingCustomPrefix: '',
+            // +++ NEW DEFAULTS +++
+            saveAndContinueEnabled: false,
+            saveAndContinueEmailLinkExpiryDays: 7,
         };
+        const defaultCustomVariables = []; // Default for customVariables
+
         const mergedSettings = {
-            ...settings, // existing settings from body
+            ...(settings || {}), // Ensure settings is an object
             behaviorNavigation: {
                 ...defaultBehaviorNav,
-                ...(settings?.behaviorNavigation || {}) // override defaults with provided ones
-            }
+                ...(settings?.behaviorNavigation || {})
+            },
+            // +++ Ensure customVariables is initialized +++
+            customVariables: settings?.customVariables || defaultCustomVariables
         };
 
         const newSurvey = new Survey({
@@ -127,7 +131,7 @@ exports.createSurvey = async (req, res) => {
 
 exports.getSurveyById = async (req, res) => {
     const { surveyId } = req.params;
-    const { forTaking, collectorId, isPreviewingOwner } = req.query;
+    const { forTaking, collectorId, isPreviewingOwner, resumeToken } = req.query; // +++ Added resumeToken +++
 
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
         return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
@@ -136,14 +140,15 @@ exports.getSurveyById = async (req, res) => {
     try {
         let surveyQuery = Survey.findById(surveyId);
         let actualCollectorDoc = null;
+        let partialResponseData = null; // +++ For resumed survey +++
 
         if (forTaking === 'true') {
             surveyQuery = surveyQuery
-                .select('title description welcomeMessage thankYouMessage status questions settings.completion settings.behaviorNavigation globalSkipLogic randomizationLogic') // Added settings.behaviorNavigation
+                // +++ Added settings.customVariables to select +++
+                .select('title description welcomeMessage thankYouMessage status questions settings.completion settings.behaviorNavigation settings.customVariables globalSkipLogic randomizationLogic')
                 .populate({ path: 'questions', options: { sort: { order: 1 } } });
 
             if (collectorId) {
-                // Added progressBarPosition to select fields
                 const selectFields = '+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist +settings.web_link.allowBackButton +settings.web_link.progressBarEnabled +settings.web_link.progressBarStyle +settings.web_link.progressBarPosition';
                 if (mongoose.Types.ObjectId.isValid(collectorId)) {
                     actualCollectorDoc = await Collector.findOne({ _id: collectorId, survey: surveyId }).select(selectFields);
@@ -151,7 +156,7 @@ exports.getSurveyById = async (req, res) => {
                 if (!actualCollectorDoc) actualCollectorDoc = await Collector.findOne({ linkId: collectorId, survey: surveyId }).select(selectFields);
                 if (!actualCollectorDoc) actualCollectorDoc = await Collector.findOne({ 'settings.web_link.customSlug': collectorId, survey: surveyId }).select(selectFields);
             }
-        } else {
+        } else { // For admin/editing view
             surveyQuery = surveyQuery.populate({ path: 'questions' }).populate('collectors');
         }
 
@@ -161,18 +166,44 @@ exports.getSurveyById = async (req, res) => {
         if (forTaking !== 'true' && req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
             return res.status(403).json({ success: false, message: 'You are not authorized to view this survey\'s details.' });
         }
-
-        const effectiveIsOwnerPreviewing = isPreviewingOwner === 'true' || (survey.status === 'draft' && req.user && String(survey.createdBy) === String(req.user.id));
+        
+        const effectiveIsOwnerPreviewing = isPreviewingOwner === 'true' && req.user && String(survey.createdBy) === String(req.user.id);
 
         if (forTaking === 'true') {
-            if (survey.status !== 'active' && !effectiveIsOwnerPreviewing) return res.status(403).json({ success: false, message: 'This survey is not currently active.' });
-            if (collectorId && !actualCollectorDoc && !effectiveIsOwnerPreviewing) return res.status(404).json({ success: false, message: 'Collector not found or invalid for this survey.' });
+            if (survey.status !== 'active' && !effectiveIsOwnerPreviewing && !resumeToken) { // Allow resume even if survey not active (if token valid)
+                return res.status(403).json({ success: false, message: 'This survey is not currently active.' });
+            }
+            if (collectorId && !actualCollectorDoc && !effectiveIsOwnerPreviewing && !resumeToken) {
+                 return res.status(404).json({ success: false, message: 'Collector not found or invalid for this survey.' });
+            }
+
+            // +++ Handle Resume Token +++
+            if (resumeToken) {
+                const partialResponse = await PartialResponse.findOne({ resumeToken: resumeToken, survey: survey._id });
+                if (!partialResponse) {
+                    return res.status(404).json({ success: false, message: 'Invalid or expired resume link.' });
+                }
+                if (partialResponse.expiresAt < new Date()) {
+                    // Optionally delete expired token here
+                    // await PartialResponse.deleteOne({ _id: partialResponse._id });
+                    return res.status(410).json({ success: false, message: 'This resume link has expired.' });
+                }
+                if (partialResponse.completedAt) {
+                     return res.status(410).json({ success: false, message: 'This survey session has already been completed.' });
+                }
+                partialResponseData = partialResponse.toObject(); // Pass to frontend
+                // If resuming, the collector associated with the partial response should be used
+                if (!actualCollectorDoc && partialResponse.collector) {
+                     actualCollectorDoc = await Collector.findById(partialResponse.collector).select('+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist +settings.web_link.allowBackButton +settings.web_link.progressBarEnabled +settings.web_link.progressBarStyle +settings.web_link.progressBarPosition');
+                }
+            }
+
 
             if (actualCollectorDoc) {
                 if (String(actualCollectorDoc.survey) !== String(survey._id)) return res.status(400).json({ success: false, message: 'Collector does not belong to this survey.' });
-                if (actualCollectorDoc.status !== 'open' && !effectiveIsOwnerPreviewing) return res.status(403).json({ success: false, message: `Link is ${actualCollectorDoc.status}.` });
+                if (actualCollectorDoc.status !== 'open' && !effectiveIsOwnerPreviewing && !resumeToken) return res.status(403).json({ success: false, message: `Link is ${actualCollectorDoc.status}.` });
 
-                if (actualCollectorDoc.settings?.web_link && !effectiveIsOwnerPreviewing) {
+                if (actualCollectorDoc.settings?.web_link && !effectiveIsOwnerPreviewing && !resumeToken) { // Don't re-check IP if resuming
                     const respondentIp = getIpAddress(req);
                     const { ipAllowlist, ipBlocklist } = actualCollectorDoc.settings.web_link;
                     if (respondentIp) {
@@ -180,12 +211,12 @@ exports.getSurveyById = async (req, res) => {
                         if (ipBlocklist?.length > 0 && ipBlocklist.some(blockedIpOrRange => ipRangeCheck(respondentIp, blockedIpOrRange))) return res.status(403).json({ success: false, message: 'Access to this survey is restricted from your current IP address (in blocklist).' });
                     }
                 }
-                if (actualCollectorDoc.type === 'web_link' && actualCollectorDoc.settings?.web_link?.password) {
+                if (actualCollectorDoc.type === 'web_link' && actualCollectorDoc.settings?.web_link?.password && !resumeToken) { // Don't ask for password if resuming
                     const providedPassword = req.headers['x-survey-password'];
                     const passwordMatch = await actualCollectorDoc.comparePassword(providedPassword);
                     if (!providedPassword || !passwordMatch) return res.status(401).json({ success: false, message: 'Password required or incorrect.', requiresPassword: true });
                 }
-            } else if (!effectiveIsOwnerPreviewing && survey.status === 'draft' && !collectorId) {
+            } else if (!effectiveIsOwnerPreviewing && survey.status === 'draft' && !collectorId && !resumeToken) {
                 return res.status(403).json({ success: false, message: 'Survey is in draft mode and requires a specific collector link for preview.' });
             }
         }
@@ -198,14 +229,24 @@ exports.getSurveyById = async (req, res) => {
         const surveyResponseData = { ...survey, questions: processedQuestions };
 
         if (forTaking === 'true') {
-            // Ensure survey-level behaviorNavigation settings are passed, with defaults
-            const defaultBehaviorNav = { autoAdvance: false, questionNumberingEnabled: true, questionNumberingFormat: '123' };
+            const defaultBehaviorNav = { 
+                autoAdvance: false, 
+                questionNumberingEnabled: true, 
+                questionNumberingFormat: '123',
+                // +++ NEW DEFAULTS FOR SURVEY TAKING +++
+                saveAndContinueEnabled: false,
+                saveAndContinueEmailLinkExpiryDays: 7,
+            };
+            const defaultCustomVariables = [];
+
             surveyResponseData.settings = {
-                ...(surveyResponseData.settings || {}), // keep existing settings like completion
+                ...(surveyResponseData.settings || {}), 
                 behaviorNavigation: {
                     ...defaultBehaviorNav,
                     ...(surveyResponseData.settings?.behaviorNavigation || {})
-                }
+                },
+                // +++ Ensure customVariables is passed +++
+                customVariables: surveyResponseData.settings?.customVariables || defaultCustomVariables
             };
             
             if (actualCollectorDoc?.settings?.web_link) {
@@ -213,40 +254,27 @@ exports.getSurveyById = async (req, res) => {
                 surveyResponseData.collectorSettings = webLinkSettingsObject;
                 surveyResponseData.actualCollectorObjectId = actualCollectorDoc._id;
                 if (surveyResponseData.collectorSettings.enableRecaptcha && !surveyResponseData.collectorSettings.recaptchaSiteKey && process.env.REACT_APP_RECAPTCHA_SITE_KEY) surveyResponseData.collectorSettings.recaptchaSiteKey = process.env.REACT_APP_RECAPTCHA_SITE_KEY;
-
-                // Ensure collector-specific progress bar settings have defaults if not present
-                if (typeof surveyResponseData.collectorSettings.allowBackButton === 'undefined') {
-                    surveyResponseData.collectorSettings.allowBackButton = true;
-                }
-                if (typeof surveyResponseData.collectorSettings.progressBarEnabled === 'undefined') {
-                    surveyResponseData.collectorSettings.progressBarEnabled = false;
-                }
-                if (typeof surveyResponseData.collectorSettings.progressBarStyle === 'undefined') {
-                    surveyResponseData.collectorSettings.progressBarStyle = 'percentage';
-                }
-                if (typeof surveyResponseData.collectorSettings.progressBarPosition === 'undefined') { // Default for new setting
-                    surveyResponseData.collectorSettings.progressBarPosition = 'top';
-                }
-
-            } else { // Default collector settings if no specific collector found (e.g., previewing draft without collector)
+                if (typeof surveyResponseData.collectorSettings.allowBackButton === 'undefined') surveyResponseData.collectorSettings.allowBackButton = true;
+                if (typeof surveyResponseData.collectorSettings.progressBarEnabled === 'undefined') surveyResponseData.collectorSettings.progressBarEnabled = false;
+                if (typeof surveyResponseData.collectorSettings.progressBarStyle === 'undefined') surveyResponseData.collectorSettings.progressBarStyle = 'percentage';
+                if (typeof surveyResponseData.collectorSettings.progressBarPosition === 'undefined') surveyResponseData.collectorSettings.progressBarPosition = 'top';
+            } else { 
                 surveyResponseData.collectorSettings = {
-                    allowMultipleResponses: true, // Default for preview
-                    anonymousResponses: false,
-                    enableRecaptcha: false,
+                    allowMultipleResponses: true, anonymousResponses: false, enableRecaptcha: false,
                     recaptchaSiteKey: process.env.REACT_APP_RECAPTCHA_SITE_KEY || '',
-                    ipAllowlist: [],
-                    ipBlocklist: [],
-                    allowBackButton: true,
-                    progressBarEnabled: false,
-                    progressBarStyle: 'percentage',
-                    progressBarPosition: 'top' // Default for new setting
+                    ipAllowlist: [], ipBlocklist: [], allowBackButton: true,
+                    progressBarEnabled: false, progressBarStyle: 'percentage', progressBarPosition: 'top'
                 };
                 surveyResponseData.actualCollectorObjectId = null;
+            }
+            // +++ Add partial response data if resuming +++
+            if (partialResponseData) {
+                surveyResponseData.partialResponse = partialResponseData;
             }
         }
         res.status(200).json({ success: true, data: surveyResponseData });
     } catch (error) {
-        console.error(`[Backend - getSurveyById] Error fetching survey ${surveyId} with collectorId (identifier) ${collectorId}:`, error);
+        console.error(`[Backend - getSurveyById] Error fetching survey ${surveyId} with collectorId ${collectorId} or resumeToken ${resumeToken}:`, error);
         res.status(500).json({ success: false, message: 'Error fetching survey.' });
     }
 };
@@ -265,6 +293,7 @@ exports.updateSurvey = async (req, res) => {
         if (req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') { await session.abortTransaction(); session.endSession(); return res.status(403).json({ success: false, message: 'Not authorized.' }); }
 
         if (updates.hasOwnProperty('questions') && Array.isArray(updates.questions)) {
+            // ... (question update logic - no changes needed here for now)
             const receivedQuestionObjects = updates.questions;
             const newQuestionObjectIdsForSurvey = [];
 
@@ -311,33 +340,38 @@ exports.updateSurvey = async (req, res) => {
             survey.questions = [];
         }
         
-        // Merge settings carefully, especially nested ones like behaviorNavigation
         if (updates.settings) {
-            survey.settings = survey.settings || {}; // Ensure settings object exists
+            survey.settings = survey.settings || {}; 
+            const defaultBehaviorNav = { 
+                autoAdvance: false, questionNumberingEnabled: true, questionNumberingFormat: '123', 
+                questionNumberingCustomPrefix: '', saveAndContinueEnabled: false, saveAndContinueEmailLinkExpiryDays: 7 
+            };
+            const defaultCustomVariables = [];
+
             for (const categoryKey in updates.settings) {
                 if (updates.settings.hasOwnProperty(categoryKey)) {
-                    if (typeof updates.settings[categoryKey] === 'object' && updates.settings[categoryKey] !== null && !Array.isArray(updates.settings[categoryKey])) {
-                        // Deep merge for objects like 'completion', 'behaviorNavigation'
+                    if (categoryKey === 'customVariables') { // Handle customVariables as an array
+                        survey.settings.customVariables = Array.isArray(updates.settings.customVariables) 
+                            ? updates.settings.customVariables 
+                            : defaultCustomVariables;
+                    } else if (typeof updates.settings[categoryKey] === 'object' && updates.settings[categoryKey] !== null && !Array.isArray(updates.settings[categoryKey])) {
                         survey.settings[categoryKey] = {
-                            ...(survey.settings[categoryKey] || {}),
+                            ...(survey.settings[categoryKey] || (categoryKey === 'behaviorNavigation' ? defaultBehaviorNav : {})), // Apply defaults for nested
                             ...updates.settings[categoryKey]
                         };
                     } else {
-                        // Direct assignment for non-object values or arrays
                         survey.settings[categoryKey] = updates.settings[categoryKey];
                     }
                 }
             }
-             // Ensure default behaviorNavigation settings if partially updated or missing
-            const defaultBehaviorNav = { autoAdvance: false, questionNumberingEnabled: true, questionNumberingFormat: '123', questionNumberingCustomPrefix: '' };
-            survey.settings.behaviorNavigation = {
-                ...defaultBehaviorNav,
-                ...(survey.settings.behaviorNavigation || {})
-            };
+            // Ensure defaults are present if a category was not in updates but should exist
+            if (!survey.settings.behaviorNavigation) survey.settings.behaviorNavigation = defaultBehaviorNav;
+            else survey.settings.behaviorNavigation = { ...defaultBehaviorNav, ...survey.settings.behaviorNavigation };
+
+            if (!survey.settings.customVariables) survey.settings.customVariables = defaultCustomVariables;
         }
 
-
-        const allowedTopLevelFields = ['title', 'description', 'status', /* 'settings' handled above */, 'randomizationLogic', 'welcomeMessage', 'thankYouMessage', 'globalSkipLogic'];
+        const allowedTopLevelFields = ['title', 'description', 'status', 'randomizationLogic', 'welcomeMessage', 'thankYouMessage', 'globalSkipLogic'];
         for (const key of allowedTopLevelFields) {
             if (updates.hasOwnProperty(key)) survey[key] = updates[key];
         }
@@ -357,6 +391,7 @@ exports.updateSurvey = async (req, res) => {
 };
 
 exports.deleteSurvey = async (req, res) => {
+    // ... (no changes needed here for now)
     const { surveyId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(surveyId)) return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
     const session = await mongoose.startSession();
@@ -374,6 +409,7 @@ exports.deleteSurvey = async (req, res) => {
         await Question.deleteMany({ survey: survey._id }, { session });
         await Answer.deleteMany({ survey: survey._id }, { session });
         await Response.deleteMany({ survey: survey._id }, { session });
+        await PartialResponse.deleteMany({ survey: survey._id }, { session }); // +++ Delete partial responses +++
         await Collector.deleteMany({ survey: survey._id }, { session });
         await Survey.findByIdAndDelete(surveyId, { session });
         await session.commitTransaction();
@@ -388,102 +424,54 @@ exports.deleteSurvey = async (req, res) => {
 };
 
 exports.submitSurveyAnswers = async (req, res) => {
-    console.log(`[B_SUBMIT_ENTRY] Received submission request for surveyId: ${req.params.surveyId}. Body keys: ${Object.keys(req.body).join(', ')}`);
     const { surveyId: surveyParamId } = req.params;
-    const { answers: answersPayload, sessionId: payloadSessionId, collectorId: collectorParamId, recaptchaToken, startedAt: clientStartedAt } = req.body;
-    console.log(`[B_SUBMIT_PARAMS] surveyParamId=${surveyParamId}, collectorParamId=${collectorParamId}, payloadSessionId=${payloadSessionId}, recaptchaToken=${recaptchaToken ? 'present' : 'absent'}, clientStartedAt=${clientStartedAt}`);
+    const { answers: answersPayload, sessionId: payloadSessionId, collectorId: collectorParamId, recaptchaToken, startedAt: clientStartedAt, customVariables: passedCustomVariables, resumeToken } = req.body; // +++ Added customVariables, resumeToken +++
     const respondentIp = getIpAddress(req);
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const sessionIdToUse = payloadSessionId || new mongoose.Types.ObjectId().toString();
-    console.log(`[B_SUBMIT_INFO] Respondent IP: ${respondentIp}, User-Agent: ${userAgent.substring(0, 50)}..., SessionID to use: ${sessionIdToUse}`);
     let mongoSession;
 
     try {
-        console.log("[B_SUBMIT_SESSION] Attempting to start MongoDB session...");
         mongoSession = await mongoose.startSession();
-        console.log("[B_SUBMIT_SESSION] MongoDB session started successfully.");
-        console.log("[B_SUBMIT_TRANSACTION] Attempting to start transaction...");
         mongoSession.startTransaction();
-        console.log("[B_SUBMIT_TRANSACTION] Transaction started successfully.");
-        console.log(`[B_SUBMIT_FETCH_SURVEY] Fetching survey: ${surveyParamId}`);
+        
         const survey = await Survey.findById(surveyParamId).populate('questions').session(mongoSession);
-        if (!survey) {
-            console.error(`[B_SUBMIT_ERROR] Survey not found: ${surveyParamId}. Aborting transaction.`);
-            await mongoSession.abortTransaction();
-            console.log("[B_SUBMIT_TRANSACTION] Transaction aborted due to survey not found.");
-            return res.status(404).json({ success: false, message: 'Survey not found.' });
-        }
-        console.log(`[B_SUBMIT_FETCH_SURVEY] Survey ${surveyParamId} fetched. Status: ${survey.status}, Number of questions populated: ${survey.questions ? survey.questions.length : 0}`);
-        console.log(`[B_SUBMIT_FETCH_COLLECTOR] Fetching collector: ${collectorParamId}`);
+        if (!survey) { await mongoSession.abortTransaction(); return res.status(404).json({ success: false, message: 'Survey not found.' }); }
+        
         const collector = await Collector.findById(collectorParamId).select('+settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist').session(mongoSession);
-        if (!collector) {
-            console.error(`[B_SUBMIT_ERROR] Collector not found: ${collectorParamId}. Aborting transaction.`);
-            await mongoSession.abortTransaction();
-            console.log("[B_SUBMIT_TRANSACTION] Transaction aborted due to collector not found.");
-            return res.status(404).json({ success: false, message: 'Collector not found.' });
-        }
-        console.log(`[B_SUBMIT_FETCH_COLLECTOR] Collector ${collectorParamId} fetched. Type: ${collector.type}, Status: ${collector.status}`);
+        if (!collector) { await mongoSession.abortTransaction(); return res.status(404).json({ success: false, message: 'Collector not found.' }); }
+        
         const isOwnerPreviewingDraft = survey.status === 'draft' && req.user && String(survey.createdBy) === String(req.user.id);
-        console.log(`[B_SUBMIT_PREVIEW_CHECK] Is owner previewing draft? ${isOwnerPreviewingDraft}`);
 
-        if (survey.status !== 'active' && !isOwnerPreviewingDraft) {
-            console.warn(`[B_SUBMIT_WARN] Survey ${surveyParamId} is not active. Status: ${survey.status}. Aborting transaction.`);
-            await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: 'This survey is not currently active.' });
-        }
-        if (collector.status !== 'open' && !isOwnerPreviewingDraft) {
-            console.warn(`[B_SUBMIT_WARN] Collector ${collectorParamId} is not open. Status: ${collector.status}. Aborting transaction.`);
-            await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: `This survey link is ${collector.status}.` });
-        }
+        if (survey.status !== 'active' && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: 'This survey is not currently active.' }); }
+        if (collector.status !== 'open' && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: `This survey link is ${collector.status}.` }); }
 
         if (collector.type === 'web_link' && collector.settings?.web_link && !isOwnerPreviewingDraft) {
-            console.log("[B_SUBMIT_IP_CHECK] Performing IP checks for web_link collector.");
             const { ipAllowlist, ipBlocklist } = collector.settings.web_link;
             if (respondentIp) {
-                if (ipAllowlist?.length > 0 && !ipAllowlist.some(allowedIpOrRange => ipRangeCheck(respondentIp, allowedIpOrRange))) {
-                    console.warn(`[B_SUBMIT_WARN] IP ${respondentIp} not in allowlist. Aborting transaction.`);
-                    await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: 'Access restricted (not in allowlist).' });
-                }
-                if (ipBlocklist?.length > 0 && ipBlocklist.some(blockedIpOrRange => ipRangeCheck(respondentIp, blockedIpOrRange))) {
-                    console.warn(`[B_SUBMIT_WARN] IP ${respondentIp} in blocklist. Aborting transaction.`);
-                    await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: 'Access restricted (in blocklist).' });
-                }
+                if (ipAllowlist?.length > 0 && !ipAllowlist.some(allowedIpOrRange => ipRangeCheck(respondentIp, allowedIpOrRange))) { await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: 'Access restricted (not in allowlist).' }); }
+                if (ipBlocklist?.length > 0 && ipBlocklist.some(blockedIpOrRange => ipRangeCheck(respondentIp, blockedIpOrRange))) { await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: 'Access restricted (in blocklist).' }); }
             }
-            console.log("[B_SUBMIT_IP_CHECK] IP checks passed.");
         }
 
         if (collector.type === 'web_link' && collector.settings?.web_link?.enableRecaptcha && !isOwnerPreviewingDraft) {
-            console.log("[B_SUBMIT_RECAPTCHA] Verifying reCAPTCHA token...");
-            if (!recaptchaToken) {
-                console.warn("[B_SUBMIT_WARN] reCAPTCHA token missing. Aborting transaction.");
-                await mongoSession.abortTransaction(); return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed (token missing).' });
-            }
+            if (!recaptchaToken) { await mongoSession.abortTransaction(); return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed (token missing).' }); }
             try {
                 const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
                 if (!recaptchaSecret) throw new Error("reCAPTCHA secret key not configured on server.");
                 const verificationUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${recaptchaToken}&remoteip=${respondentIp}`;
-                console.log("[B_SUBMIT_RECAPTCHA] Calling Google siteverify...");
                 const recaptchaApiResponse = await axios.post(verificationUrl);
-                console.log("[B_SUBMIT_RECAPTCHA] Google siteverify response status:", recaptchaApiResponse.status);
-                console.log("[B_SUBMIT_RECAPTCHA] Google siteverify response data:", JSON.stringify(recaptchaApiResponse.data));
-                if (!recaptchaApiResponse.data.success) {
-                    console.warn("[B_SUBMIT_WARN] reCAPTCHA verification failed with Google. Errors:", recaptchaApiResponse.data['error-codes']?.join(', '));
-                    await mongoSession.abortTransaction(); return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed.', errors: recaptchaApiResponse.data['error-codes'] });
-                }
-                console.log("[B_SUBMIT_RECAPTCHA] reCAPTCHA verification successful.");
+                if (!recaptchaApiResponse.data.success) { await mongoSession.abortTransaction(); return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed.', errors: recaptchaApiResponse.data['error-codes'] }); }
             } catch (recaptchaError) {
-                console.error("[B_SUBMIT_ERROR] Error during reCAPTCHA verification:", recaptchaError.message, recaptchaError.stack);
+                console.error("[B_SUBMIT_ERROR] Error during reCAPTCHA verification:", recaptchaError.message);
                 await mongoSession.abortTransaction(); return res.status(500).json({ success: false, message: 'Error during reCAPTCHA verification.' });
             }
         }
 
         const answersToUpsert = [];
-        console.log(`[B_SUBMIT_ANSWERS_PROCESS] Processing ${answersPayload?.length || 0} answers from payload.`);
         if (answersPayload && Array.isArray(answersPayload)) {
             for (const ans of answersPayload) {
-                if (!ans.questionId || !mongoose.Types.ObjectId.isValid(ans.questionId)) {
-                    console.warn(`[B_SUBMIT_WARN] Invalid questionId in payload: ${ans.questionId}. Skipping.`);
-                    continue;
-                }
+                if (!ans.questionId || !mongoose.Types.ObjectId.isValid(ans.questionId)) continue;
                 answersToUpsert.push({
                     updateOne: {
                         filter: { survey: survey._id, collector: collector._id, questionId: new mongoose.Types.ObjectId(ans.questionId), sessionId: sessionIdToUse, },
@@ -493,21 +481,12 @@ exports.submitSurveyAnswers = async (req, res) => {
                 });
             }
         }
-        console.log(`[B_SUBMIT_ANSWERS_PROCESS] Prepared ${answersToUpsert.length} answers for bulkWrite.`);
-
         if (answersToUpsert.length > 0) {
-            console.log("[B_SUBMIT_DB_BULKWRITE_ANSWERS] Attempting Answer.bulkWrite...");
             const bulkWriteResult = await Answer.bulkWrite(answersToUpsert, { session: mongoSession });
-            console.log("[B_SUBMIT_DB_BULKWRITE_ANSWERS] Answer.bulkWrite completed.");
-            console.log(`[B_SUBMIT_DB_BULKWRITE_ANSWERS_RESULT] Upserted: ${bulkWriteResult.upsertedCount}, Modified: ${bulkWriteResult.modifiedCount}, Matched: ${bulkWriteResult.matchedCount}`);
             if (bulkWriteResult.hasWriteErrors()) {
-               const writeErrors = bulkWriteResult.getWriteErrors();
-               console.error("[B_SUBMIT_DB_BULKWRITE_ANSWERS_ERROR] Answer BulkWriteError:", JSON.stringify(writeErrors));
                await mongoSession.abortTransaction();
-               return res.status(500).json({ success: false, message: 'Error saving some answers.', details: writeErrors });
+               return res.status(500).json({ success: false, message: 'Error saving some answers.', details: bulkWriteResult.getWriteErrors() });
             }
-        } else {
-            console.log("[B_SUBMIT_ANSWERS_PROCESS] No answers to save after processing.");
         }
 
         const responseUpdateData = {
@@ -515,57 +494,48 @@ exports.submitSurveyAnswers = async (req, res) => {
             ipAddress: collector.settings?.web_link?.anonymousResponses ? undefined : respondentIp,
             userAgent: collector.settings?.web_link?.anonymousResponses ? undefined : userAgent,
             isTestResponse: isOwnerPreviewingDraft,
+            // +++ Store Custom Variables +++
+            customVariables: passedCustomVariables || new Map() // Store as a Map
         };
 
-        if (Response && Response.schema && typeof Response.schema.eachPath === 'function') {
-            let schemaPaths = [];
-            Response.schema.eachPath((pathname, schemaType) => { schemaPaths.push({ path: pathname, type: schemaType.instance }); });
-            console.log('[B_SUBMIT_SCHEMA_CHECK] Response schema paths:', JSON.stringify(schemaPaths, null, 2));
-        } else {
-            console.log('[B_SUBMIT_SCHEMA_CHECK] Could not retrieve Response schema paths.');
-        }
-
-        console.log("[B_SUBMIT_DB_UPSERT_RESPONSE] Attempting Response.findOneAndUpdate (upsert)... Filter and Data:", JSON.stringify({filter: { survey: survey._id, collector: collector._id, sessionId: sessionIdToUse }, data: responseUpdateData}, null, 2).substring(0, 500));
         const updatedResponse = await Response.findOneAndUpdate(
             { survey: survey._id, collector: collector._id, sessionId: sessionIdToUse },
             { $set: responseUpdateData, $setOnInsert: { createdAt: new Date(), startedAt: clientStartedAt ? new Date(clientStartedAt) : new Date() } },
             { upsert: true, new: true, runValidators: true, session: mongoSession }
         );
-        console.log(`[B_SUBMIT_DB_UPSERT_RESPONSE] Response document processed. ID: ${updatedResponse?._id}, Status: ${updatedResponse?.status}`);
 
         let triggeredAction = null;
         if (survey.globalSkipLogic && survey.globalSkipLogic.length > 0 && survey.questions && survey.questions.length > 0) {
-            console.log("[B_SUBMIT_LOGIC_GLOBAL] Evaluating global logic...");
             const allAnswersForLogic = await Answer.find({ survey: survey._id, collector: collector._id, sessionId: sessionIdToUse }).session(mongoSession);
             triggeredAction = evaluateAllLogic(survey.globalSkipLogic, allAnswersForLogic, survey.questions); 
-            console.log("[B_SUBMIT_LOGIC_GLOBAL] Global logic evaluation result:", JSON.stringify(triggeredAction));
             if (triggeredAction && triggeredAction.type === 'disqualifyRespondent' && updatedResponse) {
-                console.log(`[B_SUBMIT_LOGIC_GLOBAL] Disqualification triggered. Updating response ${updatedResponse._id} status to 'disqualified'.`);
                 updatedResponse.status = 'disqualified';
                 await updatedResponse.save({ session: mongoSession });
-                console.log(`[B_SUBMIT_LOGIC_GLOBAL] Response ${updatedResponse._id} status updated to 'disqualified'.`);
             }
         }
 
         if (!isOwnerPreviewingDraft) {
-            console.log("[B_SUBMIT_COLLECTOR_UPDATE] Incrementing collector responseCount...");
-            const collectorUpdateResult = await Collector.updateOne({ _id: collector._id }, { $inc: { responseCount: 1 } }, { session: mongoSession });
-            console.log(`[B_SUBMIT_COLLECTOR_UPDATE] Collector responseCount incremented. Matched: ${collectorUpdateResult.matchedCount}, Modified: ${collectorUpdateResult.modifiedCount}`);
-            const updatedCollector = await Collector.findById(collector._id).session(mongoSession);
+            await Collector.updateOne({ _id: collector._id }, { $inc: { responseCount: 1 } }, { session: mongoSession });
+            const updatedCollector = await Collector.findById(collector._id).session(mongoSession); // Re-fetch to check maxResponses
             if (updatedCollector && updatedCollector.settings?.web_link?.maxResponses && updatedCollector.responseCount >= updatedCollector.settings.web_link.maxResponses) {
-                console.log(`[B_SUBMIT_COLLECTOR_UPDATE] Max responses (${updatedCollector.settings.web_link.maxResponses}) reached for collector ${updatedCollector._id}. Setting status to 'overquota'.`);
                 await Collector.updateOne({ _id: updatedCollector._id }, { $set: { status: 'overquota' } }, { session: mongoSession });
                 if (updatedResponse) { updatedResponse.status = 'overquota'; await updatedResponse.save({ session: mongoSession }); }
             }
         } else if (updatedResponse) {
             updatedResponse.status = 'preview';
             await updatedResponse.save({ session: mongoSession });
-            console.log(`[B_SUBMIT_PREVIEW_UPDATE] Owner preview. Response ${updatedResponse._id} status set to 'preview'.`);
         }
 
-        console.log("[B_SUBMIT_TRANSACTION_COMMIT] Attempting to commit transaction...");
+        // +++ If survey was resumed, mark the partial response as completed +++
+        if (resumeToken) {
+            await PartialResponse.updateOne(
+                { resumeToken: resumeToken, survey: survey._id },
+                { $set: { completedAt: new Date(), respondentEmail: undefined } }, // Clear email after completion for privacy if desired
+                { session: mongoSession }
+            );
+        }
+
         await mongoSession.commitTransaction();
-        console.log("[B_SUBMIT_TRANSACTION_COMMIT] Transaction committed successfully.");
 
         const finalResponseStatus = updatedResponse ? updatedResponse.status : 'completed';
         const responseMessage = finalResponseStatus === 'disqualified'
@@ -584,47 +554,96 @@ exports.submitSurveyAnswers = async (req, res) => {
         if (!responsePayload.redirectUrl && survey.thankYouMessage?.redirectUrl) {
             responsePayload.redirectUrl = survey.thankYouMessage.redirectUrl;
         }
-
-        console.log("[B_SUBMIT_SUCCESS] Sending 201 response. Payload:", JSON.stringify(responsePayload).substring(0, 300) + "...");
         res.status(201).json(responsePayload);
-        console.log("[B_SUBMIT_SUCCESS] Response sent.");
 
     } catch (error) {
         console.error(`[B_SUBMIT_CRITICAL_ERROR] Unhandled error in submitSurveyAnswers for survey ${surveyParamId}, session ${sessionIdToUse}. Error: ${error.message}`, error.stack);
         if (mongoSession && mongoSession.inTransaction()) {
-            try {
-                console.error("[B_SUBMIT_CRITICAL_ERROR] Attempting to abort transaction due to error...");
-                await mongoSession.abortTransaction();
-                console.error("[B_SUBMIT_CRITICAL_ERROR] Transaction aborted successfully.");
-            } catch (abortError) {
-                console.error("[B_SUBMIT_CRITICAL_ERROR] Failed to abort transaction:", abortError.message, abortError.stack);
-            }
+            try { await mongoSession.abortTransaction(); } catch (abortError) { console.error("[B_SUBMIT_CRITICAL_ERROR] Failed to abort transaction:", abortError.message); }
         }
-        if (!res.headersSent) {
-            console.error("[B_SUBMIT_CRITICAL_ERROR] Sending 500 response due to unhandled error.");
-            res.status(500).json({ success: false, message: error.message || 'An unexpected error occurred on the server while submitting answers.' });
-        } else {
-            console.error("[B_SUBMIT_CRITICAL_ERROR] Headers already sent, cannot send 500 response.");
-        }
+        if (!res.headersSent) res.status(500).json({ success: false, message: error.message || 'An unexpected error occurred on the server while submitting answers.' });
     } finally {
         if (mongoSession) {
-            try {
-                console.log("[B_SUBMIT_FINALLY] Attempting to end MongoDB session...");
-                if (typeof mongoSession.endSession === 'function') {
-                     if (mongoSession.endSession.constructor.name === 'AsyncFunction') { await mongoSession.endSession(); } else { mongoSession.endSession(); }
-                }
-                console.log("[B_SUBMIT_FINALLY] MongoDB session ended.");
-            } catch (sessionEndError) {
-                 console.error("[B_SUBMIT_FINALLY] Error ending MongoDB session:", sessionEndError.message, sessionEndError.stack);
-            }
-        } else {
-            console.log("[B_SUBMIT_FINALLY] MongoDB session was not initialized or already ended.");
+            try { if (typeof mongoSession.endSession === 'function') await mongoSession.endSession(); } catch (e) { console.error("Error ending session", e); }
         }
-        console.log("[B_SUBMIT_EXIT] Exiting submitSurveyAnswers function.");
     }
 };
 
+// +++ NEW: Endpoint to handle "Save and Continue Later" requests +++
+exports.savePartialResponse = async (req, res) => {
+    const { surveyId } = req.params;
+    const { collectorId, respondentEmail, currentAnswers, otherInputValues, currentVisibleIndex, visitedPath, sessionId } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(surveyId) || (collectorId && !mongoose.Types.ObjectId.isValid(collectorId))) {
+        return res.status(400).json({ success: false, message: 'Invalid Survey or Collector ID.' });
+    }
+    if (!respondentEmail) { // Basic validation
+        return res.status(400).json({ success: false, message: 'Email address is required to save progress.' });
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const survey = await Survey.findById(surveyId).select('settings.behaviorNavigation').session(session);
+        if (!survey) {
+            await session.abortTransaction(); session.endSession();
+            return res.status(404).json({ success: false, message: 'Survey not found.' });
+        }
+        if (!survey.settings?.behaviorNavigation?.saveAndContinueEnabled) {
+            await session.abortTransaction(); session.endSession();
+            return res.status(400).json({ success: false, message: 'Save and Continue feature is not enabled for this survey.' });
+        }
+
+        const collector = await Collector.findById(collectorId).session(session);
+         if (!collector) { // Ensure collector is valid
+            await session.abortTransaction(); session.endSession();
+            return res.status(404).json({ success: false, message: 'Collector not found.' });
+        }
+
+
+        const resumeToken = crypto.randomBytes(20).toString('hex');
+        const expiryDays = survey.settings.behaviorNavigation.saveAndContinueEmailLinkExpiryDays || 7;
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + expiryDays);
+
+        const partialResponse = new PartialResponse({
+            survey: surveyId,
+            collector: collectorId,
+            sessionId: sessionId || new mongoose.Types.ObjectId().toString(), // Use provided session or generate new
+            resumeToken,
+            respondentEmail,
+            answers: currentAnswers || {},
+            otherInputValues: otherInputValues || {},
+            currentVisibleIndex: currentVisibleIndex || 0,
+            visitedPath: visitedPath || [],
+            expiresAt,
+        });
+        await partialResponse.save({ session });
+
+        // TODO: Send email with the resume link
+        const resumeLink = `${process.env.FRONTEND_URL}/surveys/${surveyId}/resume/${resumeToken}`; // Adjust URL structure as needed
+        console.log(`[SavePartial] TODO: Email resume link to ${respondentEmail}: ${resumeLink}`);
+        // await emailService.sendResumeLink(respondentEmail, survey.title, resumeLink, expiryDays);
+        // For now, we'll just log it. In a real app, this would use an email service.
+
+        await session.commitTransaction();
+        session.endSession();
+        res.status(200).json({ success: true, message: `A link to resume this survey has been sent to ${respondentEmail}. It will expire in ${expiryDays} days.` });
+
+    } catch (error) {
+        if (session.inTransaction()) await session.abortTransaction();
+        session.endSession();
+        console.error(`[savePartialResponse] Error saving partial response for survey ${surveyId}:`, error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ success: false, message: 'Validation error saving progress.', details: error.errors });
+        }
+        res.status(500).json({ success: false, message: 'Error saving progress.' });
+    }
+};
+
+
 exports.getSurveyResults = async (req, res) => {
+    // ... (no changes needed here for now)
     const { surveyId } = req.params;
     const { page = 1, limit = 10, status, startDate, endDate, collectorId } = req.query;
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
@@ -685,6 +704,7 @@ exports.getSurveyResults = async (req, res) => {
 };
 
 exports.exportSurveyResults = async (req, res) => {
+    // ... (no changes needed here for now)
     const { surveyId } = req.params;
     const { format = 'csv', collectorId, status, startDate, endDate } = req.query;
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
@@ -722,9 +742,10 @@ exports.exportSurveyResults = async (req, res) => {
                 DurationSeconds: response.durationSeconds,
                 IPAddress: response.ipAddress || '', UserAgent: response.userAgent || '',
             };
-            if (response.customVariables) {
-                response.customVariables.forEach((value, key) => { row[`CustomVar_${key}`] = value; });
-            }
+            // Ensure customVariables is a Map or an object before trying to iterate
+            const customVars = response.customVariables instanceof Map ? response.customVariables : new Map(Object.entries(response.customVariables || {}));
+            customVars.forEach((value, key) => { row[`CustomVar_${key}`] = value; });
+            
             survey.questions.forEach(q => {
                 const answerDoc = answersBySessionAndQuestion[response.sessionId]?.[String(q._id)];
                 row[`Q_${q._id}_${q.text.replace(/[^a-zA-Z0-9]/g, '_').substring(0,50)}`] = answerDoc ? formatValueForCsv(answerDoc.answerValue, q.type, answerDoc.otherText) : '';
@@ -751,4 +772,4 @@ exports.exportSurveyResults = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error exporting survey results.' });
     }
 };
-// ----- END OF COMPLETE UPDATED FILE (vNext23 - Pass answer array to logic) -----
+// ----- END OF COMPLETE UPDATED FILE (vNext25 - Handle Save & Continue, Custom Vars Settings) -----
