@@ -1,16 +1,13 @@
 // frontend/src/components/SurveySettingsPanel.js
-// ----- START OF COMPLETE UPDATED FILE (v1.2 - Save & Continue, Custom Vars UI) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.3 - Added saveAndContinueMethod UI) -----
 import React, { useState, useEffect, useCallback } from 'react';
 
 const SETTING_CATEGORIES = {
     COMPLETION: 'Survey Completion & Endings',
     ACCESS_SECURITY: 'Access & Security',
     BEHAVIOR_NAVIGATION: 'Behavior & Navigation',
-    CUSTOM_VARIABLES: 'Custom Variables', // New Category
+    CUSTOM_VARIABLES: 'Custom Variables',
     APPEARANCE: 'Appearance & Branding',
-    // DATA_COLLECTION: 'Data Collection',
-    // NOTIFICATIONS: 'Notifications',
-    // QUOTAS: 'Quotas',
 };
 
 const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSave, surveyId }) => {
@@ -43,30 +40,34 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                 autoAdvance: false,
                 questionNumberingEnabled: true,
                 questionNumberingFormat: '123',
-                // +++ NEW: Save and Continue Defaults +++
                 saveAndContinueEnabled: false,
                 saveAndContinueEmailLinkExpiryDays: 7,
+                // +++ NEW: Save and Continue Method Default +++
+                saveAndContinueMethod: 'email', // Options: 'email', 'code', 'both'
             },
-            // +++ NEW: Custom Variables Default +++
-            customVariables: [], // Array of {key: string, label: string}
+            customVariables: [],
             appearance: {},
         };
 
         const merged = { ...defaults };
         for (const categoryKey in defaults) {
             if (defaults.hasOwnProperty(categoryKey)) {
-                // Ensure nested objects are properly initialized
                 merged[categoryKey] = {
                     ...defaults[categoryKey],
                     ...(settingsFromProps?.[categoryKey] || {})
                 };
-                // Specifically for customVariables, ensure it's an array
                 if (categoryKey === 'customVariables' && !Array.isArray(merged[categoryKey])) {
                     merged[categoryKey] = settingsFromProps?.[categoryKey] ? [...settingsFromProps[categoryKey]] : [];
                 }
+                // Ensure saveAndContinueMethod has a valid value after merging
+                if (categoryKey === 'behaviorNavigation') {
+                    const validMethods = ['email', 'code', 'both'];
+                    if (!validMethods.includes(merged[categoryKey].saveAndContinueMethod)) {
+                        merged[categoryKey].saveAndContinueMethod = defaults.behaviorNavigation.saveAndContinueMethod;
+                    }
+                }
             }
         }
-        // Copy any top-level settings from props that aren't in defaults (e.g., _id, title if they were passed)
         for (const key in settingsFromProps) {
             if (settingsFromProps.hasOwnProperty(key) && !defaults.hasOwnProperty(key)) {
                 merged[key] = settingsFromProps[key];
@@ -86,7 +87,7 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
     if (!isOpen) {
         return null;
     }
-    
+
     const handleNestedChange = (category, field, value) => {
         setCurrentSettings(prev => ({
             ...prev,
@@ -114,7 +115,6 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
             alert("Custom variable key cannot be empty.");
             return;
         }
-        // Basic key validation (alphanumeric and underscore)
         if (!/^[a-zA-Z0-9_]+$/.test(newCustomVarKey.trim())) {
             alert("Custom variable key can only contain letters, numbers, and underscores.");
             return;
@@ -124,7 +124,6 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
             alert("Custom variable key must be unique.");
             return;
         }
-
         const newVar = { key: newCustomVarKey.trim(), label: newCustomVarLabel.trim() || newCustomVarKey.trim() };
         setCurrentSettings(prev => ({
             ...prev,
@@ -140,14 +139,12 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
         setCurrentSettings(prev => ({ ...prev, customVariables: updatedCustomVars }));
     };
 
-
     const handleSave = () => {
-        // Ensure customVariables is part of the saved object
         const settingsToSave = {
             completion: currentSettings.completion,
             accessSecurity: currentSettings.accessSecurity,
             behaviorNavigation: currentSettings.behaviorNavigation,
-            customVariables: currentSettings.customVariables || [], // Ensure it's an array
+            customVariables: currentSettings.customVariables || [],
             appearance: currentSettings.appearance,
         };
         console.log("Saving survey-wide settings:", settingsToSave);
@@ -174,12 +171,9 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
     const primaryButtonStyle = { ...buttonStyle, backgroundColor: '#007bff', color: 'white', borderColor: '#007bff' };
     const secondaryButtonStyle = { ...buttonStyle, backgroundColor: '#6c757d', color: 'white', borderColor: '#6c757d' };
     const dangerButtonStyle = { ...buttonStyle, backgroundColor: '#dc3545', color: 'white', borderColor: '#dc3545' };
-    const smallInputStyle = { ...inputStyle, width: 'calc(50% - 10px)', marginRight: '10px', display:'inline-block' };
-
 
     const renderCompletionSettings = () => {
         const settings = currentSettings.completion || mergeWithDefaults({}).completion;
-        // ... (content from previous version, no changes needed here for now)
         return (
             <>
                 <h3 style={sectionTitleStyle}>End of Survey Experience</h3>
@@ -249,10 +243,9 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
             </>
         );
     };
-    
+
     const renderAccessSecuritySettings = () => {
         const settings = currentSettings.accessSecurity || mergeWithDefaults({}).accessSecurity;
-        // ... (content from previous version, no changes needed here for now)
         return (
             <>
                 <h3 style={sectionTitleStyle}>Link & Access Control (Survey-Wide Defaults)</h3>
@@ -306,31 +299,48 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                     </div>
                 )}
 
-                {/* +++ NEW: Save and Continue Later Settings +++ */}
                 <h3 style={{...sectionTitleStyle, marginTop:'30px'}}>Save and Continue Later</h3>
                 <div style={inputGroupStyle}>
                     <input type="checkbox" id="saveAndContinueEnabled" name="saveAndContinueEnabled" checked={settings.saveAndContinueEnabled || false} onChange={(e) => handleInputChange('behaviorNavigation', e)} style={checkboxInputStyle} />
                     <label htmlFor="saveAndContinueEnabled" style={checkboxLabelStyle}>Enable "Save and Continue Later"</label>
-                    <p style={subDescriptionStyle}>Allows respondents to save their progress and resume via an emailed link.</p>
                 </div>
                 {settings.saveAndContinueEnabled && (
-                    <div style={inputGroupStyle}>
-                        <label htmlFor="saveAndContinueEmailLinkExpiryDays" style={labelStyle}>Resume Link Expiry (days):</label>
-                        <input type="number" id="saveAndContinueEmailLinkExpiryDays" name="saveAndContinueEmailLinkExpiryDays" value={settings.saveAndContinueEmailLinkExpiryDays || 7} onChange={(e) => handleInputChange('behaviorNavigation', e)} min="1" max="90" style={inputStyle} />
-                    </div>
+                    <>
+                        <div style={inputGroupStyle}>
+                            <label htmlFor="saveAndContinueMethod" style={labelStyle}>Resume Method:</label>
+                            <select 
+                                id="saveAndContinueMethod" 
+                                name="saveAndContinueMethod" 
+                                value={settings.saveAndContinueMethod || 'email'} 
+                                onChange={(e) => handleInputChange('behaviorNavigation', e)} 
+                                style={selectStyle} 
+                            >
+                                <option value="email">Email Link Only</option>
+                                <option value="code">Resume Code Only</option>
+                                <option value="both">Email Link and Resume Code</option>
+                            </select>
+                            <p style={subDescriptionStyle}>
+                                {settings.saveAndContinueMethod === 'email' && "Respondent provides email, receives a resume link."}
+                                {settings.saveAndContinueMethod === 'code' && "Respondent is shown a unique code to copy and use later."}
+                                {settings.saveAndContinueMethod === 'both' && "Respondent provides email, receives a link, and is also shown a resume code."}
+                            </p>
+                        </div>
+                        <div style={inputGroupStyle}>
+                            <label htmlFor="saveAndContinueEmailLinkExpiryDays" style={labelStyle}>Resume Link/Code Expiry (days):</label>
+                            <input type="number" id="saveAndContinueEmailLinkExpiryDays" name="saveAndContinueEmailLinkExpiryDays" value={settings.saveAndContinueEmailLinkExpiryDays || 7} onChange={(e) => handleInputChange('behaviorNavigation', e)} min="1" max="90" style={inputStyle} />
+                        </div>
+                    </>
                 )}
             </>
         );
     };
 
-    // +++ NEW: Render Custom Variables Settings +++
     const renderCustomVariablesSettings = () => {
         const customVars = currentSettings.customVariables || [];
         return (
             <>
                 <h3 style={sectionTitleStyle}>Custom Variables (Hidden Fields)</h3>
                 <p style={subDescriptionStyle}>Define keys for custom data you want to pass into the survey URL (e.g., `?source=email&id=123`). This data will be stored with each response.</p>
-                
                 <div style={{ border: '1px solid #eee', padding: '15px', borderRadius: '4px', background:'#f9f9f9' }}>
                     {customVars.length > 0 && customVars.map((cv, index) => (
                         <div key={index} style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', paddingBottom:'10px', borderBottom: index < customVars.length -1 ? '1px dashed #ddd': 'none' }}>
@@ -339,7 +349,6 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                             <button onClick={() => handleRemoveCustomVariable(index)} style={{...dangerButtonStyle, padding:'8px 10px', fontSize:'0.85em'}}>Remove</button>
                         </div>
                     ))}
-                
                     <div style={{ display: 'flex', alignItems: 'center', marginTop: customVars.length > 0 ? '20px' : '0px', paddingTop: customVars.length > 0 ? '15px' : '0px', borderTop: customVars.length > 0 ? '1px solid #ddd' : 'none' }}>
                         <input type="text" placeholder="New Key (no spaces)" value={newCustomVarKey} onChange={(e) => setNewCustomVarKey(e.target.value)} style={{...inputStyle, width:'calc(40% - 5px)', marginRight:'10px'}} />
                         <input type="text" placeholder="New Label (Optional)" value={newCustomVarLabel} onChange={(e) => setNewCustomVarLabel(e.target.value)} style={{...inputStyle, width:'calc(40% - 5px)', marginRight:'10px'}} />
@@ -350,14 +359,12 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
         );
     };
 
-
     return (
         <div style={panelStyle}>
             <div style={headerStyle}>
                 <h2 style={{ margin: 0, fontSize: '1.3em', fontWeight:'600' }}>Survey Settings</h2>
                 <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.8rem', cursor: 'pointer', color:'#555', padding:0, lineHeight:'1' }}>&times;</button>
             </div>
-
             <nav style={navStyle}>
                 {Object.entries(SETTING_CATEGORIES).map(([key, title]) => (
                     <button
@@ -369,23 +376,20 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                     </button>
                 ))}
             </nav>
-
             <div style={contentStyle}>
                 {activeCategory === SETTING_CATEGORIES.COMPLETION && renderCompletionSettings()}
                 {activeCategory === SETTING_CATEGORIES.ACCESS_SECURITY && renderAccessSecuritySettings()}
                 {activeCategory === SETTING_CATEGORIES.BEHAVIOR_NAVIGATION && renderBehaviorNavigationSettings()}
-                {activeCategory === SETTING_CATEGORIES.CUSTOM_VARIABLES && renderCustomVariablesSettings()} {/* +++ NEW +++ */}
-                
+                {activeCategory === SETTING_CATEGORIES.CUSTOM_VARIABLES && renderCustomVariablesSettings()}
                 {![
-                    SETTING_CATEGORIES.COMPLETION, 
-                    SETTING_CATEGORIES.ACCESS_SECURITY, 
+                    SETTING_CATEGORIES.COMPLETION,
+                    SETTING_CATEGORIES.ACCESS_SECURITY,
                     SETTING_CATEGORIES.BEHAVIOR_NAVIGATION,
-                    SETTING_CATEGORIES.CUSTOM_VARIABLES // Added here
+                    SETTING_CATEGORIES.CUSTOM_VARIABLES
                 ].includes(activeCategory) && (
                     <p>Settings for "{activeCategory}" are not yet implemented.</p>
                 )}
             </div>
-
             <div style={footerStyle}>
                 <button onClick={onClose} style={secondaryButtonStyle}>Cancel</button>
                 <button onClick={handleSave} style={primaryButtonStyle}>Apply Settings</button>
@@ -395,4 +399,4 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
 };
 
 export default SurveySettingsPanel;
-// ----- END OF COMPLETE UPDATED FILE (v1.2 - Save & Continue, Custom Vars UI) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.3 - Added saveAndContinueMethod UI) -----

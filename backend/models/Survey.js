@@ -1,5 +1,5 @@
 // backend/models/Survey.js
-// ----- START OF COMPLETE UPDATED FILE (v1.8 - Save & Continue, Custom Vars Settings) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.9 - Added saveAndContinueMethod Setting) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -41,7 +41,7 @@ const actionSchema = new mongoose.Schema({
     type: {
         type: String,
         required: [true, 'Action type is required.'],
-        enum: ['skipToQuestion', 'hideQuestion', 'jumpToEndOfSurvey', 'disqualifyRespondent', 'markAsCompleted'] // Added markAsCompleted
+        enum: ['skipToQuestion', 'hideQuestion', 'jumpToEndOfSurvey', 'disqualifyRespondent', 'markAsCompleted']
     },
     targetQuestionId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -67,17 +67,15 @@ const logicRuleSchema = new mongoose.Schema({
 });
 // --- End Schemas for Global Skip Logic ---
 
-// +++ NEW: Schema for Custom Variables +++
 const customVariableSchema = new Schema({
-    _id: false, // No separate _id for these subdocuments unless needed
-    key: { 
-        type: String, 
-        required: [true, 'Custom variable key is required.'], 
+    _id: false,
+    key: {
+        type: String,
+        required: [true, 'Custom variable key is required.'],
         trim: true,
-        match: [/^[a-zA-Z0-9_]+$/, 'Key can only contain alphanumeric characters and underscores.'] // Basic validation for URL-friendliness
+        match: [/^[a-zA-Z0-9_]+$/, 'Key can only contain alphanumeric characters and underscores.']
     },
-    label: { type: String, trim: true, default: '' }, // Optional descriptive label for UI
-    // defaultValue: { type: String, trim: true, default: '' } // Future: allow default values
+    label: { type: String, trim: true, default: '' },
 });
 
 
@@ -111,9 +109,9 @@ const surveySchema = new Schema({
             enum: ['none', 'all', 'blocks'],
             default: 'none'
         },
-        blocks: { 
-            type: [[{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }]], 
-            default: undefined 
+        blocks: {
+            type: [[{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }]],
+            default: undefined
         }
     },
     globalSkipLogic: {
@@ -121,10 +119,10 @@ const surveySchema = new Schema({
         default: []
     },
     settings: {
-        surveyWide: { 
+        surveyWide: {
             allowRetakes: { type: Boolean, default: true },
         },
-        completion: { 
+        completion: {
             type: { type: String, default: 'thankYouPage' },
             thankYouMessage: { type: String, default: 'Thank you for completing the survey!' },
             showResponseSummary: { type: Boolean, default: false },
@@ -136,7 +134,7 @@ const surveySchema = new Schema({
             disqualificationRedirectUrl: { type: String, default: '' },
             surveyClosedMessage: { type: String, default: 'This survey is currently closed. Thank you for your interest.' },
         },
-        accessSecurity: { 
+        accessSecurity: {
             linkExpirationDate: { type: Date, default: null },
             maxResponses: { type: Number, default: 0 },
             passwordProtectionEnabled: { type: Boolean, default: false },
@@ -147,27 +145,30 @@ const surveySchema = new Schema({
             questionNumberingEnabled: { type: Boolean, default: true },
             questionNumberingFormat: {
                 type: String,
-                enum: ['123', 'ABC', 'roman', 'custom'], 
+                enum: ['123', 'ABC', 'roman', 'custom'],
                 default: '123'
             },
             questionNumberingCustomPrefix: { type: String, default: '' },
-            // +++ NEW: Save and Continue Settings +++
             saveAndContinueEnabled: { type: Boolean, default: false },
             saveAndContinueEmailLinkExpiryDays: { type: Number, default: 7, min: 1, max: 90 },
+            // +++ NEW: Save and Continue Method +++
+            saveAndContinueMethod: {
+                type: String,
+                enum: ['email', 'code', 'both'],
+                default: 'email' // Default method if saveAndContinueEnabled is true
+            },
         },
-        // +++ NEW: Custom Variables Setting +++
         customVariables: {
             type: [customVariableSchema],
             default: []
         },
-        // appearance: {}, // Placeholder
     },
-    welcomeMessage: { 
+    welcomeMessage: {
         text: { type: String, default: "Welcome to the survey!" },
     },
-    thankYouMessage: { // Consider deprecating in favor of settings.completion fully
+    thankYouMessage: {
         text: { type: String, default: "Thank you for completing the survey!" },
-        redirectUrl: { type: String, default: '' }, 
+        redirectUrl: { type: String, default: '' },
     },
     createdBy: {
         type: Schema.Types.ObjectId,
@@ -179,11 +180,9 @@ const surveySchema = new Schema({
     timestamps: true,
 });
 
-// Indexes
 surveySchema.index({ status: 1 });
 surveySchema.index({ createdAt: -1 });
 
-// Ensure custom variable keys are unique within a survey
 surveySchema.path('settings.customVariables').validate(function(value) {
     if (!value || value.length === 0) return true;
     const keys = value.map(cv => cv.key);
@@ -192,4 +191,4 @@ surveySchema.path('settings.customVariables').validate(function(value) {
 
 
 module.exports = mongoose.model('Survey', surveySchema);
-// ----- END OF COMPLETE UPDATED FILE (v1.8 - Save & Continue, Custom Vars Settings) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.9 - Added saveAndContinueMethod Setting) -----
