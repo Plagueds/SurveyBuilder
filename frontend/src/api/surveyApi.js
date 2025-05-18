@@ -1,5 +1,5 @@
 // frontend/src/api/surveyApi.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext5 - Implemented loginUser API call) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext6 - Implemented Collector API functions) -----
 import axios from 'axios';
 
 const envApiBaseUrl = process.env.REACT_APP_API_BASE_URL;
@@ -82,11 +82,8 @@ const handleApiError = (error, functionName) => {
              console.error(`[surveyApi] Full error response for ${functionName}: Status ${error.response.status}`, error.response.data);
         }
     }
-    // Ensure that what's thrown can be caught and its 'message' property accessed
-    // error.response.data might be an object, error.message is a string.
-    // If error.response.data exists and has a message, prefer that.
     const errToThrow = error.response?.data || error;
-    if (typeof errToThrow === 'string') { // if it's already a simple message string
+    if (typeof errToThrow === 'string') { 
         throw new Error(errToThrow);
     }
     throw errToThrow; 
@@ -157,9 +154,9 @@ const deleteSurvey = async (surveyId, options = {}) => {
 };
 
 // --- Question Endpoints (Placeholders - implement as needed) ---
-const createQuestion = async (questionData, options = {}) => { console.warn("createQuestion API not implemented"); return Promise.reject("Not implemented"); };
-const updateQuestionContent = async (questionId, updates, options = {}) => { console.warn("updateQuestionContent API not implemented"); return Promise.reject("Not implemented"); };
-const deleteQuestionById = async (questionId, options = {}) => { console.warn("deleteQuestionById API not implemented"); return Promise.reject("Not implemented"); };
+const createQuestion = async (questionData, options = {}) => { console.warn("createQuestion API not implemented"); return Promise.reject(new Error("Not implemented")); };
+const updateQuestionContent = async (questionId, updates, options = {}) => { console.warn("updateQuestionContent API not implemented"); return Promise.reject(new Error("Not implemented")); };
+const deleteQuestionById = async (questionId, options = {}) => { console.warn("deleteQuestionById API not implemented"); return Promise.reject(new Error("Not implemented")); };
 
 // --- Survey Submission and Results Endpoints ---
 const submitSurveyAnswers = async (surveyId, submissionData, options = {}) => {
@@ -180,23 +177,44 @@ const savePartialResponse = async (surveyId, partialData, options = {}) => {
     }
 };
 
-const getSurveyResults = async (surveyId, options = {}) => { console.warn("getSurveyResults API not fully implemented"); return Promise.resolve({data:[], success: true}); };
-const exportSurveyResults = async (surveyId, options = {}) => { console.warn("exportSurveyResults API not fully implemented"); return Promise.reject("Not implemented"); };
+const getSurveyResults = async (surveyId, options = {}) => { 
+    try {
+        const { signal, ...queryParams } = options;
+        const response = await apiClient.get(`/surveys/${surveyId}/results`, { params: queryParams, signal: signal });
+        return response.data; // Expects { success: true, data: [...], ...pagination }
+    } catch (error) {
+        return handleApiError(error, `getSurveyResults (${surveyId})`);
+    }
+};
+const exportSurveyResults = async (surveyId, options = {}) => { 
+    try {
+        const { signal, format = 'csv', ...queryParams } = options; // Default format to csv
+        const response = await apiClient.get(`/surveys/${surveyId}/export`, { 
+            params: { ...queryParams, format }, 
+            signal: signal,
+            responseType: format.toLowerCase() === 'csv' ? 'blob' : 'json' // Handle response type for file download
+        });
+        if (format.toLowerCase() === 'csv') {
+            return { data: response.data, contentType: response.headers['content-type'], filename: `survey_${surveyId}_results.csv` };
+        }
+        return response.data; // For JSON
+    } catch (error) {
+        return handleApiError(error, `exportSurveyResults (${surveyId})`);
+    }
+};
 
 // --- Auth Endpoints ---
 const loginUser = async (credentials, options = {}) => {
     try {
         const response = await apiClient.post('/auth/login', credentials, { signal: options.signal });
-        // The backend should return { success: true, token: '...', user: {...}, message: '...' }
-        if (response.data.token) { // Check if token exists in the response data
+        if (response.data.token) { 
             localStorage.setItem('token', response.data.token);
             if (response.data.user) {
                 localStorage.setItem('user', JSON.stringify(response.data.user));
             }
         }
-        return response.data; // Return the whole data object
+        return response.data; 
     } catch (error) {
-        // handleApiError will re-throw the error, which AuthContext will catch
         return handleApiError(error, 'loginUser');
     }
 };
@@ -219,34 +237,61 @@ const registerUser = async (userData, options = {}) => {
 const logoutUser = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    // No API call needed for simple token-based logout, but can be added if backend needs to invalidate session
 };
 
 const getMe = async (options = {}) => {
     try {
         const { signal, ...queryParams } = options; 
         const response = await apiClient.get('/auth/me', { params: queryParams, signal: signal });
-        return response.data; // Expects { success: true, user: {...} }
+        return response.data; 
     } catch (error) {
         return handleApiError(error, 'getMe');
     }
 };
 
-// --- Collector Endpoints (Placeholders - implement as needed) ---
-const getCollectorsForSurvey = async (surveyId, options = {}) => { console.warn("getCollectorsForSurvey API not fully implemented"); return Promise.resolve({data:[], success: true}); };
-const createCollector = async (surveyId, collectorData, options = {}) => { console.warn("createCollector API not implemented"); return Promise.reject("Not implemented"); };
-const updateCollector = async (surveyId, collectorId, collectorData, options = {}) => { console.warn("updateCollector API not implemented"); return Promise.reject("Not implemented"); };
-const deleteCollector = async (surveyId, collectorId, options = {}) => { console.warn("deleteCollector API not implemented"); return Promise.reject("Not implemented"); };
+// --- Collector Endpoints ---
+const getCollectorsForSurvey = async (surveyId, options = {}) => {
+    try {
+        const { signal, ...queryParams } = options;
+        const response = await apiClient.get(`/surveys/${surveyId}/collectors`, { params: queryParams, signal: signal });
+        return response.data; // Expects { success: true, count: Number, data: [...] }
+    } catch (error) {
+        return handleApiError(error, `getCollectorsForSurvey (${surveyId})`);
+    }
+};
+
+const createCollector = async (surveyId, collectorData, options = {}) => {
+    try {
+        const response = await apiClient.post(`/surveys/${surveyId}/collectors`, collectorData, { signal: options.signal });
+        return response.data; // Expects { success: true, data: { ...collector... }, message: '...' }
+    } catch (error) {
+        return handleApiError(error, `createCollector (${surveyId})`);
+    }
+};
+
+const updateCollector = async (surveyId, collectorId, collectorData, options = {}) => {
+    try {
+        const response = await apiClient.put(`/surveys/${surveyId}/collectors/${collectorId}`, collectorData, { signal: options.signal });
+        return response.data; // Expects { success: true, data: { ...collector... }, message: '...' }
+    } catch (error) {
+        return handleApiError(error, `updateCollector (${collectorId})`);
+    }
+};
+
+const deleteCollector = async (surveyId, collectorId, options = {}) => {
+    try {
+        const response = await apiClient.delete(`/surveys/${surveyId}/collectors/${collectorId}`, { signal: options.signal });
+        return response.data; // Expects { success: true, message: '...' }
+    } catch (error) {
+        return handleApiError(error, `deleteCollector (${collectorId})`);
+    }
+};
 
 // --- Public Survey Access Endpoint ---
 const accessPublicSurvey = async (accessIdentifier, password = null, options = {}) => {
     try {
         const publicAccessClient = axios.create({ baseURL: effectivePublicAccessRootUrl });
         const config = { signal: options.signal };
-        // For public access, password might be in body or header.
-        // Assuming body for POST, or header if that's how backend expects it.
-        // If your /s/:id endpoint is a GET, this needs to be publicAccessClient.get and password sent as query param or header.
-        // Your backend route for /s/:id seems to be a POST in server.js, so this should be fine.
         const payload = password ? { password } : {};
         
         console.log(`[surveyApi] Calling POST ${effectivePublicAccessRootUrl}/s/${accessIdentifier}`);
@@ -281,4 +326,4 @@ const surveyApiFunctions = {
 };
 
 export default surveyApiFunctions;
-// ----- END OF COMPLETE MODIFIED FILE (vNext5 - Implemented loginUser API call) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext6 - Implemented Collector API functions) -----
