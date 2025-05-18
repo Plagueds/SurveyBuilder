@@ -1,5 +1,5 @@
 // backend/models/Collector.js
-// ----- START OF COMPLETE UPDATED FILE (v1.5 - Add ProgressBar settings) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.6 - Add ProgressBar position) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 const { v4: uuidv4 } = require('uuid');
@@ -49,14 +49,18 @@ const webLinkCollectorSettingsSchema = new Schema({
         }
     },
     allowBackButton: { type: Boolean, default: true },
-    // --- NEW: Progress Bar Settings ---
     progressBarEnabled: { type: Boolean, default: false },
     progressBarStyle: {
         type: String,
-        enum: ['percentage', 'pages'],
+        enum: ['percentage', 'pages'], // Future: 'steps'
         default: 'percentage'
+    },
+    // +++ NEW: Progress Bar Position Setting +++
+    progressBarPosition: {
+        type: String,
+        enum: ['top', 'bottom'],
+        default: 'top'
     }
-    // --- END NEW ---
 });
 
 // --- Main Collector Schema ---
@@ -162,4 +166,4 @@ collectorSchema.methods.comparePassword = async function(enteredPassword) {
 
 const Collector = mongoose.model('Collector', collectorSchema);
 module.exports = Collector;
-// ----- END OF COMPLETE UPDATED FILE (v1.5 - Add ProgressBar settings) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.6 - Add ProgressBar position) -----

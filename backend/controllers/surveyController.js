@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE UPDATED FILE (vNext23 - Pass answer array to logic) -----
+// ----- START OF COMPLETE UPDATED FILE (vNext24 - Pass/Save New Nav Settings) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const Survey = require('../models/Survey');
@@ -21,6 +21,8 @@ const getIpAddress = (request) => {
 
 const generateConjointProfiles = (attributes) => {
     if (!attributes || attributes.length === 0) return [];
+    // Placeholder for actual conjoint profile generation logic if needed server-side for previews
+    // For now, client-side generation is primary for taking surveys.
     return [];
 };
 
@@ -93,9 +95,24 @@ exports.getAllSurveys = async (req, res) => {
 exports.createSurvey = async (req, res) => {
     const { title, description, category, settings, welcomeMessage, thankYouMessage } = req.body;
     try {
+        // Ensure default behaviorNavigation settings are applied if not provided
+        const defaultBehaviorNav = {
+            autoAdvance: false,
+            questionNumberingEnabled: true,
+            questionNumberingFormat: '123',
+            questionNumberingCustomPrefix: ''
+        };
+        const mergedSettings = {
+            ...settings, // existing settings from body
+            behaviorNavigation: {
+                ...defaultBehaviorNav,
+                ...(settings?.behaviorNavigation || {}) // override defaults with provided ones
+            }
+        };
+
         const newSurvey = new Survey({
             title: title || 'Untitled Survey', description, category, createdBy: req.user.id, status: 'draft',
-            settings: settings || {},
+            settings: mergedSettings,
             welcomeMessage: welcomeMessage || { text: "Welcome to the survey!" },
             thankYouMessage: thankYouMessage || { text: "Thank you for completing the survey!" },
         });
@@ -122,11 +139,12 @@ exports.getSurveyById = async (req, res) => {
 
         if (forTaking === 'true') {
             surveyQuery = surveyQuery
-                .select('title description welcomeMessage thankYouMessage status questions settings.surveyWide.allowRetakes settings.surveyWide.showProgressBar settings.surveyWide.customCSS globalSkipLogic randomizationLogic')
+                .select('title description welcomeMessage thankYouMessage status questions settings.completion settings.behaviorNavigation globalSkipLogic randomizationLogic') // Added settings.behaviorNavigation
                 .populate({ path: 'questions', options: { sort: { order: 1 } } });
 
             if (collectorId) {
-                const selectFields = '+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist +settings.web_link.allowBackButton +settings.web_link.progressBarEnabled +settings.web_link.progressBarStyle';
+                // Added progressBarPosition to select fields
+                const selectFields = '+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist +settings.web_link.allowBackButton +settings.web_link.progressBarEnabled +settings.web_link.progressBarStyle +settings.web_link.progressBarPosition';
                 if (mongoose.Types.ObjectId.isValid(collectorId)) {
                     actualCollectorDoc = await Collector.findOne({ _id: collectorId, survey: surveyId }).select(selectFields);
                 }
@@ -180,12 +198,23 @@ exports.getSurveyById = async (req, res) => {
         const surveyResponseData = { ...survey, questions: processedQuestions };
 
         if (forTaking === 'true') {
+            // Ensure survey-level behaviorNavigation settings are passed, with defaults
+            const defaultBehaviorNav = { autoAdvance: false, questionNumberingEnabled: true, questionNumberingFormat: '123' };
+            surveyResponseData.settings = {
+                ...(surveyResponseData.settings || {}), // keep existing settings like completion
+                behaviorNavigation: {
+                    ...defaultBehaviorNav,
+                    ...(surveyResponseData.settings?.behaviorNavigation || {})
+                }
+            };
+            
             if (actualCollectorDoc?.settings?.web_link) {
                 const webLinkSettingsObject = actualCollectorDoc.settings.web_link.toObject ? actualCollectorDoc.settings.web_link.toObject() : { ...actualCollectorDoc.settings.web_link };
                 surveyResponseData.collectorSettings = webLinkSettingsObject;
                 surveyResponseData.actualCollectorObjectId = actualCollectorDoc._id;
                 if (surveyResponseData.collectorSettings.enableRecaptcha && !surveyResponseData.collectorSettings.recaptchaSiteKey && process.env.REACT_APP_RECAPTCHA_SITE_KEY) surveyResponseData.collectorSettings.recaptchaSiteKey = process.env.REACT_APP_RECAPTCHA_SITE_KEY;
 
+                // Ensure collector-specific progress bar settings have defaults if not present
                 if (typeof surveyResponseData.collectorSettings.allowBackButton === 'undefined') {
                     surveyResponseData.collectorSettings.allowBackButton = true;
                 }
@@ -195,10 +224,13 @@ exports.getSurveyById = async (req, res) => {
                 if (typeof surveyResponseData.collectorSettings.progressBarStyle === 'undefined') {
                     surveyResponseData.collectorSettings.progressBarStyle = 'percentage';
                 }
+                if (typeof surveyResponseData.collectorSettings.progressBarPosition === 'undefined') { // Default for new setting
+                    surveyResponseData.collectorSettings.progressBarPosition = 'top';
+                }
 
-            } else {
+            } else { // Default collector settings if no specific collector found (e.g., previewing draft without collector)
                 surveyResponseData.collectorSettings = {
-                    allowMultipleResponses: survey.settings?.surveyWide?.allowRetakes ?? true,
+                    allowMultipleResponses: true, // Default for preview
                     anonymousResponses: false,
                     enableRecaptcha: false,
                     recaptchaSiteKey: process.env.REACT_APP_RECAPTCHA_SITE_KEY || '',
@@ -206,7 +238,8 @@ exports.getSurveyById = async (req, res) => {
                     ipBlocklist: [],
                     allowBackButton: true,
                     progressBarEnabled: false,
-                    progressBarStyle: 'percentage'
+                    progressBarStyle: 'percentage',
+                    progressBarPosition: 'top' // Default for new setting
                 };
                 surveyResponseData.actualCollectorObjectId = null;
             }
@@ -277,8 +310,34 @@ exports.updateSurvey = async (req, res) => {
             }
             survey.questions = [];
         }
+        
+        // Merge settings carefully, especially nested ones like behaviorNavigation
+        if (updates.settings) {
+            survey.settings = survey.settings || {}; // Ensure settings object exists
+            for (const categoryKey in updates.settings) {
+                if (updates.settings.hasOwnProperty(categoryKey)) {
+                    if (typeof updates.settings[categoryKey] === 'object' && updates.settings[categoryKey] !== null && !Array.isArray(updates.settings[categoryKey])) {
+                        // Deep merge for objects like 'completion', 'behaviorNavigation'
+                        survey.settings[categoryKey] = {
+                            ...(survey.settings[categoryKey] || {}),
+                            ...updates.settings[categoryKey]
+                        };
+                    } else {
+                        // Direct assignment for non-object values or arrays
+                        survey.settings[categoryKey] = updates.settings[categoryKey];
+                    }
+                }
+            }
+             // Ensure default behaviorNavigation settings if partially updated or missing
+            const defaultBehaviorNav = { autoAdvance: false, questionNumberingEnabled: true, questionNumberingFormat: '123', questionNumberingCustomPrefix: '' };
+            survey.settings.behaviorNavigation = {
+                ...defaultBehaviorNav,
+                ...(survey.settings.behaviorNavigation || {})
+            };
+        }
 
-        const allowedTopLevelFields = ['title', 'description', 'status', 'settings', 'randomizationLogic', 'welcomeMessage', 'thankYouMessage', 'globalSkipLogic'];
+
+        const allowedTopLevelFields = ['title', 'description', 'status', /* 'settings' handled above */, 'randomizationLogic', 'welcomeMessage', 'thankYouMessage', 'globalSkipLogic'];
         for (const key of allowedTopLevelFields) {
             if (updates.hasOwnProperty(key)) survey[key] = updates[key];
         }
@@ -477,12 +536,8 @@ exports.submitSurveyAnswers = async (req, res) => {
         let triggeredAction = null;
         if (survey.globalSkipLogic && survey.globalSkipLogic.length > 0 && survey.questions && survey.questions.length > 0) {
             console.log("[B_SUBMIT_LOGIC_GLOBAL] Evaluating global logic...");
-            // Fetch all answers for the current session to pass to the logic evaluator
             const allAnswersForLogic = await Answer.find({ survey: survey._id, collector: collector._id, sessionId: sessionIdToUse }).session(mongoSession);
-            
-            // *** PASS THE ARRAY 'allAnswersForLogic' DIRECTLY ***
             triggeredAction = evaluateAllLogic(survey.globalSkipLogic, allAnswersForLogic, survey.questions); 
-            
             console.log("[B_SUBMIT_LOGIC_GLOBAL] Global logic evaluation result:", JSON.stringify(triggeredAction));
             if (triggeredAction && triggeredAction.type === 'disqualifyRespondent' && updatedResponse) {
                 console.log(`[B_SUBMIT_LOGIC_GLOBAL] Disqualification triggered. Updating response ${updatedResponse._id} status to 'disqualified'.`);

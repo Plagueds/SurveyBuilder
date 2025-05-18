@@ -1,5 +1,5 @@
 // frontend/src/components/CollectorFormModal.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.5 - Added ProgressBar UI) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.6 - Added ProgressBar Position UI) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import surveyApiFunctions from '../api/surveyApi';
 import { toast } from 'react-toastify';
@@ -28,10 +28,10 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     ipAllowlistString: '',
                     ipBlocklistString: '',
                     allowBackButton: true,
-                    // --- NEW: ProgressBar Defaults ---
                     progressBarEnabled: false,
                     progressBarStyle: 'percentage',
-                    // --- END NEW ---
+                    // --- NEW: ProgressBar Position Default ---
+                    progressBarPosition: 'top',
                 }
             }
         };
@@ -53,11 +53,12 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                 allowBackButton: typeof existingWebLinkSettings.allowBackButton === 'boolean'
                                  ? existingWebLinkSettings.allowBackButton
                                  : true,
-                // --- MODIFIED: Initialize ProgressBar settings ---
                 progressBarEnabled: typeof existingWebLinkSettings.progressBarEnabled === 'boolean'
                                     ? existingWebLinkSettings.progressBarEnabled
-                                    : false, // Default to false if not present
-                progressBarStyle: existingWebLinkSettings.progressBarStyle || 'percentage', // Default to 'percentage'
+                                    : false,
+                progressBarStyle: existingWebLinkSettings.progressBarStyle || 'percentage',
+                // --- MODIFIED: Initialize ProgressBar Position ---
+                progressBarPosition: existingWebLinkSettings.progressBarPosition || 'top', // Default to 'top'
             };
 
             return {
@@ -183,7 +184,7 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
             status: formData.status,
             settings: {
                 web_link: {
-                    ...formData.settings.web_link,
+                    ...formData.settings.web_link, // Includes allowBackButton, progressBarEnabled, progressBarStyle, progressBarPosition
                     customSlug: formData.settings.web_link.customSlug || undefined,
                     openDate: formData.settings.web_link.openDate ? new Date(formData.settings.web_link.openDate).toISOString() : null,
                     closeDate: formData.settings.web_link.closeDate ? new Date(formData.settings.web_link.closeDate).toISOString() : null,
@@ -193,9 +194,6 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                                 : undefined,
                     ipAllowlist: ipAllowlistArray,
                     ipBlocklist: ipBlocklistArray,
-                    // allowBackButton is already a boolean
-                    // progressBarEnabled is already a boolean
-                    // progressBarStyle is already a string
                 }
             }
         };
@@ -301,7 +299,6 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                                 {renderError("web_link_allowBackButton")}
                             </div>
 
-                            {/* --- NEW: Progress Bar UI Elements --- */}
                             <div className={styles.formGroupCheckbox}>
                                 <input
                                     type="checkbox"
@@ -317,22 +314,39 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                             </div>
 
                             {formData.settings.web_link.progressBarEnabled && (
-                                <div className={styles.formGroup}>
-                                    <label htmlFor="settings.web_link.progressBarStyle">Progress Bar Style</label>
-                                    <select
-                                        id="settings.web_link.progressBarStyle"
-                                        name="settings.web_link.progressBarStyle"
-                                        value={formData.settings.web_link.progressBarStyle}
-                                        onChange={handleChange}
-                                        disabled={isSaving}
-                                    >
-                                        <option value="percentage">Percentage (e.g., 50% Complete)</option>
-                                        <option value="pages">Pages (e.g., Page 3 of 5)</option>
-                                    </select>
-                                    {renderError("web_link_progressBarStyle")}
-                                </div>
+                                <>
+                                    <div className={styles.formGroup}>
+                                        <label htmlFor="settings.web_link.progressBarStyle">Progress Bar Style</label>
+                                        <select
+                                            id="settings.web_link.progressBarStyle"
+                                            name="settings.web_link.progressBarStyle"
+                                            value={formData.settings.web_link.progressBarStyle}
+                                            onChange={handleChange}
+                                            disabled={isSaving}
+                                        >
+                                            <option value="percentage">Percentage (e.g., 50% Complete)</option>
+                                            <option value="pages">Pages (e.g., Page 3 of 5)</option>
+                                        </select>
+                                        {renderError("web_link_progressBarStyle")}
+                                    </div>
+                                    {/* --- NEW: ProgressBar Position UI --- */}
+                                    <div className={styles.formGroup}>
+                                        <label htmlFor="settings.web_link.progressBarPosition">Progress Bar Position</label>
+                                        <select
+                                            id="settings.web_link.progressBarPosition"
+                                            name="settings.web_link.progressBarPosition"
+                                            value={formData.settings.web_link.progressBarPosition}
+                                            onChange={handleChange}
+                                            disabled={isSaving}
+                                        >
+                                            <option value="top">Top of Page</option>
+                                            <option value="bottom">Bottom of Page</option>
+                                        </select>
+                                        {renderError("web_link_progressBarPosition")}
+                                    </div>
+                                    {/* --- END NEW --- */}
+                                </>
                             )}
-                            {/* --- END NEW: Progress Bar UI Elements --- */}
 
 
                             <div className={styles.formGroup}>
@@ -416,4 +430,4 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
 };
 
 export default CollectorFormModal;
-// ----- END OF COMPLETE MODIFIED FILE (v1.5 - Added ProgressBar UI) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.6 - Added ProgressBar Position UI) -----

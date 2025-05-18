@@ -1,5 +1,5 @@
 // backend/models/Survey.js
-// ----- START OF COMPLETE UPDATED FILE (v1.6 - Added createdBy User Reference) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.7 - Added Behavior/Nav Settings) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -98,21 +98,68 @@ const surveySchema = new Schema({
             enum: ['none', 'all', 'blocks'],
             default: 'none'
         },
-        blocks: {
-            type: [[{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }]],
-            default: undefined
+        blocks: { // For 'blocks' type, this would be an array of arrays of question indices (relative to original survey.questions)
+            type: [[{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }]], // Storing actual ObjectIds
+            default: undefined // Only defined if type is 'blocks'
         }
     },
     globalSkipLogic: {
         type: [logicRuleSchema],
         default: []
     },
-    // +++ ADDED FIELD FOR USER REFERENCE +++
+    // Survey-wide settings
+    settings: {
+        surveyWide: { // Existing namespace, let's keep it for clarity or rename if preferred
+            allowRetakes: { type: Boolean, default: true }, // Example, might be collector specific mostly
+            // customCSS: { type: String, default: '' }, // Example
+            // showProgressBar: { type: Boolean, default: false }, // This was for collector, keep collector specific
+        },
+        completion: { // From your SurveySettingsPanel.js
+            type: { type: String, default: 'thankYouPage' },
+            thankYouMessage: { type: String, default: 'Thank you for completing the survey!' },
+            showResponseSummary: { type: Boolean, default: false },
+            showScore: { type: Boolean, default: false },
+            redirectUrl: { type: String, default: '' },
+            passResponseDataToRedirect: { type: Boolean, default: false },
+            disqualificationType: { type: String, default: 'message' },
+            disqualificationMessage: { type: String, default: 'Unfortunately, you do not qualify to continue with this survey.' },
+            disqualificationRedirectUrl: { type: String, default: '' },
+            surveyClosedMessage: { type: String, default: 'This survey is currently closed. Thank you for your interest.' },
+        },
+        accessSecurity: { // From your SurveySettingsPanel.js
+            linkExpirationDate: { type: Date, default: null },
+            maxResponses: { type: Number, default: 0 },
+            passwordProtectionEnabled: { type: Boolean, default: false },
+            surveyPassword: { type: String, default: '' },
+        },
+        // +++ NEW: Behavior and Navigation Settings +++
+        behaviorNavigation: {
+            autoAdvance: { type: Boolean, default: false },
+            questionNumberingEnabled: { type: Boolean, default: true },
+            questionNumberingFormat: {
+                type: String,
+                enum: ['123', 'ABC', 'roman', 'custom'], // '1. ', 'A. ', 'I. ', or custom prefix
+                default: '123'
+            },
+            questionNumberingCustomPrefix: { type: String, default: '' }, // Used if format is 'custom'
+            // Back button is collector-specific, progress bar settings are also collector-specific
+        },
+        // appearance: {}, // Placeholder from SurveySettingsPanel
+    },
+    welcomeMessage: { // Already exists
+        text: { type: String, default: "Welcome to the survey!" },
+        // Potentially add image, etc.
+    },
+    thankYouMessage: { // Already exists, but completion settings are more detailed
+        text: { type: String, default: "Thank you for completing the survey!" },
+        redirectUrl: { type: String, default: '' }, // This might be redundant with settings.completion.redirectUrl
+        // Consider consolidating thankYouMessage fields into settings.completion
+    },
     createdBy: {
         type: Schema.Types.ObjectId,
-        ref: 'User', // This refers to the User model we created
-        required: [true, 'Survey must be associated with a user.'], // Make it required
-        index: true, // Add an index for querying surveys by user
+        ref: 'User',
+        required: [true, 'Survey must be associated with a user.'],
+        index: true,
     },
 }, {
     timestamps: true,
@@ -121,7 +168,6 @@ const surveySchema = new Schema({
 // Indexes
 surveySchema.index({ status: 1 });
 surveySchema.index({ createdAt: -1 });
-// surveySchema.index({ createdBy: 1 }); // This is already handled by 'index: true' above
 
 module.exports = mongoose.model('Survey', surveySchema);
-// ----- END OF COMPLETE UPDATED FILE (v1.6 - Added createdBy User Reference) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.7 - Added Behavior/Nav Settings) -----

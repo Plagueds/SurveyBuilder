@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext13 - Integrated ProgressBar) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext14 - AutoAdvance, QNumbering, PB Position) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -47,6 +47,29 @@ const isAnswerEmpty = (value, questionType) => {
 };
 const shuffleArray = (array) => { const newArray = [...array]; for (let i = newArray.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [newArray[i], newArray[j]] = [newArray[j], newArray[i]]; } return newArray; };
 
+// Helper for Roman numerals (simple version for up to 39, common for question numbering)
+const toRoman = (num) => {
+    if (num < 1 || num > 39) return String(num); // Fallback for out of typical range
+    const roman = { M: 1000, CM: 900, D: 500, CD: 400, C: 100, XC: 90, L: 50, XL: 40, X: 10, IX: 9, V: 5, IV: 4, I: 1 };
+    let str = '';
+    for (let i of Object.keys(roman)) {
+        let q = Math.floor(num / roman[i]);
+        num -= q * roman[i];
+        str += i.repeat(q);
+    }
+    return str;
+};
+// Helper for Alphabetic numbering (A, B, ..., Z, AA, AB...)
+const toLetters = (num) => { // num is 1-based index
+    let letters = '';
+    while (num > 0) {
+        let remainder = (num - 1) % 26;
+        letters = String.fromCharCode(65 + remainder) + letters;
+        num = Math.floor((num - 1) / 26);
+    }
+    return letters;
+};
+
 
 function SurveyTakingPage() {
     const { surveyId, collectorId: routeCollectorIdentifier } = useParams();
@@ -81,11 +104,15 @@ function SurveyTakingPage() {
     const [recaptchaToken, setRecaptchaToken] = useState(null);
     const recaptchaRef = useRef(null);
 
+    // --- Behavior & Navigation States ---
     const [allowBackButton, setAllowBackButton] = useState(true);
-    // --- NEW: ProgressBar State ---
     const [progressBarEnabledState, setProgressBarEnabledState] = useState(false);
     const [progressBarStyleState, setProgressBarStyleState] = useState('percentage');
-    // --- END NEW ---
+    const [progressBarPositionState, setProgressBarPositionState] = useState('top'); // New
+    const [autoAdvanceState, setAutoAdvanceState] = useState(false); // New
+    const [qNumEnabledState, setQNumEnabledState] = useState(true); // New
+    const [qNumFormatState, setQNumFormatState] = useState('123'); // New
+    const autoAdvanceTimeoutRef = useRef(null); // For clearing timeout if user navigates away quickly
 
     const NA_VALUE_INTERNAL = '__NA__';
     const OTHER_VALUE_INTERNAL = '__OTHER__';
@@ -119,9 +146,7 @@ function SurveyTakingPage() {
 
         if (!surveyId) { setError("Survey ID is missing."); setIsLoading(false); return; }
         if (!currentCollectorIdentifier && ! (location.state?.isPreviewingOwner) ) {
-            setError("Collector identifier is missing. Cannot load survey.");
-            setIsLoading(false);
-            return;
+            setError("Collector identifier is missing. Cannot load survey."); setIsLoading(false); return;
         }
 
         try {
@@ -129,26 +154,31 @@ function SurveyTakingPage() {
             if (location.state?.isPreviewingOwner) options.isPreviewingOwner = true;
 
             const responsePayload = await surveyApiFunctions.getSurveyById(surveyId, options);
-
             if (!responsePayload || !responsePayload.success || !responsePayload.data) throw new Error(responsePayload?.message || "Failed to retrieve survey data.");
             const surveyData = responsePayload.data;
-
-            if (!surveyData || !Array.isArray(surveyData.questions)) throw new Error("Survey data is malformed (missing or invalid 'questions' field).");
+            if (!surveyData || !Array.isArray(surveyData.questions)) throw new Error("Survey data is malformed.");
 
             const fetchedCollectorSettings = surveyData.collectorSettings || {};
             const fetchedActualCollectorObjectId = surveyData.actualCollectorObjectId || null;
+            const surveyWideSettings = surveyData.settings || {}; // Contains behaviorNavigation, completion etc.
 
             setCollectorSettings(fetchedCollectorSettings);
             setActualCollectorObjectId(fetchedActualCollectorObjectId);
 
+            // Collector-specific settings
             setAllowBackButton(typeof fetchedCollectorSettings.allowBackButton === 'boolean' ? fetchedCollectorSettings.allowBackButton : true);
-            // --- NEW: Set ProgressBar State from fetchedCollectorSettings ---
             setProgressBarEnabledState(typeof fetchedCollectorSettings.progressBarEnabled === 'boolean' ? fetchedCollectorSettings.progressBarEnabled : false);
             setProgressBarStyleState(fetchedCollectorSettings.progressBarStyle || 'percentage');
-            // --- END NEW ---
+            setProgressBarPositionState(fetchedCollectorSettings.progressBarPosition || 'top'); // New
+
+            // Survey-wide behavior settings
+            const behaviorNavSettings = surveyWideSettings.behaviorNavigation || {};
+            setAutoAdvanceState(typeof behaviorNavSettings.autoAdvance === 'boolean' ? behaviorNavSettings.autoAdvance : false); // New
+            setQNumEnabledState(typeof behaviorNavSettings.questionNumberingEnabled === 'boolean' ? behaviorNavSettings.questionNumberingEnabled : true); // New
+            setQNumFormatState(behaviorNavSettings.questionNumberingFormat || '123'); // New
+
 
             const storageKeyCollectorId = fetchedActualCollectorObjectId || currentCollectorIdentifier;
-
             if (fetchedCollectorSettings.allowMultipleResponses === false && storageKeyCollectorId) {
                 if (localStorage.getItem(`survey_${storageKeyCollectorId}_submitted`) === 'true') {
                     setHasAlreadyResponded(true); setIsLoading(false); return;
@@ -157,16 +187,9 @@ function SurveyTakingPage() {
             setHasAlreadyResponded(false);
 
             const enableRecaptchaFlag = Boolean(fetchedCollectorSettings.enableRecaptcha);
-            let siteKeyToUse = '';
-
-            if (enableRecaptchaFlag) {
-                siteKeyToUse = fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY || '';
-                setRecaptchaEnabled(!!siteKeyToUse);
-            } else {
-                setRecaptchaEnabled(false);
-            }
-            setRecaptchaSiteKey(siteKeyToUse);
-
+            setRecaptchaEnabled(enableRecaptchaFlag && (fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY));
+            setRecaptchaSiteKey(fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY || '');
+            
             setSurvey(surveyData);
             const fetchedQuestions = surveyData.questions || [];
             setOriginalQuestions(fetchedQuestions);
@@ -184,25 +207,10 @@ function SurveyTakingPage() {
             }
             setRandomizedQuestionOrder(initialOrderIndices);
             const initialOptionOrders = {};
-            fetchedQuestions.forEach(q => {
-                if (q && q.randomizeOptions && Array.isArray(q.options)) {
-                    initialOptionOrders[q._id] = shuffleArray(q.options.map((_, optIndex) => optIndex));
-                }
-            });
+            fetchedQuestions.forEach(q => { if (q && q.randomizeOptions && Array.isArray(q.options)) { initialOptionOrders[q._id] = shuffleArray(q.options.map((_, optIndex) => optIndex)); } });
             setRandomizedOptionOrders(initialOptionOrders);
             const initialAnswers = {};
-            fetchedQuestions.forEach(q => {
-                if (q) {
-                    let defaultAnswer = '';
-                    if (q.type === 'checkbox') defaultAnswer = [];
-                    else if (q.type === 'slider') defaultAnswer = String(Math.round(((q.sliderMin ?? 0) + (q.sliderMax ?? 100)) / 2));
-                    else if (q.type === 'ranking') defaultAnswer = ensureArray(q.options?.map(opt => typeof opt === 'string' ? opt : (opt.text || String(opt))));
-                    else if (q.type === 'cardsort') defaultAnswer = { assignments: {}, userCategories: [] };
-                    else if (q.type === 'maxdiff') defaultAnswer = { best: null, worst: null };
-                    else if (q.type === 'conjoint') defaultAnswer = {};
-                    initialAnswers[q._id] = defaultAnswer;
-                }
-            });
+            fetchedQuestions.forEach(q => { if (q) { let defaultAnswer = ''; if (q.type === 'checkbox') defaultAnswer = []; else if (q.type === 'slider') defaultAnswer = String(Math.round(((q.sliderMin ?? 0) + (q.sliderMax ?? 100)) / 2)); else if (q.type === 'ranking') defaultAnswer = ensureArray(q.options?.map(opt => typeof opt === 'string' ? opt : (opt.text || String(opt)))); else if (q.type === 'cardsort') defaultAnswer = { assignments: {}, userCategories: [] }; else if (q.type === 'maxdiff') defaultAnswer = { best: null, worst: null }; else if (q.type === 'conjoint') defaultAnswer = {}; initialAnswers[q._id] = defaultAnswer; } });
             setCurrentAnswers(initialAnswers);
             setOtherInputValues({});
 
@@ -216,10 +224,9 @@ function SurveyTakingPage() {
         if (currentCollectorIdentifier || location.state?.isPreviewingOwner) {
             const controller = new AbortController();
             fetchSurvey(controller.signal);
-            return () => { controller.abort(); };
+            return () => { controller.abort(); if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current); };
         } else if (routeCollectorIdentifier === undefined && !location.state?.collectorIdentifier && !location.state?.isPreviewingOwner) {
-            setIsLoading(false);
-            setError("Collector information is missing. Cannot load survey.");
+            setIsLoading(false); setError("Collector information is missing. Cannot load survey.");
         }
     }, [fetchSurvey, currentCollectorIdentifier, routeCollectorIdentifier, location.state]);
 
@@ -227,49 +234,8 @@ function SurveyTakingPage() {
     useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0 && !allowBackButton) setVisitedPath([]); return; } const currentPointsToValidQuestion = currentVisibleIndex < visibleQuestionIndices.length; if (!currentPointsToValidQuestion && currentVisibleIndex !== visibleQuestionIndices.length) { if(allowBackButton) { for (let i = visitedPath.length - 1; i >= 0; i--) { const pathOriginalIndex = visitedPath[i]; const pathVisibleIndex = visibleQuestionIndices.indexOf(pathOriginalIndex); if (pathVisibleIndex !== -1) { setCurrentVisibleIndex(pathVisibleIndex); return; } } } setCurrentVisibleIndex(0); } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, visitedPath, allowBackButton]);
 
     const evaluateDisabled = useCallback((questionOriginalIndex) => originalQuestions[questionOriginalIndex]?.isDisabled === true, [originalQuestions]);
-
-    const evaluateGlobalLogic = useCallback(() => {
-        if (!survey || !survey.globalSkipLogic || survey.globalSkipLogic.length === 0) return null;
-        return evaluateSurveyLogic(survey.globalSkipLogic, currentAnswers, originalQuestions);
-    }, [survey, currentAnswers, originalQuestions]);
-
-    const evaluateActionLogic = useCallback((questionOriginalIndex) => {
-        const question = originalQuestions[questionOriginalIndex];
-        if (!question || !question.skipLogic || !Array.isArray(question.skipLogic.rules) || question.skipLogic.rules.length === 0) return null;
-        return evaluateSurveyLogic(question.skipLogic.rules, currentAnswers, originalQuestions);
-    }, [originalQuestions, currentAnswers]);
-
-    const handleInputChange = useCallback((questionId, value) => { setCurrentAnswers(prev => ({ ...prev, [questionId]: value })); const question = questionsById[questionId]; if (question && question.addOtherOption && value !== OTHER_VALUE_INTERNAL) { setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); } }, [questionsById, OTHER_VALUE_INTERNAL]);
-    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { setCurrentAnswers(prevAnswers => { const currentVal = ensureArray(prevAnswers[questionId]); let newVal; if (isChecked) { newVal = [...currentVal, optionValue]; if (optionValue === NA_VALUE_INTERNAL) newVal = [NA_VALUE_INTERNAL]; else if (newVal.includes(NA_VALUE_INTERNAL)) newVal = newVal.filter(v => v !== NA_VALUE_INTERNAL); } else { newVal = currentVal.filter(v => v !== optionValue); } return { ...prevAnswers, [questionId]: newVal }; }); const question = questionsById[questionId]; if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) { setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); } }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
-    const handleOtherInputChange = useCallback((questionId, textValue) => { setOtherInputValues(prev => ({ ...prev, [questionId]: textValue })); }, []);
-    const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabled = false) => { if (!question) return true;  if (isDisabled) return true;  if (question.addOtherOption && question.requireOtherIfSelected) { const isOtherSelectedForMC = (question.type === 'multiple-choice' || question.type === 'dropdown') && answer === OTHER_VALUE_INTERNAL; const isOtherSelectedForCheckbox = question.type === 'checkbox' && ensureArray(answer).includes(OTHER_VALUE_INTERNAL); const isOtherSelected = isOtherSelectedForMC || isOtherSelectedForCheckbox; if (isOtherSelected) { const otherTextValue = otherInputValues[question._id]; const isOtherTextEmpty = otherTextValue === undefined || otherTextValue === "undefined" || (typeof otherTextValue === 'string' && otherTextValue.trim() === ''); if (isOtherTextEmpty) { toast.error(`Please provide text for the "Other" option in question: "${question.text}"`); return false; } } } if (question.requiredSetting === 'required' && isAnswerEmpty(answer, question.type)) return false; if (question.type === 'checkbox' && !isAnswerEmpty(answer, question.type)) { const naIsSelected = ensureArray(answer).includes(NA_VALUE_INTERNAL); if (naIsSelected) return true;  const selectedOptions = ensureArray(answer).filter(val => val !== NA_VALUE_INTERNAL); const selectedCount = selectedOptions.length; if (question.minAnswersRequired && selectedCount < question.minAnswersRequired) { toast.error(`Please select at least ${question.minAnswersRequired} options for "${question.text}".`); return false; } if (question.limitAnswers && question.limitAnswersMax && selectedCount > question.limitAnswersMax) { toast.error(`Please select no more than ${question.limitAnswersMax} options for "${question.text}".`); return false; } } return true; }, [otherInputValues, OTHER_VALUE_INTERNAL, NA_VALUE_INTERNAL]);
-
-    const renderQuestion = useCallback((questionToRenderArg) => {
-        if (!questionToRenderArg) return <div className={styles.loading}>Loading question content...</div>;
-        if (!questionToRenderArg.type) { return <div>Error: Question data is missing 'type'. Cannot render.</div>; }
-        const question = questionToRenderArg;
-        const value = currentAnswers[question._id];
-        const otherText = otherInputValues[question._id] || '';
-        const isDisabled = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
-        const commonProps = { question, currentAnswer: value, onAnswerChange: handleInputChange, onCheckboxChange: handleCheckboxChange, otherValue: otherText, onOtherTextChange: handleOtherInputChange, disabled: isDisabled, optionsOrder: randomizedOptionOrders[question._id], isPreviewMode: false };
-        switch (question.type) {
-            case 'text': return <ShortTextQuestion {...commonProps} />;
-            case 'textarea': return <TextAreaQuestion {...commonProps} />;
-            case 'multiple-choice': return <MultipleChoiceQuestion {...commonProps} />;
-            case 'checkbox': return <CheckboxQuestion {...commonProps} />;
-            case 'dropdown': return <DropdownQuestion {...commonProps} />;
-            case 'rating': return <RatingQuestion {...commonProps} />;
-            case 'nps': return <NpsQuestion {...commonProps} />;
-            case 'slider': return <SliderQuestion {...commonProps} />;
-            case 'matrix': return <MatrixQuestion {...commonProps} />;
-            case 'heatmap': return <HeatmapQuestion {...commonProps} />;
-            case 'maxdiff': return <MaxDiffQuestion {...commonProps} />;
-            case 'conjoint': return <ConjointQuestion {...commonProps} />;
-            case 'ranking': return <RankingQuestion {...commonProps} />;
-            case 'cardsort': return <CardSortQuestion {...commonProps} />;
-            default: return <div>Unsupported question type: {question.type || "Type is missing"}</div>;
-        }
-    }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled]);
+    const evaluateGlobalLogic = useCallback(() => { if (!survey || !survey.globalSkipLogic || survey.globalSkipLogic.length === 0) return null; return evaluateSurveyLogic(survey.globalSkipLogic, currentAnswers, originalQuestions); }, [survey, currentAnswers, originalQuestions]);
+    const evaluateActionLogic = useCallback((questionOriginalIndex) => { const question = originalQuestions[questionOriginalIndex]; if (!question || !question.skipLogic || !Array.isArray(question.skipLogic.rules) || question.skipLogic.rules.length === 0) return null; return evaluateSurveyLogic(question.skipLogic.rules, currentAnswers, originalQuestions); }, [originalQuestions, currentAnswers]);
 
     const handleNext = useCallback(() => {
         if (isDisqualified || isLoading) return;
@@ -296,8 +262,83 @@ function SurveyTakingPage() {
         else setCurrentVisibleIndex(visibleQuestionIndices.length);
     }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap, setIsDisqualified, setDisqualificationMessage]);
 
+    const handleInputChange = useCallback((questionId, value) => {
+        setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
+        const question = questionsById[questionId];
+        if (question && question.addOtherOption && value !== OTHER_VALUE_INTERNAL) {
+            setOtherInputValues(prev => ({ ...prev, [questionId]: '' }));
+        }
+
+        // --- Auto-Advance Logic ---
+        if (autoAdvanceState && question) {
+            const autoAdvanceTypes = ['multiple-choice', 'rating', 'nps']; // Add 'dropdown' if desired
+            if (autoAdvanceTypes.includes(question.type)) {
+                // Clear any existing timeout to prevent rapid double-advances if user clicks fast
+                if (autoAdvanceTimeoutRef.current) {
+                    clearTimeout(autoAdvanceTimeoutRef.current);
+                }
+                autoAdvanceTimeoutRef.current = setTimeout(() => {
+                    // Re-validate before advancing, in case the selected value is part of a complex validation
+                    // that handleNext would check. For simple selections, this might be redundant but safer.
+                    const isDisabled = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
+                    if (validateQuestion(question, value, true, isDisabled)) { // Soft check, as primary validation is in handleNext
+                         handleNext();
+                    }
+                }, 300); // 300ms delay
+            }
+        }
+    }, [questionsById, OTHER_VALUE_INTERNAL, autoAdvanceState, handleNext, evaluateDisabled, questionIdToOriginalIndexMap, validateQuestion]);
+
+    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { setCurrentAnswers(prevAnswers => { const currentVal = ensureArray(prevAnswers[questionId]); let newVal; if (isChecked) { newVal = [...currentVal, optionValue]; if (optionValue === NA_VALUE_INTERNAL) newVal = [NA_VALUE_INTERNAL]; else if (newVal.includes(NA_VALUE_INTERNAL)) newVal = newVal.filter(v => v !== NA_VALUE_INTERNAL); } else { newVal = currentVal.filter(v => v !== optionValue); } return { ...prevAnswers, [questionId]: newVal }; }); const question = questionsById[questionId]; if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) { setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); } }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
+    const handleOtherInputChange = useCallback((questionId, textValue) => { setOtherInputValues(prev => ({ ...prev, [questionId]: textValue })); }, []);
+    const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabled = false) => { if (!question) return true;  if (isDisabled) return true;  if (question.addOtherOption && question.requireOtherIfSelected) { const isOtherSelectedForMC = (question.type === 'multiple-choice' || question.type === 'dropdown') && answer === OTHER_VALUE_INTERNAL; const isOtherSelectedForCheckbox = question.type === 'checkbox' && ensureArray(answer).includes(OTHER_VALUE_INTERNAL); const isOtherSelected = isOtherSelectedForMC || isOtherSelectedForCheckbox; if (isOtherSelected) { const otherTextValue = otherInputValues[question._id]; const isOtherTextEmpty = otherTextValue === undefined || otherTextValue === "undefined" || (typeof otherTextValue === 'string' && otherTextValue.trim() === ''); if (isOtherTextEmpty) { if(!isSoftCheck) toast.error(`Please provide text for the "Other" option in question: "${question.text}"`); return false; } } } if (question.requiredSetting === 'required' && isAnswerEmpty(answer, question.type)) return false; if (question.type === 'checkbox' && !isAnswerEmpty(answer, question.type)) { const naIsSelected = ensureArray(answer).includes(NA_VALUE_INTERNAL); if (naIsSelected) return true;  const selectedOptions = ensureArray(answer).filter(val => val !== NA_VALUE_INTERNAL); const selectedCount = selectedOptions.length; if (question.minAnswersRequired && selectedCount < question.minAnswersRequired) { if(!isSoftCheck) toast.error(`Please select at least ${question.minAnswersRequired} options for "${question.text}".`); return false; } if (question.limitAnswers && question.limitAnswersMax && selectedCount > question.limitAnswersMax) { if(!isSoftCheck) toast.error(`Please select no more than ${question.limitAnswersMax} options for "${question.text}".`); return false; } } return true; }, [otherInputValues, OTHER_VALUE_INTERNAL, NA_VALUE_INTERNAL]);
+
+    const renderQuestion = useCallback((questionToRenderArg) => {
+        if (!questionToRenderArg) return <div className={styles.loading}>Loading question content...</div>;
+        if (!questionToRenderArg.type) { return <div>Error: Question data is missing 'type'. Cannot render.</div>; }
+        
+        const question = {...questionToRenderArg}; // Clone to modify text for numbering
+        const value = currentAnswers[question._id];
+        const otherText = otherInputValues[question._id] || '';
+        const isDisabled = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
+
+        // --- Question Numbering Logic ---
+        if (qNumEnabledState && visibleQuestionIndices.includes(questionIdToOriginalIndexMap[question._id])) {
+            const qNumber = currentVisibleIndex + 1; // 1-based index for display
+            let prefix = "";
+            if (qNumFormatState === '123') prefix = `${qNumber}. `;
+            else if (qNumFormatState === 'ABC') prefix = `${toLetters(qNumber)}. `;
+            else if (qNumFormatState === 'roman') prefix = `${toRoman(qNumber)}. `;
+            // else if (qNumFormatState === 'custom' && survey.settings.behaviorNavigation.questionNumberingCustomPrefix) {
+            //     prefix = `${survey.settings.behaviorNavigation.questionNumberingCustomPrefix}${qNumber}. `;
+            // }
+            question.text = `${prefix}${question.text}`;
+        }
+        // --- End Question Numbering ---
+
+        const commonProps = { question, currentAnswer: value, onAnswerChange: handleInputChange, onCheckboxChange: handleCheckboxChange, otherValue: otherText, onOtherTextChange: handleOtherInputChange, disabled: isDisabled, optionsOrder: randomizedOptionOrders[question._id], isPreviewMode: false };
+        switch (question.type) {
+            case 'text': return <ShortTextQuestion {...commonProps} />;
+            case 'textarea': return <TextAreaQuestion {...commonProps} />;
+            case 'multiple-choice': return <MultipleChoiceQuestion {...commonProps} />;
+            case 'checkbox': return <CheckboxQuestion {...commonProps} />;
+            case 'dropdown': return <DropdownQuestion {...commonProps} />;
+            case 'rating': return <RatingQuestion {...commonProps} />;
+            case 'nps': return <NpsQuestion {...commonProps} />;
+            case 'slider': return <SliderQuestion {...commonProps} />;
+            case 'matrix': return <MatrixQuestion {...commonProps} />;
+            case 'heatmap': return <HeatmapQuestion {...commonProps} />;
+            case 'maxdiff': return <MaxDiffQuestion {...commonProps} />;
+            case 'conjoint': return <ConjointQuestion {...commonProps} />;
+            case 'ranking': return <RankingQuestion {...commonProps} />;
+            case 'cardsort': return <CardSortQuestion {...commonProps} />;
+            default: return <div>Unsupported question type: {question.type || "Type is missing"}</div>;
+        }
+    }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled, qNumEnabledState, qNumFormatState, currentVisibleIndex, visibleQuestionIndices]);
+
     const handlePrevious = useCallback(() => {
         if (!allowBackButton || isDisqualified || isLoading || visitedPath.length === 0) return;
+        if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current); // Clear auto-advance if navigating back
         const lastVisitedOriginalIndex = visitedPath[visitedPath.length - 1];
         const lastVisitedVisibleIndex = visibleQuestionIndices.indexOf(lastVisitedOriginalIndex);
         if (lastVisitedVisibleIndex !== -1) { setCurrentVisibleIndex(lastVisitedVisibleIndex); setVisitedPath(prev => prev.slice(0, -1)); }
@@ -306,6 +347,7 @@ function SurveyTakingPage() {
 
     const handleSubmit = useCallback(async (e) => {
         e.preventDefault(); setIsSubmitting(true); setError(null);
+        if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
         if (!actualCollectorObjectId) { toast.error("Collector information is incomplete. Cannot submit."); setError("Collector information is incomplete. Cannot submit."); setIsSubmitting(false); return; }
         if (recaptchaEnabled && !recaptchaToken && recaptchaSiteKey) { toast.error("Please complete reCAPTCHA."); setIsSubmitting(false); return; }
         let firstInvalidVisibleIndex = -1;
@@ -324,37 +366,28 @@ function SurveyTakingPage() {
         } finally { setIsSubmitting(false); }
     }, [actualCollectorObjectId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, recaptchaRef, questionIdToOriginalIndexMap, surveyStartedAt, OTHER_VALUE_INTERNAL, isDisqualified, currentCollectorIdentifier]);
 
-    // --- NEW: ProgressBar Rendering Logic ---
     const renderProgressBar = () => {
         if (!progressBarEnabledState || isLoading || !survey || visibleQuestionIndices.length === 0 || isSubmitStateDerived) {
             return null;
         }
-
         let progressText = '';
         let progressPercent = 0;
-
         if (progressBarStyleState === 'pages') {
             progressText = `Question ${currentVisibleIndex + 1} of ${visibleQuestionIndices.length}`;
             progressPercent = ((currentVisibleIndex + 1) / visibleQuestionIndices.length) * 100;
-        } else { // Default to 'percentage'
+        } else { 
             progressPercent = ((currentVisibleIndex + 1) / visibleQuestionIndices.length) * 100;
             progressText = `${Math.round(progressPercent)}% Complete`;
         }
-
         return (
-            <div className={styles.progressBarContainer}>
+            <div className={styles.progressBarContainer} /* Position handled by CSS or wrapper div below */>
                 <div className={styles.progressBarTrack}>
-                    <div
-                        className={styles.progressBarFill}
-                        style={{ width: `${progressPercent}%` }}
-                    />
+                    <div className={styles.progressBarFill} style={{ width: `${progressPercent}%` }} />
                 </div>
                 <div className={styles.progressBarText}>{progressText}</div>
             </div>
         );
     };
-    // --- END NEW ---
-
 
     if (hasAlreadyResponded) { return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> <div className={styles.alreadyRespondedBox}> <h2>Already Responded</h2> <p>Our records indicate that you have already completed this survey.</p> <p>Multiple submissions are not permitted for this link.</p> <button onClick={() => navigate('/')} className={styles.navButton}>Go to Homepage</button> </div> </div> ); }
     if (isLoading && !survey) return <div className={styles.loading}>Loading survey...</div>;
@@ -366,13 +399,17 @@ function SurveyTakingPage() {
     const finalIsSubmitState = isSubmitStateDerived;
     const isCurrentQuestionDisabled = finalCurrentQToRender ? evaluateDisabled(questionIdToOriginalIndexMap[finalCurrentQToRender._id]) : false;
 
+    const progressBarComponent = renderProgressBar();
+
     return (
         <div className={styles.surveyContainer}>
+            {progressBarPositionState === 'top' && progressBarComponent} {/* Render progress bar at top */}
+            
             <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1>
-            {/* --- MODIFIED: Render ProgressBar --- */}
-            {renderProgressBar()}
+            
             {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>}
             {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>}
+            
             {isLoading && survey ? <div className={styles.loading}>Loading question...</div> :
                 <div className={`${styles.questionBox} ${isCurrentQuestionDisabled ? styles.disabled : ''}`}>
                     {finalIsSubmitState ? ( <div className={styles.submitPrompt}> <p>End of survey.</p> <p>Click "Submit" to record responses.</p> </div> )
@@ -381,22 +418,20 @@ function SurveyTakingPage() {
                     : (isLoading ? <div className={styles.loading}>Preparing...</div> : <div className={styles.loading}>Survey empty or issue.</div>) )}
                 </div>
             }
+
             {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && (
                 <div className={styles.recaptchaContainer}>
                     <ReCAPTCHA ref={recaptchaRef} sitekey={recaptchaSiteKey} onChange={(token) => setRecaptchaToken(token)} onExpired={() => setRecaptchaToken(null)} onErrored={() => { toast.error("reCAPTCHA failed. Refresh."); setRecaptchaToken(null); }} />
                 </div>
             )}
+
             <div className={styles.surveyNavigationArea}>
                 {allowBackButton && (
-                    <button
-                        onClick={handlePrevious}
-                        className={styles.navButton}
-                        disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) }
-                    >
+                    <button onClick={handlePrevious} className={styles.navButton} disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) } >
                         Previous
                     </button>
                 )}
-                {!allowBackButton && <div style={{width: '100px'}}></div>} {/* Placeholder for spacing if no back button */}
+                {!allowBackButton && <div style={{width: '100px'}}></div>} 
 
                 {finalIsSubmitState || (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified && !isLoading) ? (
                     <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} >
@@ -408,13 +443,10 @@ function SurveyTakingPage() {
                     </button>
                 )}
             </div>
-            {/* --- REMOVED old progress indicator, replaced by ProgressBar component --- */}
-            {/* <div className={styles.progressIndicator}>
-                {!finalIsSubmitState && finalCurrentQToRender ? (visibleQuestionIndices.length > 0 ? `Question ${currentVisibleIndex + 1} of ${visibleQuestionIndices.length}` : 'Loading...')
-                : (finalIsSubmitState ? `End (${visibleQuestionIndices.length} questions shown)`: 'Initializing...')}
-            </div> */}
+            
+            {progressBarPositionState === 'bottom' && progressBarComponent} {/* Render progress bar at bottom */}
         </div>
     );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext13 - Integrated ProgressBar) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext14 - AutoAdvance, QNumbering, PB Position) -----

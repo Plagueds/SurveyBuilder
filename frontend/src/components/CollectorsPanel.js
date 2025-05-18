@@ -1,5 +1,5 @@
 // frontend/src/components/CollectorsPanel.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.5 - Display ProgressBar Info) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.6 - Display ProgressBar Position) -----
 import React, { useState } from 'react';
 import styles from './CollectorsPanel.module.css';
 import surveyApi from '../api/surveyApi';
@@ -97,8 +97,16 @@ const CollectorsPanel = ({
     const getProgressBarStyleDisplay = (style) => {
         if (style === 'percentage') return 'Percentage';
         if (style === 'pages') return 'Pages X of Y';
-        return 'N/A';
+        return style || 'N/A'; // Return the style itself if not recognized, or N/A
     };
+
+    // +++ NEW: Function to display progress bar position +++
+    const getProgressBarPositionDisplay = (position) => {
+        if (position === 'top') return 'Top';
+        if (position === 'bottom') return 'Bottom';
+        return position || 'N/A'; // Return the position itself or N/A
+    };
+
 
     return (
         <div className={styles.panelOverlay}>
@@ -142,14 +150,12 @@ const CollectorsPanel = ({
                                                 {collector.settings?.web_link?.maxResponses > 0 ? ` / ${collector.settings.web_link.maxResponses}` : ''}
                                             </span>
                                             <span>Back Button:</span><span>{typeof collector.settings?.web_link?.allowBackButton === 'boolean' ? (collector.settings.web_link.allowBackButton ? 'Allowed' : 'Disallowed') : 'Allowed (Default)'}</span>
-                                            {/* --- ADDED: Display for ProgressBar settings --- */}
                                             <span>Progress Bar:</span>
                                             <span>
                                                 {collector.settings?.web_link?.progressBarEnabled
-                                                    ? `Enabled (${getProgressBarStyleDisplay(collector.settings.web_link.progressBarStyle)})`
+                                                    ? `Enabled (${getProgressBarStyleDisplay(collector.settings.web_link.progressBarStyle)}, ${getProgressBarPositionDisplay(collector.settings.web_link.progressBarPosition)})`
                                                     : 'Disabled'}
                                             </span>
-                                            {/* --- END ADDED --- */}
                                             <span>Open Date:</span><span>{formatDate(collector.settings?.web_link?.openDate)}</span>
                                             <span>Close Date:</span><span>{formatDate(collector.settings?.web_link?.closeDate)}</span>
                                             <span>Multiple Responses:</span><span>{collector.settings?.web_link?.allowMultipleResponses ? 'Allowed' : 'Not Allowed'}</span>
@@ -200,4 +206,4 @@ const CollectorsPanel = ({
 };
 
 export default CollectorsPanel;
-// ----- END OF COMPLETE MODIFIED FILE (v1.5 - Display ProgressBar Info) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.6 - Display ProgressBar Position) -----
