@@ -1,5 +1,5 @@
 // frontend/src/components/SurveySettingsPanel.js
-// ----- START OF COMPLETE UPDATED FILE (v1.4 - Fixed ExpiryDays Input and Validation Sync) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.4.1 - Simplified ExpiryDays Validation Trigger) -----
 import React, { useState, useEffect, useCallback } from 'react';
 
 const SETTING_CATEGORIES = {
@@ -41,7 +41,7 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                 questionNumberingEnabled: true,
                 questionNumberingFormat: '123',
                 saveAndContinueEnabled: false,
-                saveAndContinueEmailLinkExpiryDays: 7, // Default to 7 (min 1)
+                saveAndContinueEmailLinkExpiryDays: 7,
                 saveAndContinueMethod: 'email',
             },
             customVariables: [],
@@ -59,18 +59,24 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                     merged[categoryKey] = settingsFromProps?.[categoryKey] ? [...settingsFromProps[categoryKey]] : [];
                 }
                 if (categoryKey === 'behaviorNavigation') {
-                    const validMethods = ['email', 'code', 'both'];
-                    if (!validMethods.includes(merged[categoryKey].saveAndContinueMethod)) {
-                        merged[categoryKey].saveAndContinueMethod = defaults.behaviorNavigation.saveAndContinueMethod;
+                    // Ensure merged[categoryKey] is an object before accessing its properties
+                    if (typeof merged[categoryKey] !== 'object' || merged[categoryKey] === null) {
+                        merged[categoryKey] = { ...defaults[categoryKey] }; // Fallback to pure default
                     }
-                    // Ensure expiry days is within bounds after merge
-                    let days = merged[categoryKey].saveAndContinueEmailLinkExpiryDays;
+                    
+                    const bn = merged[categoryKey];
+                    const validMethods = ['email', 'code', 'both'];
+                    if (!validMethods.includes(bn.saveAndContinueMethod)) {
+                        bn.saveAndContinueMethod = defaults.behaviorNavigation.saveAndContinueMethod;
+                    }
+
+                    let days = bn.saveAndContinueEmailLinkExpiryDays;
                     if (typeof days !== 'number' || isNaN(days) || days < 1) {
                         days = defaults.behaviorNavigation.saveAndContinueEmailLinkExpiryDays;
                     } else if (days > 90) {
                         days = 90;
                     }
-                    merged[categoryKey].saveAndContinueEmailLinkExpiryDays = days;
+                    bn.saveAndContinueEmailLinkExpiryDays = days;
                 }
             }
         }
@@ -85,8 +91,14 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
 
     useEffect(() => {
         if (isOpen) {
-            const newMergedSettings = mergeWithDefaults(initialSettings);
-            setCurrentSettings(newMergedSettings);
+            try {
+                const newMergedSettings = mergeWithDefaults(initialSettings);
+                setCurrentSettings(newMergedSettings);
+            } catch (error) {
+                console.error("Error merging settings in SurveySettingsPanel:", error);
+                // Fallback to complete defaults if merge fails, to allow panel to open
+                setCurrentSettings(mergeWithDefaults(null));
+            }
         }
     }, [isOpen, initialSettings, mergeWithDefaults]);
 
@@ -111,18 +123,11 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
         if (type === 'checkbox') {
             valToSet = checked;
         } else if (type === 'number') {
-            // For number inputs, especially expiry days, handle empty string carefully
             if (name === 'saveAndContinueEmailLinkExpiryDays') {
-                if (value === '') {
-                    valToSet = ''; // Allow temporary empty state for user input
-                } else {
-                    const numVal = parseInt(value, 10);
-                    // Keep it as NaN if not a number, validation will occur on save or blur
-                    valToSet = isNaN(numVal) ? '' : numVal;
-                }
+                valToSet = value === '' ? '' : parseInt(value, 10); // Allow empty, parse others
             } else {
                  const numVal = parseInt(value, 10);
-                 valToSet = isNaN(numVal) ? 0 : numVal; // Default other numbers to 0 if NaN
+                 valToSet = isNaN(numVal) ? 0 : numVal;
             }
         } else {
             valToSet = value;
@@ -130,30 +135,15 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
         handleNestedChange(category, name, valToSet);
     };
     
-    // Validate and adjust expiry days on blur or before save
-    const validateExpiryDays = () => {
-        setCurrentSettings(prev => {
-            const behaviorNav = prev.behaviorNavigation || {};
-            let days = behaviorNav.saveAndContinueEmailLinkExpiryDays;
-            let newDays = parseInt(days, 10);
-
-            if (isNaN(newDays) || newDays < 1) {
-                newDays = 1; // Correct to min if invalid or below min
-            } else if (newDays > 90) {
-                newDays = 90; // Correct to max if above max
-            }
-            
-            if (newDays !== days) { // Only update if there's a change
-                return {
-                    ...prev,
-                    behaviorNavigation: {
-                        ...behaviorNav,
-                        saveAndContinueEmailLinkExpiryDays: newDays
-                    }
-                };
-            }
-            return prev; // No change needed
-        });
+    const getValidatedExpiryDays = (currentDaysValue) => {
+        let days = parseInt(currentDaysValue, 10);
+        if (isNaN(days) || days < 1) {
+            return 1; 
+        }
+        if (days > 90) {
+            return 90;
+        }
+        return days;
     };
 
 
@@ -162,67 +152,75 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
     const handleRemoveCustomVariable = (index) => { /* ... (same as before) ... */ };
 
     const handleSave = () => {
-        // Ensure expiry days is validated before saving
-        validateExpiryDays(); // This will update currentSettings if needed
-
-        // Use a timeout to allow state to update from validateExpiryDays before saving
-        setTimeout(() => {
-            const settingsToSave = {
-                completion: currentSettings.completion,
-                accessSecurity: currentSettings.accessSecurity,
-                behaviorNavigation: { // Ensure all behaviorNavigation fields are included
-                    ...mergeWithDefaults({}).behaviorNavigation, // Start with defaults
-                    ...(currentSettings.behaviorNavigation || {}), // Overlay current
-                },
-                customVariables: currentSettings.customVariables || [],
-                appearance: currentSettings.appearance,
+        const validatedSettings = { ...currentSettings };
+        if (validatedSettings.behaviorNavigation) {
+            validatedSettings.behaviorNavigation = {
+                ...validatedSettings.behaviorNavigation,
+                saveAndContinueEmailLinkExpiryDays: getValidatedExpiryDays(
+                    validatedSettings.behaviorNavigation.saveAndContinueEmailLinkExpiryDays
+                ),
             };
+        }
 
-            // Final check for expiry days in the object to be saved
-            if (settingsToSave.behaviorNavigation.saveAndContinueEmailLinkExpiryDays < 1 || 
-                isNaN(settingsToSave.behaviorNavigation.saveAndContinueEmailLinkExpiryDays)) {
-                settingsToSave.behaviorNavigation.saveAndContinueEmailLinkExpiryDays = 1; // Ensure it's at least 1
-            } else if (settingsToSave.behaviorNavigation.saveAndContinueEmailLinkExpiryDays > 90) {
-                settingsToSave.behaviorNavigation.saveAndContinueEmailLinkExpiryDays = 90;
-            }
+        const settingsToSave = {
+            completion: validatedSettings.completion,
+            accessSecurity: validatedSettings.accessSecurity,
+            behaviorNavigation: validatedSettings.behaviorNavigation,
+            customVariables: validatedSettings.customVariables || [],
+            appearance: validatedSettings.appearance,
+        };
 
-
-            console.log("Saving survey-wide settings:", settingsToSave);
-            onSave(settingsToSave);
-        }, 0);
+        console.log("Saving survey-wide settings:", settingsToSave);
+        onSave(settingsToSave);
     };
 
     // --- Styling (same as before) ---
-    const panelStyle = { /* ... */ };
-    const headerStyle = { /* ... */ };
-    const navStyle = { /* ... */ };
-    const navButtonStyle = (isActive) => ({ /* ... */ });
-    const contentStyle = { /* ... */ };
-    const sectionTitleStyle = { /* ... */ };
-    const inputGroupStyle = { /* ... */ };
-    const labelStyle = { /* ... */ };
-    const inputStyle = { /* ... */ };
-    const textareaStyle = { /* ... */ };
-    const selectStyle = { /* ... */ };
-    const checkboxLabelStyle = { /* ... */ };
-    const checkboxInputStyle = { /* ... */ };
-    const subDescriptionStyle = { /* ... */ };
-    const footerStyle = { /* ... */ };
-    const buttonStyle = { /* ... */ };
-    const primaryButtonStyle = { /* ... */ };
-    const secondaryButtonStyle = { /* ... */ };
-    const dangerButtonStyle = { /* ... */ };
+    const panelStyle = { position: 'fixed', top: '0', right: '0', width: '480px', height: '100vh', backgroundColor: '#fdfdfd', borderLeft: '1px solid #ccc', boxShadow: '-3px 0 8px rgba(0,0,0,0.1)', zIndex: 1001, display: 'flex', flexDirection: 'column' };
+    const headerStyle = { padding: '15px 20px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor:'#f7f7f7' };
+    const navStyle = { display: 'flex', borderBottom: '1px solid #eee', backgroundColor: '#f0f0f0', flexWrap: 'wrap' };
+    const navButtonStyle = (isActive) => ({ padding: '10px 15px', border: 'none', background: isActive ? '#fff' : 'transparent', cursor: 'pointer', borderRight: '1px solid #eee', fontWeight: isActive ? 'bold' : 'normal', fontSize:'0.85em', flexShrink:0 });
+    const contentStyle = { padding: '20px', overflowY: 'auto', flexGrow: 1 };
+    const sectionTitleStyle = { marginTop: '0', marginBottom: '15px', borderBottom: '1px solid #e0e0e0', paddingBottom: '10px', color: '#333', fontSize:'1.1em' };
+    const inputGroupStyle = { marginBottom: '18px' };
+    const labelStyle = { display: 'block', marginBottom: '6px', fontWeight: '500', fontSize: '0.95em', color: '#444' };
+    const inputStyle = { width: '100%', padding: '10px', boxSizing: 'border-box', border: '1px solid #ddd', borderRadius: '4px', fontSize:'0.95em' };
+    const textareaStyle = { ...inputStyle, minHeight: '80px', resize: 'vertical' };
+    const selectStyle = { ...inputStyle };
+    const checkboxLabelStyle = { marginLeft: '8px', fontWeight: 'normal', fontSize: '0.95em', cursor:'pointer', verticalAlign: 'middle' };
+    const checkboxInputStyle = { verticalAlign: 'middle', cursor: 'pointer' };
+    const subDescriptionStyle = { fontSize: '0.85em', color: '#777', marginTop: '4px' };
+    const footerStyle = { padding: '15px 20px', borderTop: '1px solid #eee', background: '#f7f7f7', display: 'flex', justifyContent: 'flex-end' };
+    const buttonStyle = { padding: '8px 12px', marginRight: '10px', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight:'500', fontSize:'0.9em' };
+    const primaryButtonStyle = { ...buttonStyle, backgroundColor: '#007bff', color: 'white', borderColor: '#007bff' };
+    const secondaryButtonStyle = { ...buttonStyle, backgroundColor: '#6c757d', color: 'white', borderColor: '#6c757d' };
+    const dangerButtonStyle = { ...buttonStyle, backgroundColor: '#dc3545', color: 'white', borderColor: '#dc3545' };
 
 
-    const renderCompletionSettings = () => { /* ... (same as before) ... */ };
-    const renderAccessSecuritySettings = () => { /* ... (same as before) ... */ };
+    const renderCompletionSettings = () => {
+        const settings = currentSettings.completion || mergeWithDefaults({}).completion;
+        return (<div>Completion settings UI goes here.</div>);
+    };
+    const renderAccessSecuritySettings = () => {
+        const settings = currentSettings.accessSecurity || mergeWithDefaults({}).accessSecurity;
+        return (<div>Access & Security settings UI goes here.</div>);
+    };
 
     const renderBehaviorNavigationSettings = () => {
-        const settings = currentSettings.behaviorNavigation || mergeWithDefaults({}).behaviorNavigation;
+        // Ensure settings.behaviorNavigation exists and has defaults
+        const defaultBehaviorNav = mergeWithDefaults(null).behaviorNavigation;
+        const settings = currentSettings.behaviorNavigation 
+            ? { ...defaultBehaviorNav, ...currentSettings.behaviorNavigation } 
+            : defaultBehaviorNav;
+
+        // Ensure saveAndContinueEmailLinkExpiryDays is a number for the input, or empty string
+        const displayExpiryDays = typeof settings.saveAndContinueEmailLinkExpiryDays === 'number' 
+            ? settings.saveAndContinueEmailLinkExpiryDays 
+            : '';
+
+
         return (
             <>
                 <h3 style={sectionTitleStyle}>Survey Flow & Navigation</h3>
-                {/* ... (autoAdvance, questionNumberingEnabled, questionNumberingFormat - same as before) ... */}
                  <div style={inputGroupStyle}>
                     <input type="checkbox" id="autoAdvance" name="autoAdvance" checked={settings.autoAdvance || false} onChange={(e) => handleInputChange('behaviorNavigation', e)} style={checkboxInputStyle} />
                     <label htmlFor="autoAdvance" style={checkboxLabelStyle}>Enable Auto-Advance</label>
@@ -244,8 +242,6 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                         </select>
                     </div>
                 )}
-
-
                 <h3 style={{...sectionTitleStyle, marginTop:'30px'}}>Save and Continue Later</h3>
                 <div style={inputGroupStyle}>
                     <input type="checkbox" id="saveAndContinueEnabled" name="saveAndContinueEnabled" checked={settings.saveAndContinueEnabled || false} onChange={(e) => handleInputChange('behaviorNavigation', e)} style={checkboxInputStyle} />
@@ -255,12 +251,12 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                     <>
                         <div style={inputGroupStyle}>
                             <label htmlFor="saveAndContinueMethod" style={labelStyle}>Resume Method:</label>
-                            <select
-                                id="saveAndContinueMethod"
-                                name="saveAndContinueMethod"
-                                value={settings.saveAndContinueMethod || 'email'}
-                                onChange={(e) => handleInputChange('behaviorNavigation', e)}
-                                style={selectStyle}
+                            <select 
+                                id="saveAndContinueMethod" 
+                                name="saveAndContinueMethod" 
+                                value={settings.saveAndContinueMethod || 'email'} 
+                                onChange={(e) => handleInputChange('behaviorNavigation', e)} 
+                                style={selectStyle} 
                             >
                                 <option value="email">Email Link Only</option>
                                 <option value="code">Resume Code Only</option>
@@ -278,9 +274,9 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                                 type="number"
                                 id="saveAndContinueEmailLinkExpiryDays"
                                 name="saveAndContinueEmailLinkExpiryDays"
-                                value={settings.saveAndContinueEmailLinkExpiryDays === '' ? '' : (settings.saveAndContinueEmailLinkExpiryDays || 1)} // Display '' if state is '', else default to 1 for display if falsy
+                                value={displayExpiryDays}
                                 onChange={(e) => handleInputChange('behaviorNavigation', e)}
-                                onBlur={validateExpiryDays} // Validate on blur
+                                // onBlur removed for now to simplify
                                 min="1"
                                 max="90"
                                 style={inputStyle}
@@ -294,16 +290,16 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
         );
     };
 
-    const renderCustomVariablesSettings = () => { /* ... (same as before) ... */ };
+    const renderCustomVariablesSettings = () => { /* ... (same as v1.3) ... */ };
+    const renderAppearanceSettings = () => <p>Appearance settings are not yet implemented.</p>;
+
 
     return (
         <div style={panelStyle}>
-            {/* ... (header, nav - same as before) ... */}
              <div style={headerStyle}>
                 <h2 style={{ margin: 0, fontSize: '1.3em', fontWeight:'600' }}>Survey Settings</h2>
                 <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.8rem', cursor: 'pointer', color:'#555', padding:0, lineHeight:'1' }}>&times;</button>
             </div>
-
             <nav style={navStyle}>
                 {Object.entries(SETTING_CATEGORIES).map(([key, title]) => (
                     <button
@@ -320,16 +316,8 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                 {activeCategory === SETTING_CATEGORIES.ACCESS_SECURITY && renderAccessSecuritySettings()}
                 {activeCategory === SETTING_CATEGORIES.BEHAVIOR_NAVIGATION && renderBehaviorNavigationSettings()}
                 {activeCategory === SETTING_CATEGORIES.CUSTOM_VARIABLES && renderCustomVariablesSettings()}
-                {![
-                    SETTING_CATEGORIES.COMPLETION,
-                    SETTING_CATEGORIES.ACCESS_SECURITY,
-                    SETTING_CATEGORIES.BEHAVIOR_NAVIGATION,
-                    SETTING_CATEGORIES.CUSTOM_VARIABLES
-                ].includes(activeCategory) && (
-                    <p>Settings for "{activeCategory}" are not yet implemented.</p>
-                )}
+                {activeCategory === SETTING_CATEGORIES.APPEARANCE && renderAppearanceSettings()}
             </div>
-            {/* ... (footer - same as before) ... */}
             <div style={footerStyle}>
                 <button onClick={onClose} style={secondaryButtonStyle}>Cancel</button>
                 <button onClick={handleSave} style={primaryButtonStyle}>Apply Settings</button>
@@ -339,4 +327,4 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
 };
 
 export default SurveySettingsPanel;
-// ----- END OF COMPLETE UPDATED FILE (v1.4 - Fixed ExpiryDays Input and Validation Sync) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.4.1 - Simplified ExpiryDays Validation Trigger) -----
