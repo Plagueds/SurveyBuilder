@@ -1,8 +1,7 @@
 // frontend/src/api/surveyApi.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext4 - Added savePartialResponse) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext5 - Implemented loginUser API call) -----
 import axios from 'axios';
 
-// ... (baseURL setup and interceptors - NO CHANGES HERE FROM vNext3) ...
 const envApiBaseUrl = process.env.REACT_APP_API_BASE_URL;
 let effectiveApiRoutesBaseUrl;
 let effectivePublicAccessRootUrl;
@@ -48,7 +47,6 @@ apiClient.interceptors.request.use(
         if (token) {
             config.headers['Authorization'] = `Bearer ${token}`;
         }
-        // If a survey password is provided in options, add it to headers
         if (config.surveyPassword) {
             config.headers['X-Survey-Password'] = config.surveyPassword;
         }
@@ -63,16 +61,12 @@ apiClient.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response && error.response.status === 401) {
-            // Check if it's a survey password error specifically
             if (error.response.data && error.response.data.requiresPassword) {
-                // Don't logout, just let the specific call handle it
                 console.warn('[surveyApi] Survey requires password or password incorrect.');
             } else if (error.config.url && !error.config.url.endsWith('/auth/login') && !error.config.url.endsWith('/auth/register')) {
                 console.warn('[surveyApi] Unauthorized (401) response. Token might be invalid or expired. Logging out.');
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
-                // Optionally redirect to login page
-                // window.location.href = '/login';
             }
         }
         return Promise.reject(error);
@@ -88,7 +82,14 @@ const handleApiError = (error, functionName) => {
              console.error(`[surveyApi] Full error response for ${functionName}: Status ${error.response.status}`, error.response.data);
         }
     }
-    throw error.response?.data || error; 
+    // Ensure that what's thrown can be caught and its 'message' property accessed
+    // error.response.data might be an object, error.message is a string.
+    // If error.response.data exists and has a message, prefer that.
+    const errToThrow = error.response?.data || error;
+    if (typeof errToThrow === 'string') { // if it's already a simple message string
+        throw new Error(errToThrow);
+    }
+    throw errToThrow; 
 };
 
 // --- Survey Endpoints ---
@@ -118,7 +119,7 @@ const getSurveyById = async (surveyId, options = {}) => {
             params: queryParams, 
             signal: signal,
         };
-        if (surveyPassword) { // Pass surveyPassword for apiClient interceptor
+        if (surveyPassword) { 
             config.surveyPassword = surveyPassword;
         }
         const response = await apiClient.get(`/surveys/${surveyId}`, config);
@@ -155,10 +156,10 @@ const deleteSurvey = async (surveyId, options = {}) => {
     }
 };
 
-// --- Question Endpoints ---
-const createQuestion = async (questionData, options = {}) => { /* ... */ return Promise.resolve(); };
-const updateQuestionContent = async (questionId, updates, options = {}) => { /* ... */ return Promise.resolve(); };
-const deleteQuestionById = async (questionId, options = {}) => { /* ... */ return Promise.resolve(); };
+// --- Question Endpoints (Placeholders - implement as needed) ---
+const createQuestion = async (questionData, options = {}) => { console.warn("createQuestion API not implemented"); return Promise.reject("Not implemented"); };
+const updateQuestionContent = async (questionId, updates, options = {}) => { console.warn("updateQuestionContent API not implemented"); return Promise.reject("Not implemented"); };
+const deleteQuestionById = async (questionId, options = {}) => { console.warn("deleteQuestionById API not implemented"); return Promise.reject("Not implemented"); };
 
 // --- Survey Submission and Results Endpoints ---
 const submitSurveyAnswers = async (surveyId, submissionData, options = {}) => {
@@ -170,47 +171,88 @@ const submitSurveyAnswers = async (surveyId, submissionData, options = {}) => {
     }
 };
 
-// +++ NEW: Endpoint for Saving Partial Response +++
 const savePartialResponse = async (surveyId, partialData, options = {}) => {
     try {
         const response = await apiClient.post(`/surveys/${surveyId}/save-partial`, partialData, { signal: options.signal });
-        return response.data; // Expects { success: true, message: '...' }
+        return response.data; 
     } catch (error) {
         return handleApiError(error, `savePartialResponse (${surveyId})`);
     }
 };
 
-const getSurveyResults = async (surveyId, options = {}) => { /* ... */ return Promise.resolve({data:[]}); };
-const exportSurveyResults = async (surveyId, options = {}) => { /* ... */ return Promise.resolve(); };
+const getSurveyResults = async (surveyId, options = {}) => { console.warn("getSurveyResults API not fully implemented"); return Promise.resolve({data:[], success: true}); };
+const exportSurveyResults = async (surveyId, options = {}) => { console.warn("exportSurveyResults API not fully implemented"); return Promise.reject("Not implemented"); };
 
 // --- Auth Endpoints ---
-const loginUser = async (credentials, options = {}) => { /* ... */ return Promise.resolve(); };
-const registerUser = async (userData, options = {}) => { /* ... */ return Promise.resolve(); };
-const logoutUser = () => { /* ... */ };
-const getMe = async (options = {}) => { /* ... */ return Promise.resolve(); };
+const loginUser = async (credentials, options = {}) => {
+    try {
+        const response = await apiClient.post('/auth/login', credentials, { signal: options.signal });
+        // The backend should return { success: true, token: '...', user: {...}, message: '...' }
+        if (response.data.token) { // Check if token exists in the response data
+            localStorage.setItem('token', response.data.token);
+            if (response.data.user) {
+                localStorage.setItem('user', JSON.stringify(response.data.user));
+            }
+        }
+        return response.data; // Return the whole data object
+    } catch (error) {
+        // handleApiError will re-throw the error, which AuthContext will catch
+        return handleApiError(error, 'loginUser');
+    }
+};
 
-// --- Collector Endpoints ---
-const getCollectorsForSurvey = async (surveyId, options = {}) => { /* ... */ return Promise.resolve({data:[]}); };
-const createCollector = async (surveyId, collectorData, options = {}) => { /* ... */ return Promise.resolve(); };
-const updateCollector = async (surveyId, collectorId, collectorData, options = {}) => { /* ... */ return Promise.resolve(); };
-const deleteCollector = async (surveyId, collectorId, options = {}) => { /* ... */ return Promise.resolve(); };
+const registerUser = async (userData, options = {}) => {
+    try {
+        const response = await apiClient.post('/auth/register', userData, { signal: options.signal });
+        if (response.data.token) {
+            localStorage.setItem('token', response.data.token);
+            if (response.data.user) {
+                localStorage.setItem('user', JSON.stringify(response.data.user));
+            }
+        }
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'registerUser');
+    }
+};
+
+const logoutUser = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    // No API call needed for simple token-based logout, but can be added if backend needs to invalidate session
+};
+
+const getMe = async (options = {}) => {
+    try {
+        const { signal, ...queryParams } = options; 
+        const response = await apiClient.get('/auth/me', { params: queryParams, signal: signal });
+        return response.data; // Expects { success: true, user: {...} }
+    } catch (error) {
+        return handleApiError(error, 'getMe');
+    }
+};
+
+// --- Collector Endpoints (Placeholders - implement as needed) ---
+const getCollectorsForSurvey = async (surveyId, options = {}) => { console.warn("getCollectorsForSurvey API not fully implemented"); return Promise.resolve({data:[], success: true}); };
+const createCollector = async (surveyId, collectorData, options = {}) => { console.warn("createCollector API not implemented"); return Promise.reject("Not implemented"); };
+const updateCollector = async (surveyId, collectorId, collectorData, options = {}) => { console.warn("updateCollector API not implemented"); return Promise.reject("Not implemented"); };
+const deleteCollector = async (surveyId, collectorId, options = {}) => { console.warn("deleteCollector API not implemented"); return Promise.reject("Not implemented"); };
 
 // --- Public Survey Access Endpoint ---
 const accessPublicSurvey = async (accessIdentifier, password = null, options = {}) => {
     try {
         const publicAccessClient = axios.create({ baseURL: effectivePublicAccessRootUrl });
         const config = { signal: options.signal };
-        if (password) {
-            config.headers = { 'X-Survey-Password': password };
-        }
+        // For public access, password might be in body or header.
+        // Assuming body for POST, or header if that's how backend expects it.
+        // If your /s/:id endpoint is a GET, this needs to be publicAccessClient.get and password sent as query param or header.
+        // Your backend route for /s/:id seems to be a POST in server.js, so this should be fine.
+        const payload = password ? { password } : {};
+        
         console.log(`[surveyApi] Calling POST ${effectivePublicAccessRootUrl}/s/${accessIdentifier}`);
-        // For public access, the password might be in the body or a header depending on backend.
-        // Assuming header for now, similar to how apiClient handles it for protected routes.
-        // If backend expects it in body for public POST, adjust here.
-        const response = await publicAccessClient.post(`/s/${accessIdentifier}`, {}, config); 
+        const response = await publicAccessClient.post(`/s/${accessIdentifier}`, payload, config); 
         return response.data;
     } catch (error) {
-        // ... (error handling as before) ...
         if (axios.isCancel(error) || error.name === 'AbortError') {
             console.log(`[surveyApi] accessPublicSurvey (${accessIdentifier}) request was aborted:`, error.message);
         } else {
@@ -231,7 +273,7 @@ const surveyApiFunctions = {
     deleteSurvey,
     createQuestion, updateQuestionContent, deleteQuestionById,
     submitSurveyAnswers, 
-    savePartialResponse, // +++ Added here +++
+    savePartialResponse, 
     getSurveyResults, exportSurveyResults,
     loginUser, registerUser, logoutUser, getMe,
     getCollectorsForSurvey, createCollector, updateCollector, deleteCollector,
@@ -239,4 +281,4 @@ const surveyApiFunctions = {
 };
 
 export default surveyApiFunctions;
-// ----- END OF COMPLETE MODIFIED FILE (vNext4 - Added savePartialResponse) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext5 - Implemented loginUser API call) -----
