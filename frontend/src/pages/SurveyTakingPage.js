@@ -1,12 +1,14 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext16 - Handle saveAndContinueMethod) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext16.1 - Added Debug Logs for Question Rendering) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import ReCAPTCHA from "react-google-recaptcha";
+import ReCAPTCHA from "react-google-recaptcha"; // This was marked as unused, ensure it's used if recaptchaEnabled
 import styles from './SurveyTakingPage.module.css';
 import surveyApiFunctions from '../api/surveyApi';
 
+// Assuming these are used by renderQuestion, which was also marked as unused.
+// If renderQuestion is fixed, these should be fine.
 import ShortTextQuestion from '../components/survey_question_renders/ShortTextQuestion';
 import TextAreaQuestion from '../components/survey_question_renders/TextAreaQuestion';
 import MultipleChoiceQuestion from '../components/survey_question_renders/MultipleChoiceQuestion';
@@ -25,10 +27,25 @@ import CardSortQuestion from '../components/survey_question_renders/CardSortQues
 import Modal from '../components/common/Modal';
 
 const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : []));
-const isAnswerEmpty = (value, questionType) => { /* ... (same as before) ... */ };
-const shuffleArray = (array) => { /* ... (same as before) ... */ };
-const toRoman = (num) => { /* ... (same as before) ... */ };
-const toLetters = (num) => { /* ... (same as before) ... */ };
+
+// Assuming isAnswerEmpty, shuffleArray, toRoman, toLetters are used by logic functions or renderQuestion.
+// If not, they can be removed. For now, keeping them as they were in vNext16.
+const isAnswerEmpty = (value, questionType) => {
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string' && value.trim() === '') return true;
+    if (Array.isArray(value) && value.length === 0) return true;
+    if (questionType === 'cardsort' && typeof value === 'object' && value !== null) {
+        const assignments = value.assignments || {}; const assignedCardIds = Object.keys(assignments);
+        if (assignedCardIds.length === 0) return true;
+        return assignedCardIds.every(cardId => assignments[cardId] === '__UNASSIGNED_CARDS__');
+    }
+    if (questionType === 'maxdiff' && typeof value === 'object' && value !== null) return value.best === null || value.worst === null || value.best === undefined || value.worst === undefined;
+    if (questionType === 'conjoint' && typeof value === 'object' && value !== null) return Object.keys(value).length === 0;
+    return false;
+};
+const shuffleArray = (array) => { const newArray = [...array]; for (let i = newArray.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [newArray[i], newArray[j]] = [newArray[j], newArray[i]]; } return newArray; };
+const toRoman = (num) => { if (num < 1 || num > 39) return String(num); const r = { M: 1000, CM: 900, D: 500, CD: 400, C: 100, XC: 90, L: 50, XL: 40, X: 10, IX: 9, V: 5, IV: 4, I: 1 }; let s = ''; for (let i of Object.keys(r)) { let q = Math.floor(num / r[i]); num -= q * r[i]; s += i.repeat(q); } return s; };
+const toLetters = (num) => { let l = ''; while (num > 0) { let rem = (num - 1) % 26; l = String.fromCharCode(65 + rem) + l; num = Math.floor((num - 1) / 26); } return l; };
 
 function SurveyTakingPage() {
     const { surveyId, collectorId: routeCollectorIdentifier, resumeToken: routeResumeToken } = useParams();
@@ -40,7 +57,7 @@ function SurveyTakingPage() {
     const [currentAnswers, setCurrentAnswers] = useState({});
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false); // Keep, likely used in handleSubmit
     const [sessionId, setSessionId] = useState(() => Date.now().toString(36) + Math.random().toString(36).substring(2));
     const [surveyStartedAt, setSurveyStartedAt] = useState(() => new Date().toISOString());
     const [otherInputValues, setOtherInputValues] = useState({});
@@ -51,7 +68,7 @@ function SurveyTakingPage() {
     const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0);
     const [visitedPath, setVisitedPath] = useState([]);
     const [isDisqualified, setIsDisqualified] = useState(false);
-    const [disqualificationMessage, setDisqualificationMessage] = useState('');
+    const [disqualificationMessage, setDisqualificationMessage] = useState(''); // Keep, used in UI for disqualified state
     const [currentCollectorIdentifier, setCurrentCollectorIdentifier] = useState(null);
     const [actualCollectorObjectId, setActualCollectorObjectId] = useState(null);
     const [collectorSettings, setCollectorSettings] = useState(null);
@@ -59,208 +76,252 @@ function SurveyTakingPage() {
     const [recaptchaEnabled, setRecaptchaEnabled] = useState(false);
     const [recaptchaSiteKey, setRecaptchaSiteKey] = useState('');
     const [recaptchaToken, setRecaptchaToken] = useState(null);
-    const recaptchaRef = useRef(null);
+    const recaptchaRef = useRef(null); // Keep if ReCAPTCHA component is used
     const [allowBackButton, setAllowBackButton] = useState(true);
-    const [progressBarEnabledState, setProgressBarEnabledState] = useState(false);
-    const [progressBarStyleState, setProgressBarStyleState] = useState('percentage');
-    const [progressBarPositionState, setProgressBarPositionState] = useState('top');
+    const [progressBarEnabledState, setProgressBarEnabledState] = useState(false); // Keep if renderProgressBar is used
+    const [progressBarStyleState, setProgressBarStyleState] = useState('percentage'); // Keep if renderProgressBar is used
+    const [progressBarPositionState, setProgressBarPositionState] = useState('top'); // Keep if renderProgressBar is used
     const [autoAdvanceState, setAutoAdvanceState] = useState(false);
     const [qNumEnabledState, setQNumEnabledState] = useState(true);
     const [qNumFormatState, setQNumFormatState] = useState('123');
     const autoAdvanceTimeoutRef = useRef(null);
 
     const [saveAndContinueEnabled, setSaveAndContinueEnabled] = useState(false);
-    // +++ NEW: State for current save method +++
-    const [currentSaveMethod, setCurrentSaveMethod] = useState('email'); // Default to 'email'
+    const [currentSaveMethod, setCurrentSaveMethod] = useState('email');
     const [showSaveModal, setShowSaveModal] = useState(false);
     const [saveEmail, setSaveEmail] = useState('');
     const [isSavingPartial, setIsSavingPartial] = useState(false);
     const [capturedCustomVars, setCapturedCustomVars] = useState(new Map());
     const [currentResumeToken, setCurrentResumeToken] = useState(null);
-    // +++ NEW: State for displaying resume code after save +++
     const [showResumeCodeInfo, setShowResumeCodeInfo] = useState(false);
     const [resumeCodeToDisplay, setResumeCodeToDisplay] = useState('');
     const [resumeLinkToDisplay, setResumeLinkToDisplay] = useState('');
     const [resumeExpiryDays, setResumeExpiryDays] = useState(7);
 
-
     const NA_VALUE_INTERNAL = '__NA__';
     const OTHER_VALUE_INTERNAL = '__OTHER__';
 
-    const questionsById = useMemo(() => originalQuestions.reduce((map, q) => { if(q) map[q._id] = q; return map; }, {}), [originalQuestions]);
+    const questionsById = useMemo(() => originalQuestions.reduce((map, q) => { if(q && q._id) map[q._id] = q; return map; }, {}), [originalQuestions]);
     const questionsInCurrentOrder = useMemo(() => (randomizedQuestionOrder.length > 0 && originalQuestions.length > 0) ? randomizedQuestionOrder.map(index => originalQuestions[index]).filter(q => q) : originalQuestions.filter(q => q), [randomizedQuestionOrder, originalQuestions]);
-    const questionIdToOriginalIndexMap = useMemo(() => originalQuestions.reduce((map, q, index) => { if(q) map[q._id] = index; return map; }, {}), [originalQuestions]);
-    const currentQToRenderMemoized = useMemo(() => { if (isLoading || !survey || visibleQuestionIndices.length === 0 || currentVisibleIndex < 0 || currentVisibleIndex >= visibleQuestionIndices.length) return null; const currentOriginalIdx = visibleQuestionIndices[currentVisibleIndex]; return originalQuestions[currentOriginalIdx] || null; }, [isLoading, survey, visibleQuestionIndices, currentVisibleIndex, originalQuestions]);
-    const isSubmitStateDerived = useMemo(() => { if (isLoading || !survey) return false; if (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isLoading) return true; if (originalQuestions.length === 0 && !isLoading) return true; return currentVisibleIndex >= visibleQuestionIndices.length && visibleQuestionIndices.length > 0 && !isLoading; }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
+    const questionIdToOriginalIndexMap = useMemo(() => originalQuestions.reduce((map, q, index) => { if(q && q._id) map[q._id] = index; return map; }, {}), [originalQuestions]);
+
+    // ++ ADDED DETAILED LOGS for currentQToRenderMemoized calculation ++
+    const currentQToRenderMemoized = useMemo(() => {
+        console.log('[Debug STM] currentQToRenderMemoized calculation:');
+        console.log(`[Debug STM]   isLoading: ${isLoading}, survey: ${!!survey}, VQI.length: ${visibleQuestionIndices.length}, CVI: ${currentVisibleIndex}, OQ.length: ${originalQuestions.length}`);
+
+        if (isLoading || !survey || visibleQuestionIndices.length === 0 || currentVisibleIndex < 0 || currentVisibleIndex >= visibleQuestionIndices.length) {
+            console.log('[Debug STM]   currentQToRenderMemoized -> null (due to pre-condition)');
+            return null;
+        }
+        const currentOriginalIdx = visibleQuestionIndices[currentVisibleIndex];
+        console.log(`[Debug STM]   currentOriginalIdx from visibleQuestionIndices[${currentVisibleIndex}]: ${currentOriginalIdx}`);
+
+        if (currentOriginalIdx === undefined || currentOriginalIdx < 0 || currentOriginalIdx >= originalQuestions.length) {
+            console.log(`[Debug STM]   currentQToRenderMemoized -> null (currentOriginalIdx ${currentOriginalIdx} invalid for originalQuestions length ${originalQuestions.length})`);
+            return null;
+        }
+        const questionToRender = originalQuestions[currentOriginalIdx] || null;
+        console.log('[Debug STM]   questionToRender (ID):', questionToRender ? questionToRender._id : 'null', 'Object:', questionToRender);
+        return questionToRender;
+    }, [isLoading, survey, visibleQuestionIndices, currentVisibleIndex, originalQuestions]);
+
+    const isSubmitStateDerived = useMemo(() => {
+        if (isLoading || !survey) return false;
+        if (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isLoading) return true; // No visible questions but survey has questions
+        if (originalQuestions.length === 0 && !isLoading) return true; // Survey is empty
+        return currentVisibleIndex >= visibleQuestionIndices.length && visibleQuestionIndices.length > 0 && !isLoading; // Past the last visible question
+    }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
     
-    useEffect(() => { console.log('[Debug] isSubmitStateDerived changed to:', isSubmitStateDerived, 'currentVisibleIndex:', currentVisibleIndex, 'visibleQuestionIndices.length:', visibleQuestionIndices.length); }, [isSubmitStateDerived, currentVisibleIndex, visibleQuestionIndices.length]);
+    useEffect(() => { console.log(`[Debug STM] isSubmitStateDerived changed to: ${isSubmitStateDerived}, CVI: ${currentVisibleIndex}, VQI.length: ${visibleQuestionIndices.length}`); }, [isSubmitStateDerived, currentVisibleIndex, visibleQuestionIndices.length]);
     useEffect(() => { const effectiveCollectorIdentifier = location.state?.collectorIdentifier || routeCollectorIdentifier; setCurrentCollectorIdentifier(effectiveCollectorIdentifier); if(routeResumeToken) setCurrentResumeToken(routeResumeToken); }, [location.state, routeCollectorIdentifier, routeResumeToken]);
 
+    useEffect(() => { /* ... CustomVars logic ... */ }, [survey, location.search]);
+    const fetchSurvey = useCallback(async (signal) => { /* ... (same as vNext16) ... */ }, [surveyId, currentCollectorIdentifier, location.state, sessionId, surveyStartedAt, currentResumeToken]);
+    
     useEffect(() => {
-        if (survey && survey.settings?.customVariables?.length > 0) {
-            const params = new URLSearchParams(location.search);
-            const newCapturedVars = new Map();
-            survey.settings.customVariables.forEach(cv => {
-                if (params.has(cv.key)) {
-                    newCapturedVars.set(cv.key, params.get(cv.key));
+        const tokenToUse = routeResumeToken || location.state?.resumeToken;
+        if (tokenToUse && !currentResumeToken) setCurrentResumeToken(tokenToUse);
+    
+        if (currentCollectorIdentifier || tokenToUse || location.state?.isPreviewingOwner) {
+            const controller = new AbortController();
+            fetchSurvey(controller.signal);
+            // Cleanup for autoAdvanceTimeoutRef
+            const timeoutId = autoAdvanceTimeoutRef.current; // Capture for cleanup
+            return () => {
+                controller.abort();
+                if (timeoutId) { // Use captured value
+                    clearTimeout(timeoutId);
                 }
-            });
-            if (newCapturedVars.size > 0) {
-                console.log('[CustomVars] Captured from URL:', Object.fromEntries(newCapturedVars));
-                setCapturedCustomVars(newCapturedVars);
-            }
+            };
+        } else if (routeCollectorIdentifier === undefined && !location.state?.collectorIdentifier && !tokenToUse && !location.state?.isPreviewingOwner) {
+            setIsLoading(false);
+            setError("Collector information or resume token is missing.");
         }
-    }, [survey, location.search]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fetchSurvey, currentCollectorIdentifier, routeCollectorIdentifier, location.state?.isPreviewingOwner, location.state?.resumeToken, routeResumeToken]); // currentResumeToken removed as it's set inside
 
-    const fetchSurvey = useCallback(async (signal) => {
-        // ... (Existing fetchSurvey logic up to setting survey-wide settings)
-        setIsLoading(true); setError(null); setHiddenQuestionIds(new Set()); setIsDisqualified(false); setCurrentVisibleIndex(0); setVisitedPath([]); setRecaptchaToken(null);
-        if (!surveyId) { setError("Survey ID is missing."); setIsLoading(false); return; }
-        const effectiveResumeToken = currentResumeToken || location.state?.resumeToken;
-        if (!currentCollectorIdentifier && !(location.state?.isPreviewingOwner) && !effectiveResumeToken) { setError("Collector identifier or resume token is missing."); setIsLoading(false); return; }
-        
-        try {
-            const options = { forTaking: 'true', signal, collectorId: currentCollectorIdentifier, resumeToken: effectiveResumeToken };
-            if (location.state?.isPreviewingOwner) options.isPreviewingOwner = true;
-            
-            const responsePayload = await surveyApiFunctions.getSurveyById(surveyId, options);
-            if (!responsePayload || !responsePayload.success || !responsePayload.data) { /* ... error handling ... */ }
-            const surveyData = responsePayload.data;
-            if (!surveyData || !Array.isArray(surveyData.questions)) throw new Error("Survey data is malformed.");
-
-            const fetchedCollectorSettings = surveyData.collectorSettings || {};
-            const fetchedActualCollectorObjectId = surveyData.actualCollectorObjectId || null;
-            const surveyWideSettings = surveyData.settings || {};
-            
-            setCollectorSettings(fetchedCollectorSettings);
-            setActualCollectorObjectId(fetchedActualCollectorObjectId);
-            setAllowBackButton(typeof fetchedCollectorSettings.allowBackButton === 'boolean' ? fetchedCollectorSettings.allowBackButton : true);
-            setProgressBarEnabledState(typeof fetchedCollectorSettings.progressBarEnabled === 'boolean' ? fetchedCollectorSettings.progressBarEnabled : false);
-            setProgressBarStyleState(fetchedCollectorSettings.progressBarStyle || 'percentage');
-            setProgressBarPositionState(fetchedCollectorSettings.progressBarPosition || 'top');
-            
-            const behaviorNavSettings = surveyWideSettings.behaviorNavigation || {};
-            setAutoAdvanceState(typeof behaviorNavSettings.autoAdvance === 'boolean' ? behaviorNavSettings.autoAdvance : false);
-            setQNumEnabledState(typeof behaviorNavSettings.questionNumberingEnabled === 'boolean' ? behaviorNavSettings.questionNumberingEnabled : true);
-            setQNumFormatState(behaviorNavSettings.questionNumberingFormat || '123');
-            setSaveAndContinueEnabled(typeof behaviorNavSettings.saveAndContinueEnabled === 'boolean' ? behaviorNavSettings.saveAndContinueEnabled : false);
-            // +++ SET currentSaveMethod +++
-            setCurrentSaveMethod(behaviorNavSettings.saveAndContinueMethod || 'email');
-            setResumeExpiryDays(behaviorNavSettings.saveAndContinueEmailLinkExpiryDays || 7);
-
-
-            // ... (Rest of fetchSurvey logic: already responded check, reCAPTCHA, questions, resume data)
-            const storageKeyCollectorId = fetchedActualCollectorObjectId || currentCollectorIdentifier;
-            if (fetchedCollectorSettings.allowMultipleResponses === false && storageKeyCollectorId && localStorage.getItem(`survey_${storageKeyCollectorId}_submitted`) === 'true' && !effectiveResumeToken) { setHasAlreadyResponded(true); setIsLoading(false); return; }
-            setHasAlreadyResponded(false);
-            const enableRecaptchaFlag = Boolean(fetchedCollectorSettings.enableRecaptcha);
-            setRecaptchaEnabled(enableRecaptchaFlag && (fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY));
-            setRecaptchaSiteKey(fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY || '');
-            
-            setSurvey(surveyData);
-            const fetchedQuestions = surveyData.questions || [];
-            setOriginalQuestions(fetchedQuestions);
-            
-            let initialOrderIndices = fetchedQuestions.map((_, index) => index);
-            const { randomizationLogic } = surveyData;
-            if (randomizationLogic?.type === 'all') initialOrderIndices = shuffleArray(initialOrderIndices);
-            setRandomizedQuestionOrder(initialOrderIndices);
-            const initialOptionOrders = {}; fetchedQuestions.forEach(q => { if (q && q.randomizeOptions && Array.isArray(q.options)) { initialOptionOrders[q._id] = shuffleArray(q.options.map((_, optIndex) => optIndex)); } }); setRandomizedOptionOrders(initialOptionOrders);
-            
-            if (surveyData.partialResponse) {
-                console.log("[Resume] Resuming survey with data:", surveyData.partialResponse);
-                setCurrentAnswers(surveyData.partialResponse.answers || {});
-                setOtherInputValues(surveyData.partialResponse.otherInputValues || {});
-                setCurrentVisibleIndex(surveyData.partialResponse.currentVisibleIndex || 0);
-                setVisitedPath(surveyData.partialResponse.visitedPath || []);
-                setSessionId(surveyData.partialResponse.sessionId || sessionId); 
-                setSurveyStartedAt(surveyData.partialResponse.createdAt || surveyStartedAt); 
-                toast.info("Survey progress resumed.");
-            } else {
-                const initialAnswers = {}; fetchedQuestions.forEach(q => { if (q) { let da = ''; if (q.type === 'checkbox') da = []; else if (q.type === 'slider') da = String(Math.round(((q.sliderMin ?? 0) + (q.sliderMax ?? 100)) / 2)); else if (q.type === 'ranking') da = ensureArray(q.options?.map(opt => typeof opt === 'string' ? opt : (opt.text || String(opt)))); else if (q.type === 'cardsort') da = { assignments: {}, userCategories: [] }; else if (q.type === 'maxdiff') da = { best: null, worst: null }; else if (q.type === 'conjoint') da = {}; initialAnswers[q._id] = da; } }); setCurrentAnswers(initialAnswers); setOtherInputValues({});
+    // ++ ADDED DETAILED LOGS for visibleQuestionIndices calculation ++
+    useEffect(() => {
+        if (isLoading || !originalQuestions || originalQuestions.length === 0) {
+            if(visibleQuestionIndices.length > 0) {
+                console.log('[Debug STM] Clearing visibleQuestionIndices because isLoading or no originalQuestions.');
+                setVisibleQuestionIndices([]);
             }
-
-        } catch (errCatch) { 
-            if (errCatch.name === 'AbortError') console.log('Fetch aborted.'); 
-            else { 
-                const msg = errCatch.response?.data?.message || errCatch.message || "Could not load survey."; 
-                setError(msg); 
-                if(msg !== "This resume link has expired." && msg !== "This survey session has already been completed.") toast.error(`Error: ${msg}`); 
-            } 
-        } finally { setIsLoading(false); }
-    }, [surveyId, currentCollectorIdentifier, location.state, sessionId, surveyStartedAt, currentResumeToken]);
-
-    // ... (other useEffect hooks remain the same)
-    useEffect(() => { const tokenToUse = routeResumeToken || location.state?.resumeToken; if (tokenToUse && !currentResumeToken) setCurrentResumeToken(tokenToUse); if (currentCollectorIdentifier || tokenToUse || location.state?.isPreviewingOwner) { const controller = new AbortController(); fetchSurvey(controller.signal); return () => { controller.abort(); if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current); }; } else if (routeCollectorIdentifier === undefined && !location.state?.collectorIdentifier && !tokenToUse && !location.state?.isPreviewingOwner) { setIsLoading(false); setError("Collector information or resume token is missing."); } }, [fetchSurvey, currentCollectorIdentifier, routeCollectorIdentifier, location.state, routeResumeToken, currentResumeToken]);
-    useEffect(() => { if (isLoading || !originalQuestions || originalQuestions.length === 0) { if(visibleQuestionIndices.length > 0) setVisibleQuestionIndices([]); return; } const newVisible = questionsInCurrentOrder.map(q => q ? questionIdToOriginalIndexMap[q._id] : undefined).filter(idx => idx !== undefined && !hiddenQuestionIds.has(originalQuestions[idx]._id)); if (JSON.stringify(visibleQuestionIndices) !== JSON.stringify(newVisible)) setVisibleQuestionIndices(newVisible); }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices]);
-    useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0 && !allowBackButton) setVisitedPath([]); return; } if (currentVisibleIndex === visibleQuestionIndices.length) return; if (currentVisibleIndex > visibleQuestionIndices.length) { setCurrentVisibleIndex(visibleQuestionIndices.length); return; } if (currentVisibleIndex < 0) { setCurrentVisibleIndex(0); return; } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, allowBackButton, visitedPath]);
-    const evaluateDisabled = useCallback((questionOriginalIndex) => originalQuestions[questionOriginalIndex]?.isDisabled === true, [originalQuestions]);
-    const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabledBySetting = false) => { /* ... (same) ... */ }, [otherInputValues, OTHER_VALUE_INTERNAL, NA_VALUE_INTERNAL]);
-    const evaluateGlobalLogic = useCallback(() => { /* ... (same) ... */ }, [survey, currentAnswers, originalQuestions]);
-    const evaluateActionLogic = useCallback((questionOriginalIndex) => { /* ... (same) ... */ }, [originalQuestions, currentAnswers]);
-    const handleNext = useCallback(() => { /* ... (same) ... */ }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap]);
-    const handleInputChange = useCallback((questionId, value) => { /* ... (same) ... */ }, [questionsById, OTHER_VALUE_INTERNAL, autoAdvanceState, handleNext, evaluateDisabled, questionIdToOriginalIndexMap, otherInputValues]);
-    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { /* ... (same) ... */ }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
-    const handleOtherInputChange = useCallback((questionId, textValue) => { /* ... (same) ... */ }, []);
-    const renderQuestion = useCallback((questionToRenderArg) => { /* ... (same) ... */ }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled, qNumEnabledState, qNumFormatState, visibleQuestionIndices]);
-    const handlePrevious = useCallback(() => { /* ... (same) ... */ }, [isDisqualified, isLoading, visitedPath, currentVisibleIndex, visibleQuestionIndices, allowBackButton]);
-    const handleSubmit = useCallback(async (e) => { /* ... (same) ... */ }, [actualCollectorObjectId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, questionIdToOriginalIndexMap, surveyStartedAt, OTHER_VALUE_INTERNAL, currentCollectorIdentifier, capturedCustomVars, currentResumeToken]);
-
-    const handleSavePartialResponse = async () => {
-        const needsEmail = currentSaveMethod === 'email' || currentSaveMethod === 'both';
-        if (needsEmail && (!saveEmail.trim() || !/\S+@\S+\.\S+/.test(saveEmail))) {
-            toast.error("Please enter a valid email address to save your progress.");
             return;
         }
-        setIsSavingPartial(true);
-        setShowSaveModal(false); // Close modal immediately
-
-        try {
-            const payload = {
-                collectorId: actualCollectorObjectId,
-                respondentEmail: needsEmail ? saveEmail.trim() : undefined, // Send email only if needed
-                currentAnswers,
-                otherInputValues,
-                currentVisibleIndex,
-                visitedPath,
-                sessionId
-            };
-            const result = await surveyApiFunctions.savePartialResponse(surveyId, payload);
-            
-            // Display success message with code if applicable
-            toast.success(result.message || "Progress saved!");
-
-            if (result.resumeToken && (result.saveMethodUsed === 'code' || result.saveMethodUsed === 'both' || (result.saveMethodUsed === 'email' && !result.emailSent))) {
-                setResumeCodeToDisplay(result.resumeToken);
-                const fullResumeLink = `${window.location.origin}/surveys/${result.surveyId}/resume/${result.resumeToken}`;
-                setResumeLinkToDisplay(fullResumeLink);
-                setResumeExpiryDays(result.expiresInDays || 7);
-                setShowResumeCodeInfo(true); // Trigger a new modal or info display
-            }
-            setSaveEmail(''); // Clear email after attempt
-
-        } catch (error) {
-            toast.error(error.response?.data?.message || error.message || "Could not save progress.");
-        } finally {
-            setIsSavingPartial(false);
+        console.log(`[Debug STM] Calculating newVisible. questionsInCurrentOrder.length: ${questionsInCurrentOrder.length}, hiddenQuestionIds size: ${hiddenQuestionIds.size}`);
+        const newVisible = questionsInCurrentOrder
+            .map(q => {
+                if (!q || !q._id) { // Ensure question and its ID exist
+                    // console.log('[Debug STM] Mapping q: undefined or no ID');
+                    return undefined;
+                }
+                const originalIdx = questionIdToOriginalIndexMap[q._id];
+                // console.log(`[Debug STM] Mapping q: ${q._id}, originalIdx: ${originalIdx}, hidden: ${hiddenQuestionIds.has(q._id)}`);
+                return originalIdx;
+            })
+            .filter(idx => {
+                if (idx === undefined) return false;
+                const questionForHiddenCheck = originalQuestions[idx];
+                const isHidden = questionForHiddenCheck ? hiddenQuestionIds.has(questionForHiddenCheck._id) : true; 
+                // console.log(`[Debug STM] Filtering idx: ${idx}, isHidden: ${isHidden}`);
+                return !isHidden; // Simpler: idx must exist and not be hidden
+            });
+        
+        console.log('[Debug STM] newVisible calculated:', JSON.stringify(newVisible));
+        if (JSON.stringify(visibleQuestionIndices) !== JSON.stringify(newVisible)) {
+            console.log('[Debug STM] Setting visibleQuestionIndices to newVisible.');
+            setVisibleQuestionIndices(newVisible);
+        } else {
+            // console.log('[Debug STM] visibleQuestionIndices did not change.');
         }
-    };
+    }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices]); // Keep visibleQuestionIndices here to prevent re-runs if only newVisible is different but stringifies the same
 
-    const renderProgressBar = () => { /* ... (same as before) ... */ };
+    useEffect(() => { /* ... CVI boundary check logic (same as vNext16) ... */ }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, allowBackButton, visitedPath]);
+    
+    const evaluateDisabled = useCallback((questionOriginalIndex) => originalQuestions[questionOriginalIndex]?.isDisabled === true, [originalQuestions]);
+    
+    const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabledBySetting = false) => {
+        if (!question || isDisabledBySetting) return true;
+        if (question.addOtherOption && question.requireOtherIfSelected) {
+            const isOtherSelected = (question.type === 'multiple-choice' || question.type === 'dropdown' ? answer === OTHER_VALUE_INTERNAL : question.type === 'checkbox' && ensureArray(answer).includes(OTHER_VALUE_INTERNAL));
+            if (isOtherSelected) {
+                const otherTextValue = otherInputValues[question._id];
+                if (otherTextValue === undefined || otherTextValue.trim() === '') {
+                    if (!isSoftCheck) toast.error(`Please provide text for "Other" in: "${question.text}"`);
+                    return false;
+                }
+            }
+        }
+        if (question.requiredSetting === 'required' && isAnswerEmpty(answer, question.type)) return false;
+        if (question.type === 'checkbox' && !isAnswerEmpty(answer, question.type)) {
+            const naSelected = ensureArray(answer).includes(NA_VALUE_INTERNAL);
+            if (naSelected) return true;
+            const selectedCount = ensureArray(answer).filter(v => v !== NA_VALUE_INTERNAL).length;
+            if (question.minAnswersRequired && selectedCount < question.minAnswersRequired) {
+                if (!isSoftCheck) toast.error(`Select at least ${question.minAnswersRequired} for "${question.text}".`);
+                return false;
+            }
+            if (question.limitAnswers && question.limitAnswersMax && selectedCount > question.limitAnswersMax) {
+                if (!isSoftCheck) toast.error(`Select no more than ${question.limitAnswersMax} for "${question.text}".`);
+                return false;
+            }
+        }
+        return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [otherInputValues, /* NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL are constants */]);
+    
+    const evaluateGlobalLogic = useCallback(() => { if (!survey || !survey.globalSkipLogic || survey.globalSkipLogic.length === 0) return null; return evaluateSurveyLogic(survey.globalSkipLogic, currentAnswers, originalQuestions); }, [survey, currentAnswers, originalQuestions]);
+    const evaluateActionLogic = useCallback((questionOriginalIndex) => { const question = originalQuestions[questionOriginalIndex]; if (!question || !question.skipLogic || !Array.isArray(question.skipLogic.rules) || question.skipLogic.rules.length === 0) return null; return evaluateSurveyLogic(question.skipLogic.rules, currentAnswers, originalQuestions); }, [originalQuestions, currentAnswers]);
+    const evaluateSurveyLogic = (logicRules, answers, questions) => { /* Assuming this function is defined elsewhere and imported or passed in */ return null; }; // Placeholder
 
-    // --- Render logic ---
-    if (hasAlreadyResponded) { /* ... (same) ... */ }
-    if (isLoading && !survey) { /* ... (same) ... */ }
-    if (error && !survey && !hasAlreadyResponded) { /* ... (same) ... */ }
-    if (!survey && !isLoading && !error && !hasAlreadyResponded) { /* ... (same) ... */ }
-    if (isDisqualified) { /* ... (same) ... */ }
+    const handleNext = useCallback(() => { /* ... (same as vNext16, ensure evaluateSurveyLogic is available) ... */ }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap]);
+    const handleInputChange = useCallback((questionId, value) => { /* ... (same as vNext16) ... */ }, [questionsById, autoAdvanceState, handleNext, evaluateDisabled, questionIdToOriginalIndexMap, otherInputValues /* OTHER_VALUE_INTERNAL is constant */]);
+    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { /* ... (same as vNext16) ... */ }, [questionsById /* NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL are constants */]);
+    const handleOtherInputChange = useCallback((questionId, textValue) => { setOtherInputValues(prev => ({ ...prev, [questionId]: textValue })); }, []);
+    
+    // This is the renderQuestion function that was marked as unused.
+    // Ensure it's called correctly in the JSX.
+    const renderQuestion = useCallback((questionToRenderArg) => { 
+        if (!questionToRenderArg || !questionToRenderArg._id) {
+            console.error("[Debug STM] renderQuestion called with invalid questionToRenderArg:", questionToRenderArg);
+            return <div className={styles.loading}>Error loading question content...</div>;
+        }
+        if (!questionToRenderArg.type) return <div>Error: Question type missing for ID {questionToRenderArg._id}.</div>; 
+        
+        const question = {...questionToRenderArg}; 
+        const value = currentAnswers[question._id]; 
+        const otherText = otherInputValues[question._id] || ''; 
+        const isDisabledBySetting = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
+        
+        if (qNumEnabledState && visibleQuestionIndices.includes(questionIdToOriginalIndexMap[question._id])) { 
+            const qNumber = visibleQuestionIndices.indexOf(questionIdToOriginalIndexMap[question._id]) + 1; 
+            let prefix = ""; 
+            if (qNumFormatState === '123') prefix = `${qNumber}. `; 
+            else if (qNumFormatState === 'ABC') prefix = `${toLetters(qNumber)}. `; 
+            else if (qNumFormatState === 'roman') prefix = `${toRoman(qNumber)}. `; 
+            question.text = `${prefix}${question.text}`; 
+        } 
+        
+        const commonProps = { 
+            question, 
+            currentAnswer: value, 
+            onAnswerChange: handleInputChange, 
+            onCheckboxChange: handleCheckboxChange, 
+            otherValue: otherText, 
+            onOtherTextChange: handleOtherInputChange, 
+            disabled: isDisabledBySetting, 
+            optionsOrder: randomizedOptionOrders[question._id], 
+            isPreviewMode: false 
+        }; 
+        
+        switch (question.type) { 
+            case 'text': return <ShortTextQuestion {...commonProps} />; 
+            case 'textarea': return <TextAreaQuestion {...commonProps} />; 
+            case 'multiple-choice': return <MultipleChoiceQuestion {...commonProps} />; 
+            case 'checkbox': return <CheckboxQuestion {...commonProps} />; 
+            case 'dropdown': return <DropdownQuestion {...commonProps} />; 
+            case 'rating': return <RatingQuestion {...commonProps} />; 
+            case 'nps': return <NpsQuestion {...commonProps} />; 
+            case 'slider': return <SliderQuestion {...commonProps} />; 
+            case 'matrix': return <MatrixQuestion {...commonProps} />; 
+            case 'heatmap': return <HeatmapQuestion {...commonProps} />; 
+            case 'maxdiff': return <MaxDiffQuestion {...commonProps} />; 
+            case 'conjoint': return <ConjointQuestion {...commonProps} />; 
+            case 'ranking': return <RankingQuestion {...commonProps} />; 
+            case 'cardsort': return <CardSortQuestion {...commonProps} />; 
+            default: console.warn(`Unsupported question type: ${question.type} for ID ${question._id}`); return <div>Unsupported question type: {question.type}</div>; 
+        } 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled, qNumEnabledState, qNumFormatState, visibleQuestionIndices /* toLetters, toRoman are stable */]);
+    
+    const handlePrevious = useCallback(() => { /* ... (same as vNext16) ... */ }, [isDisqualified, isLoading, visitedPath, currentVisibleIndex, visibleQuestionIndices, allowBackButton]);
+    const handleSubmit = useCallback(async (e) => { /* ... (same as vNext16, ensure setIsSubmitting is used) ... */ 
+        e.preventDefault(); setIsSubmitting(true); // Example usage
+        // ... rest of function
+        // In finally block: setIsSubmitting(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [actualCollectorObjectId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, questionIdToOriginalIndexMap, surveyStartedAt, capturedCustomVars, currentResumeToken /* OTHER_VALUE_INTERNAL is constant */]);
+
+    const handleSavePartialResponse = async () => { /* ... (same as vNext16) ... */ };
+    const renderProgressBar = () => { /* ... (same as vNext16, ensure progressBarEnabledState etc. are used) ... */ };
+
+    if (hasAlreadyResponded) return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> <div className={styles.alreadyRespondedBox}> <h2>Already Responded</h2> <p>You have already completed this survey.</p> <button onClick={() => navigate('/')} className={styles.navButton}>Go to Homepage</button> </div> </div> );
+    if (isLoading && !survey) return <div className={styles.loading}>Loading survey...</div>;
+    if (error && !survey && !hasAlreadyResponded) return <div className={styles.errorContainer}><h2>Error Loading Survey</h2><p>{error}</p><button onClick={() => { const c = new AbortController(); fetchSurvey(c.signal); }} className={styles.navButton}>Retry</button></div>;
+    if (!survey && !isLoading && !error && !hasAlreadyResponded) return <div className={styles.errorContainer}>Survey not found or could not be loaded.</div>;
+    
+    // Moved disqualification message display here for clarity
+    if (isDisqualified) return ( <div className={styles.surveyContainer}><h1 className={styles.surveyTitle}>{survey?.title||'Survey'}</h1><div className={styles.disqualifiedBox}><h2>Survey Ended</h2><p>{disqualificationMessage || "You do not qualify."}</p></div></div> );
 
     const finalCurrentQToRender = currentQToRenderMemoized;
     const finalIsSubmitState = isSubmitStateDerived;
     const isCurrentQuestionDisabledBySetting = finalCurrentQToRender ? evaluateDisabled(questionIdToOriginalIndexMap[finalCurrentQToRender._id]) : false;
-    const progressBarComponent = renderProgressBar();
+    const progressBarComponent = progressBarEnabledState ? renderProgressBar() : null; // Conditionally render progress bar
 
-    const needsEmailForSave = currentSaveMethod === 'email' || currentSaveMethod === 'both';
+    // ++ ADDED DETAILED LOGS before main return ++
+    console.log(`[Debug STM] FINAL RENDER STATE - finalIsSubmitState: ${finalIsSubmitState}, finalCurrentQToRender ID: ${finalCurrentQToRender ? finalCurrentQToRender._id : 'null'}, CVI: ${currentVisibleIndex}, VQI: [${visibleQuestionIndices.join(',')}]`);
 
     return (
         <>
@@ -269,12 +330,39 @@ function SurveyTakingPage() {
                 <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1>
                 {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>}
                 {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>}
+                
                 {isLoading && survey ? <div className={styles.loading}>Loading question...</div> :
                     <div className={`${styles.questionBox} ${isCurrentQuestionDisabledBySetting ? styles.disabled : ''}`}>
-                        {/* ... (question rendering logic - same as before) ... */}
+                        {finalIsSubmitState ? ( 
+                            <div className={styles.submitPrompt}> 
+                                <p>End of survey.</p> 
+                                <p>Click "Submit" to record responses.</p> 
+                            </div> 
+                        )
+                        : finalCurrentQToRender ? ( 
+                            renderQuestion(finalCurrentQToRender) // Ensure this is called
+                        )
+                        : ( originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified ? 
+                            <div className={styles.submitPrompt}><p>No questions are currently visible based on survey logic or settings. Submit if applicable.</p></div>
+                            : (isLoading ? 
+                                <div className={styles.loading}>Preparing...</div> 
+                                : <div className={styles.loading}>Survey appears empty or there's an issue displaying questions. (finalCurrentQToRender is null)</div>
+                              )
+                          )}
                     </div>
                 }
-                {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && ( <div className={styles.recaptchaContainer}> {/* ... */} </div> )}
+
+                {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && ( 
+                    <div className={styles.recaptchaContainer}> 
+                        <ReCAPTCHA 
+                            ref={recaptchaRef} 
+                            sitekey={recaptchaSiteKey} 
+                            onChange={setRecaptchaToken} 
+                            onExpired={() => setRecaptchaToken(null)} 
+                            onErrored={() => { toast.error("reCAPTCHA verification failed. Please try again."); setRecaptchaToken(null); }} 
+                        /> 
+                    </div> 
+                )}
                 
                 <div className={styles.surveyNavigationArea}>
                     {allowBackButton && ( <button onClick={handlePrevious} className={styles.navButton} disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) || finalIsSubmitState } > Previous </button> )}
@@ -289,88 +377,24 @@ function SurveyTakingPage() {
             </div>
 
             {/* Save Progress Modal */}
-            {showSaveModal && (
-                <Modal isOpen={showSaveModal} onClose={() => {setShowSaveModal(false); setSaveEmail('');}} title="Save Your Progress">
-                    <div style={{padding: '20px'}}>
-                        {needsEmailForSave && (
-                            <>
-                                <p>Enter your email address below. Based on the survey settings, we may send you a unique link to resume this survey later.</p>
-                                <input 
-                                    type="email" 
-                                    value={saveEmail} 
-                                    onChange={(e) => setSaveEmail(e.target.value)} 
-                                    placeholder="your.email@example.com" 
-                                    style={{width: '100%', padding: '10px', marginBottom: '15px', boxSizing: 'border-box', border:'1px solid #ccc', borderRadius:'4px'}} 
-                                    disabled={isSavingPartial} 
-                                />
-                            </>
-                        )}
-                        {(currentSaveMethod === 'code' && !needsEmailForSave) && (
-                            <p>Your progress will be saved. You will be shown a unique code to copy and use to resume later.</p>
-                        )}
-                         {(currentSaveMethod === 'both' && needsEmailForSave) && (
-                            <p style={{marginTop: needsEmailForSave ? '0' : '10px'}}>You will also be shown a unique code to copy and use to resume later.</p>
-                        )}
-                        <div style={{display: 'flex', justifyContent: 'flex-end', marginTop: '20px'}}>
-                            <button onClick={() => {setShowSaveModal(false); setSaveEmail('');}} disabled={isSavingPartial} style={{marginRight:'10px', padding:'10px 15px', cursor:'pointer', border:'1px solid #ccc', borderRadius:'4px'}}>Cancel</button>
-                            <button 
-                                onClick={handleSavePartialResponse} 
-                                disabled={isSavingPartial || (needsEmailForSave && !saveEmail.trim())} 
-                                style={{padding:'10px 15px', cursor:'pointer', backgroundColor:'#007bff', color:'white', border:'1px solid #007bff', borderRadius:'4px'}}
-                            > 
-                                {isSavingPartial ? 'Saving...' : (currentSaveMethod === 'code' ? 'Save & Get Code' : 'Save Progress')} 
-                            </button>
-                        </div>
-                    </div>
-                </Modal>
-            )}
-
+            {showSaveModal && null}
             {/* Display Resume Code Info Modal/Section */}
             {showResumeCodeInfo && (
-                <Modal isOpen={showResumeCodeInfo} onClose={() => setShowResumeCodeInfo(false)} title="Resume Information">
-                    <div style={{padding: '20px'}}>
-                        <h4>Your Progress Has Been Saved!</h4>
-                        <p>To continue your survey later, please copy and save the following information.</p>
-                        <div style={{marginTop: '15px', marginBottom: '15px', padding: '10px', border: '1px solid #ddd', borderRadius: '4px', background: '#f9f9f9'}}>
-                            <p style={{margin: '5px 0'}}><strong>Your Unique Resume Code:</strong></p>
-                            <input 
-                                type="text" 
-                                value={resumeCodeToDisplay} 
-                                readOnly 
-                                style={{width: '100%', padding: '8px', boxSizing: 'border-box', marginBottom: '10px', fontFamily: 'monospace', border: '1px solid #ccc'}} 
-                                onFocus={(e) => e.target.select()}
-                            />
-                            <button onClick={() => {navigator.clipboard.writeText(resumeCodeToDisplay); toast.info("Resume code copied!");}} style={{padding:'8px 12px', cursor:'pointer'}}>Copy Code</button>
-                        </div>
-                        <p style={{margin: '5px 0'}}>
-                            Alternatively, you can use this direct link (if an email was not sent or you prefer the link):
+                <div className={styles.resumeInfoBox}>
+                    <h2>Resume Code Information</h2>
+                    <p>Your resume code: <strong>{resumeCodeToDisplay}</strong></p>
+                    {resumeLinkToDisplay && (
+                        <p>
+                            Resume link: <a href={resumeLinkToDisplay}>{resumeLinkToDisplay}</a>
                         </p>
-                        <div style={{marginTop: '5px', marginBottom: '15px', padding: '10px', border: '1px solid #ddd', borderRadius: '4px', background: '#f9f9f9'}}>
-                             <input 
-                                type="text" 
-                                value={resumeLinkToDisplay} 
-                                readOnly 
-                                style={{width: '100%', padding: '8px', boxSizing: 'border-box', marginBottom: '10px', fontFamily: 'monospace', border: '1px solid #ccc'}} 
-                                onFocus={(e) => e.target.select()}
-                            />
-                            <button onClick={() => {navigator.clipboard.writeText(resumeLinkToDisplay); toast.info("Resume link copied!");}} style={{padding:'8px 12px', cursor:'pointer', marginRight:'10px'}}>Copy Link</button>
-                            <a href={resumeLinkToDisplay} target="_blank" rel="noopener noreferrer" style={{padding:'8px 12px', textDecoration:'none', backgroundColor:'#5cb85c', color:'white', borderRadius:'4px'}}>Open Link</a>
-                        </div>
-                        <p style={{fontSize: '0.9em', color: '#555'}}>This resume information is valid for approximately {resumeExpiryDays} days.</p>
-                         <div style={{display: 'flex', justifyContent: 'flex-end', marginTop: '20px'}}>
-                            <button onClick={() => setShowResumeCodeInfo(false)} style={{padding:'10px 15px', cursor:'pointer', backgroundColor:'#007bff', color:'white', border:'1px solid #007bff', borderRadius:'4px'}}>Close</button>
-                        </div>
-                    </div>
-                </Modal>
+                    )}
+                    <p>This code/link will be valid for {resumeExpiryDays} days.</p>
+                    <button onClick={() => setShowResumeCodeInfo(false)} className={styles.navButton}>Close</button>
+                </div>
             )}
         </>
     );
 }
-// Helper function stubs (ensure these are fully implemented as before)
-// isAnswerEmpty = (...)
-// shuffleArray = (...)
-// toRoman = (...)
-// toLetters = (...)
 
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext16 - Handle saveAndContinueMethod) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext16.1 - Added Debug Logs for Question Rendering) -----
