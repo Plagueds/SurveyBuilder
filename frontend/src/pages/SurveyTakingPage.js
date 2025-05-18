@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext14.2 - AutoAdvance Logging) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext14.3 - Final Question Next Button Logging) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -131,6 +131,12 @@ function SurveyTakingPage() {
         return currentVisibleIndex >= visibleQuestionIndices.length && originalQuestions.length > 0 && !isLoading;
     }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
 
+    // +++ DEBUG LOG for isSubmitStateDerived +++
+    useEffect(() => {
+        console.log('[Debug] isSubmitStateDerived changed to:', isSubmitStateDerived, 'currentVisibleIndex:', currentVisibleIndex, 'visibleQuestionIndices.length:', visibleQuestionIndices.length);
+    }, [isSubmitStateDerived, currentVisibleIndex, visibleQuestionIndices.length]);
+    // +++ END DEBUG LOG +++
+
     useEffect(() => {
         const effectiveCollectorIdentifier = location.state?.collectorIdentifier || routeCollectorIdentifier;
         setCurrentCollectorIdentifier(effectiveCollectorIdentifier);
@@ -221,31 +227,79 @@ function SurveyTakingPage() {
     const evaluateGlobalLogic = useCallback(() => { if (!survey || !survey.globalSkipLogic || survey.globalSkipLogic.length === 0) return null; return evaluateSurveyLogic(survey.globalSkipLogic, currentAnswers, originalQuestions); }, [survey, currentAnswers, originalQuestions]);
     const evaluateActionLogic = useCallback((questionOriginalIndex) => { const question = originalQuestions[questionOriginalIndex]; if (!question || !question.skipLogic || !Array.isArray(question.skipLogic.rules) || question.skipLogic.rules.length === 0) return null; return evaluateSurveyLogic(question.skipLogic.rules, currentAnswers, originalQuestions); }, [originalQuestions, currentAnswers]);
 
+    // --- MODIFIED handleNext with LOGGING ---
     const handleNext = useCallback(() => {
-        if (isDisqualified || isLoading) return;
+        console.log('[HandleNext] Entered. currentVisibleIndex:', currentVisibleIndex, 'visibleQuestionIndices.length:', visibleQuestionIndices.length);
+        if (isDisqualified || isLoading) {
+            console.log('[HandleNext] Exiting early: isDisqualified or isLoading.');
+            return;
+        }
+
+        // Check if we are trying to navigate beyond the available questions
+        // This can happen if currentVisibleIndex is already at visibleQuestionIndices.length
+        if (currentVisibleIndex >= visibleQuestionIndices.length) {
+            console.log('[HandleNext] Already at or beyond the last question. Attempting to set to submit state.');
+            // Ensure isSubmitStateDerived becomes true by explicitly setting index to length
+            // This also handles the case where there are no visible questions.
+            setCurrentVisibleIndex(visibleQuestionIndices.length);
+            return;
+        }
+
         const currentOriginalIndex = visibleQuestionIndices[currentVisibleIndex];
         const question = originalQuestions[currentOriginalIndex];
-        if (!question) { setCurrentVisibleIndex(prev => prev + 1); return; }
+
+        if (!question) {
+            console.log('[HandleNext] No question object found for current index. Advancing index.');
+            setCurrentVisibleIndex(prev => prev + 1); // This might move to submit state if it was the last placeholder
+            return;
+        }
+        console.log('[HandleNext] Current question:', question.text, 'ID:', question._id);
+
         const isDisabledBySetting = evaluateDisabled(currentOriginalIndex);
-        if (!validateQuestion(question, currentAnswers[question._id], false, isDisabledBySetting)) { if (question.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[question._id], question.type)) toast.error(`Answer required: "${question.text}"`); return; }
-        if (allowBackButton) setVisitedPath(prev => [...prev, currentOriginalIndex]);
+        const currentAnswerForValidation = currentAnswers[question._id];
+        console.log('[HandleNext] Validating question. Answer:', currentAnswerForValidation, 'isDisabled:', isDisabledBySetting);
+
+        if (!validateQuestion(question, currentAnswerForValidation, false, isDisabledBySetting)) {
+            if (question.requiredSetting === 'required' && isAnswerEmpty(currentAnswerForValidation, question.type)) {
+                toast.error(`Answer required: "${question.text}"`);
+                console.log(`[HandleNext] Validation FAILED: Answer required for "${question.text}"`);
+            } else {
+                // This branch will be hit if "Other" text is missing or checkbox min/max is not met
+                console.log(`[HandleNext] Validation FAILED for question "${question.text}" (e.g., "Other" text, min/max answers).`);
+            }
+            return; // Exit if validation fails
+        }
+        console.log('[HandleNext] Validation PASSED for question:', question.text);
+
+        if (allowBackButton) {
+            setVisitedPath(prev => [...prev, currentOriginalIndex]);
+        }
+
         const globalAction = evaluateGlobalLogic();
         if (globalAction) {
+            console.log('[HandleNext] Global logic triggered:', globalAction);
             if (globalAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(globalAction.disqualificationMessage || "Criteria not met."); return; }
             if (globalAction.type === 'skipToQuestion') { const targetIdx = questionIdToOriginalIndexMap[globalAction.targetQuestionId]; const targetVisIdx = targetIdx !== undefined ? visibleQuestionIndices.indexOf(targetIdx) : -1; if (targetVisIdx !== -1) setCurrentVisibleIndex(targetVisIdx); else { toast.warn("Global skip target not visible."); if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length); } return; }
             if (globalAction.type === 'markAsCompleted') { setCurrentVisibleIndex(visibleQuestionIndices.length); return; }
         }
+
         const localAction = evaluateActionLogic(currentOriginalIndex);
         if (localAction) {
+            console.log('[HandleNext] Local logic triggered for Q', question.text, ':', localAction);
             if (localAction.type === 'jumpToQuestion' || localAction.type === 'skipToQuestion') { const targetIdx = questionIdToOriginalIndexMap[localAction.targetQuestionId]; const targetVisIdx = targetIdx !== undefined ? visibleQuestionIndices.indexOf(targetIdx) : -1; if (targetVisIdx !== -1) setCurrentVisibleIndex(targetVisIdx); else { toast.warn("Local skip target not visible."); if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length); } return; }
             else if (localAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(localAction.disqualificationMessage || "Criteria not met."); return; }
             else if (localAction.type === 'endSurvey' || localAction.type === 'markAsCompleted') { setCurrentVisibleIndex(visibleQuestionIndices.length); return; }
         }
-        if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1);
-        else setCurrentVisibleIndex(visibleQuestionIndices.length);
+        
+        if (currentVisibleIndex < visibleQuestionIndices.length - 1) {
+            console.log('[HandleNext] Moving to next question index.');
+            setCurrentVisibleIndex(prev => prev + 1);
+        } else {
+            console.log('[HandleNext] This is the last question. Moving to submit state by setting index to:', visibleQuestionIndices.length);
+            setCurrentVisibleIndex(visibleQuestionIndices.length);
+        }
     }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap]);
-
-    // --- MODIFIED handleInputChange with LOGGING ---
+    
     const handleInputChange = useCallback((questionId, value) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
         const question = questionsById[questionId];
@@ -270,7 +324,7 @@ function SurveyTakingPage() {
                     
                     let canAdvance = true;
                     if (question.addOtherOption && question.requireOtherIfSelected && value === OTHER_VALUE_INTERNAL) {
-                        const otherTextValue = otherInputValues[question._id]; // Use current otherInputValues
+                        const otherTextValue = otherInputValues[question._id];
                         console.log('[AutoAdvance] "Other" selected. Text required:', question.requireOtherIfSelected, 'Text value:', `"${otherTextValue}"`);
                         if (otherTextValue === undefined || otherTextValue.trim() === '') {
                             console.log('[AutoAdvance] Blocked: "Other" selected but text is empty and required.');
@@ -301,7 +355,7 @@ function SurveyTakingPage() {
         handleNext, 
         evaluateDisabled, 
         questionIdToOriginalIndexMap, 
-        otherInputValues // Dependency added
+        otherInputValues
     ]);
     
     const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { setCurrentAnswers(prev => { const currentVal = ensureArray(prev[questionId]); let newVal; if (isChecked) { newVal = [...currentVal, optionValue]; if (optionValue === NA_VALUE_INTERNAL) newVal = [NA_VALUE_INTERNAL]; else if (newVal.includes(NA_VALUE_INTERNAL)) newVal = newVal.filter(v => v !== NA_VALUE_INTERNAL); } else { newVal = currentVal.filter(v => v !== optionValue); } return { ...prev, [questionId]: newVal }; }); const question = questionsById[questionId]; if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
@@ -428,4 +482,4 @@ function SurveyTakingPage() {
     );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext14.2 - AutoAdvance Logging) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext14.3 - Final Question Next Button Logging) -----
