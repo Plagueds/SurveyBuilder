@@ -1,5 +1,5 @@
 // frontend/src/components/SurveySettingsPanel.js
-// ----- START OF COMPLETE UPDATED FILE (v1.4.2 - Restored All Category Renderings) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.4.3 - Restored Styles, Fixed Unused Var) -----
 import React, { useState, useEffect, useCallback } from 'react';
 
 const SETTING_CATEGORIES = {
@@ -9,6 +9,28 @@ const SETTING_CATEGORIES = {
     CUSTOM_VARIABLES: 'Custom Variables',
     APPEARANCE: 'Appearance & Branding',
 };
+
+// --- Styling (Restored from v1.2 to fix no-undef errors) ---
+const panelStyle = { position: 'fixed', top: '0', right: '0', width: '480px', height: '100vh', backgroundColor: '#fdfdfd', borderLeft: '1px solid #ccc', boxShadow: '-3px 0 8px rgba(0,0,0,0.1)', zIndex: 1001, display: 'flex', flexDirection: 'column' };
+const headerStyle = { padding: '15px 20px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor:'#f7f7f7' };
+const navStyle = { display: 'flex', borderBottom: '1px solid #eee', backgroundColor: '#f0f0f0', flexWrap: 'wrap' };
+const navButtonStyle = (isActive) => ({ padding: '10px 15px', border: 'none', background: isActive ? '#fff' : 'transparent', cursor: 'pointer', borderRight: '1px solid #eee', fontWeight: isActive ? 'bold' : 'normal', fontSize:'0.85em', flexShrink:0 });
+const contentStyle = { padding: '20px', overflowY: 'auto', flexGrow: 1 };
+const sectionTitleStyle = { marginTop: '0', marginBottom: '15px', borderBottom: '1px solid #e0e0e0', paddingBottom: '10px', color: '#333', fontSize:'1.1em' };
+const inputGroupStyle = { marginBottom: '18px' };
+const labelStyle = { display: 'block', marginBottom: '6px', fontWeight: '500', fontSize: '0.95em', color: '#444' };
+const inputStyle = { width: '100%', padding: '10px', boxSizing: 'border-box', border: '1px solid #ddd', borderRadius: '4px', fontSize:'0.95em' };
+const textareaStyle = { ...inputStyle, minHeight: '80px', resize: 'vertical' };
+const selectStyle = { ...inputStyle };
+const checkboxLabelStyle = { marginLeft: '8px', fontWeight: 'normal', fontSize: '0.95em', cursor:'pointer', verticalAlign: 'middle' };
+const checkboxInputStyle = { verticalAlign: 'middle', cursor: 'pointer' };
+const subDescriptionStyle = { fontSize: '0.85em', color: '#777', marginTop: '4px' };
+const footerStyle = { padding: '15px 20px', borderTop: '1px solid #eee', background: '#f7f7f7', display: 'flex', justifyContent: 'flex-end' };
+const buttonStyle = { padding: '8px 12px', marginRight: '10px', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight:'500', fontSize:'0.9em' };
+const primaryButtonStyle = { ...buttonStyle, backgroundColor: '#007bff', color: 'white', borderColor: '#007bff' };
+const secondaryButtonStyle = { ...buttonStyle, backgroundColor: '#6c757d', color: 'white', borderColor: '#6c757d' };
+const dangerButtonStyle = { ...buttonStyle, backgroundColor: '#dc3545', color: 'white', borderColor: '#dc3545' };
+// const smallInputStyle = { ...inputStyle, width: 'calc(50% - 10px)', marginRight: '10px', display:'inline-block' }; // This was in v1.2, uncomment if used
 
 const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSave, surveyId }) => {
     const [currentSettings, setCurrentSettings] = useState({});
@@ -45,27 +67,24 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                 saveAndContinueMethod: 'email',
             },
             customVariables: [],
-            appearance: {}, // Added appearance default
+            appearance: {},
         };
 
-        const merged = {}; // Start with an empty object
-
-        // Iterate over default categories to ensure all are present
+        const merged = {};
         for (const categoryKey in defaults) {
             if (defaults.hasOwnProperty(categoryKey)) {
                 merged[categoryKey] = {
-                    ...defaults[categoryKey], // Start with category defaults
-                    ...(settingsFromProps?.[categoryKey] || {}) // Override with props if they exist for this category
+                    ...defaults[categoryKey], 
+                    ...(settingsFromProps?.[categoryKey] || {}) 
                 };
-
-                // Specific handling for customVariables to ensure it's an array
                 if (categoryKey === 'customVariables' && !Array.isArray(merged[categoryKey])) {
                     merged[categoryKey] = settingsFromProps?.[categoryKey] ? [...settingsFromProps[categoryKey]] : [];
                 }
-
-                // Specific handling for behaviorNavigation
                 if (categoryKey === 'behaviorNavigation') {
-                    const bn = merged[categoryKey]; // Already merged with defaults and props
+                    if (typeof merged[categoryKey] !== 'object' || merged[categoryKey] === null) {
+                        merged[categoryKey] = { ...defaults[categoryKey] };
+                    }
+                    const bn = merged[categoryKey];
                     const validMethods = ['email', 'code', 'both'];
                     if (!validMethods.includes(bn.saveAndContinueMethod)) {
                         bn.saveAndContinueMethod = defaults.behaviorNavigation.saveAndContinueMethod;
@@ -80,8 +99,6 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
                 }
             }
         }
-        // Copy any top-level settings from props that aren't in defaults (e.g., _id, title)
-        // This is less likely for this component but good for robustness
         for (const key in settingsFromProps) {
             if (settingsFromProps.hasOwnProperty(key) && !defaults.hasOwnProperty(key)) {
                 merged[key] = settingsFromProps[key];
@@ -90,37 +107,116 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
         return merged;
     }, []);
 
-
     useEffect(() => {
         if (isOpen) {
             try {
-                const newMergedSettings = mergeWithDefaults(initialSettings || {}); // Pass empty object if initialSettings is null/undefined
+                const newMergedSettings = mergeWithDefaults(initialSettings || {});
                 setCurrentSettings(newMergedSettings);
             } catch (error) {
                 console.error("Error merging settings in SurveySettingsPanel:", error);
-                setCurrentSettings(mergeWithDefaults({})); // Fallback to complete defaults
+                setCurrentSettings(mergeWithDefaults({}));
             }
         }
     }, [isOpen, initialSettings, mergeWithDefaults]);
 
-    if (!isOpen || Object.keys(currentSettings).length === 0) { // Don't render if not open or settings not ready
+    if (!isOpen || Object.keys(currentSettings).length === 0) {
         return null;
     }
 
-    const handleNestedChange = (category, field, value) => { /* ... same as v1.4.1 ... */ };
-    const handleInputChange = (category, e) => { /* ... same as v1.4.1 ... */ };
-    const getValidatedExpiryDays = (currentDaysValue) => { /* ... same as v1.4.1 ... */ };
-    const handleCustomVariableChange = (index, field, value) => { /* ... same as v1.4.1 ... */ };
-    const handleAddCustomVariable = () => { /* ... same as v1.4.1 ... */ };
-    const handleRemoveCustomVariable = (index) => { /* ... same as v1.4.1 ... */ };
-    const handleSave = () => { /* ... same as v1.4.1 ... */ };
+    const handleNestedChange = (category, field, value) => {
+        setCurrentSettings(prev => ({
+            ...prev,
+            [category]: {
+                ...(prev[category] || {}),
+                [field]: value
+            }
+        }));
+    };
 
-    // --- Styling (same as before) ---
-    const panelStyle = { /* ... */ };
-    const headerStyle = { /* ... */ };
-    // ... all other styles
+    const handleInputChange = (category, e) => {
+        const { name, value, type, checked } = e.target;
+        let valToSet;
+        if (type === 'checkbox') {
+            valToSet = checked;
+        } else if (type === 'number') {
+            if (name === 'saveAndContinueEmailLinkExpiryDays') {
+                valToSet = value === '' ? '' : parseInt(value, 10);
+            } else {
+                 const numVal = parseInt(value, 10);
+                 valToSet = isNaN(numVal) ? 0 : numVal;
+            }
+        } else {
+            valToSet = value;
+        }
+        handleNestedChange(category, name, valToSet);
+    };
+    
+    // This function is now used in handleSave
+    const getValidatedExpiryDays = (currentDaysValue) => {
+        let days = parseInt(currentDaysValue, 10);
+        if (isNaN(days) || days < 1) {
+            return 1; 
+        }
+        if (days > 90) {
+            return 90;
+        }
+        return days;
+    };
 
-    // --- RENDER FUNCTIONS FOR EACH CATEGORY (Ensure these have their full JSX) ---
+    const handleCustomVariableChange = (index, field, value) => {
+        const updatedCustomVars = [...(currentSettings.customVariables || [])];
+        updatedCustomVars[index] = { ...updatedCustomVars[index], [field]: value };
+        setCurrentSettings(prev => ({ ...prev, customVariables: updatedCustomVars }));
+    };
+
+    const handleAddCustomVariable = () => {
+        if (!newCustomVarKey.trim()) { alert("Custom variable key cannot be empty."); return; }
+        if (!/^[a-zA-Z0-9_]+$/.test(newCustomVarKey.trim())) { alert("Custom variable key can only contain letters, numbers, and underscores."); return; }
+        const existingKeys = (currentSettings.customVariables || []).map(cv => cv.key);
+        if (existingKeys.includes(newCustomVarKey.trim())) { alert("Custom variable key must be unique."); return; }
+        const newVar = { key: newCustomVarKey.trim(), label: newCustomVarLabel.trim() || newCustomVarKey.trim() };
+        setCurrentSettings(prev => ({ ...prev, customVariables: [...(prev.customVariables || []), newVar] }));
+        setNewCustomVarKey(''); setNewCustomVarLabel('');
+    };
+
+    const handleRemoveCustomVariable = (index) => {
+        const updatedCustomVars = [...(currentSettings.customVariables || [])];
+        updatedCustomVars.splice(index, 1);
+        setCurrentSettings(prev => ({ ...prev, customVariables: updatedCustomVars }));
+    };
+
+    const handleSave = () => {
+        const validatedSettings = { ...currentSettings };
+        // Ensure behaviorNavigation exists before trying to access its properties
+        if (validatedSettings.behaviorNavigation) {
+            validatedSettings.behaviorNavigation = {
+                ...validatedSettings.behaviorNavigation,
+                saveAndContinueEmailLinkExpiryDays: getValidatedExpiryDays( // Use the function here
+                    validatedSettings.behaviorNavigation.saveAndContinueEmailLinkExpiryDays
+                ),
+            };
+        } else { // If behaviorNavigation is somehow missing, initialize it from defaults
+            validatedSettings.behaviorNavigation = {
+                ...mergeWithDefaults(null).behaviorNavigation,
+                saveAndContinueEmailLinkExpiryDays: getValidatedExpiryDays(
+                    mergeWithDefaults(null).behaviorNavigation.saveAndContinueEmailLinkExpiryDays
+                )
+            };
+        }
+
+
+        const settingsToSave = {
+            completion: validatedSettings.completion || mergeWithDefaults(null).completion,
+            accessSecurity: validatedSettings.accessSecurity || mergeWithDefaults(null).accessSecurity,
+            behaviorNavigation: validatedSettings.behaviorNavigation, // Already validated and ensured
+            customVariables: validatedSettings.customVariables || [],
+            appearance: validatedSettings.appearance || mergeWithDefaults(null).appearance,
+        };
+
+        console.log("Saving survey-wide settings:", settingsToSave);
+        onSave(settingsToSave);
+    };
+
     const renderCompletionSettings = () => {
         const settings = currentSettings.completion || mergeWithDefaults({}).completion;
         return (
@@ -229,7 +325,6 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
         const displayExpiryDays = typeof settings.saveAndContinueEmailLinkExpiryDays === 'number' 
             ? settings.saveAndContinueEmailLinkExpiryDays 
             : '';
-
         return (
             <>
                 <h3 style={sectionTitleStyle}>Survey Flow & Navigation</h3>
@@ -301,7 +396,7 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
     };
 
     const renderCustomVariablesSettings = () => {
-        const customVars = currentSettings.customVariables || []; // Fallback to empty array
+        const customVars = currentSettings.customVariables || [];
         return (
             <>
                 <h3 style={sectionTitleStyle}>Custom Variables (Hidden Fields)</h3>
@@ -325,10 +420,8 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
     };
     
     const renderAppearanceSettings = () => {
-        // const settings = currentSettings.appearance || mergeWithDefaults({}).appearance; // If you add specific appearance settings
         return <p>Appearance settings are not yet implemented.</p>;
     };
-
 
     return (
         <div style={panelStyle}>
@@ -363,4 +456,4 @@ const SurveySettingsPanel = ({ isOpen, onClose, settings: initialSettings, onSav
 };
 
 export default SurveySettingsPanel;
-// ----- END OF COMPLETE UPDATED FILE (v1.4.2 - Restored All Category Renderings) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.4.3 - Restored Styles, Fixed Unused Var) -----
