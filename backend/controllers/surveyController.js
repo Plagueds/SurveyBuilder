@@ -1,19 +1,18 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE UPDATED FILE (vNext25 - Handle Save & Continue, Custom Vars Settings) -----
+// ----- START OF COMPLETE UPDATED FILE (vNext26 - Integrated Email Service) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
-const crypto = require('crypto'); // For generating resume tokens
+const crypto = require('crypto'); 
 const Survey = require('../models/Survey');
 const Question = require('../models/Question');
 const Answer = require('../models/Answer');
 const Collector = require('../models/Collector');
 const Response = require('../models/Response');
-const PartialResponse = require('../models/PartialResponse'); // +++ NEW +++
+const PartialResponse = require('../models/PartialResponse');
 const { evaluateAllLogic } = require('../utils/logicEvaluator');
 const axios = require('axios');
 const ipRangeCheck = require('ip-range-check');
-// TODO: Setup an email service (e.g., Nodemailer)
-// const emailService = require('../services/emailService'); 
+const emailService = require('../services/emailService'); // +++ Import Email Service +++
 
 const getIpAddress = (request) => {
     const xForwardedFor = request.headers['x-forwarded-for'];
@@ -98,19 +97,17 @@ exports.createSurvey = async (req, res) => {
             questionNumberingEnabled: true,
             questionNumberingFormat: '123',
             questionNumberingCustomPrefix: '',
-            // +++ NEW DEFAULTS +++
             saveAndContinueEnabled: false,
             saveAndContinueEmailLinkExpiryDays: 7,
         };
-        const defaultCustomVariables = []; // Default for customVariables
+        const defaultCustomVariables = []; 
 
         const mergedSettings = {
-            ...(settings || {}), // Ensure settings is an object
+            ...(settings || {}), 
             behaviorNavigation: {
                 ...defaultBehaviorNav,
                 ...(settings?.behaviorNavigation || {})
             },
-            // +++ Ensure customVariables is initialized +++
             customVariables: settings?.customVariables || defaultCustomVariables
         };
 
@@ -131,7 +128,7 @@ exports.createSurvey = async (req, res) => {
 
 exports.getSurveyById = async (req, res) => {
     const { surveyId } = req.params;
-    const { forTaking, collectorId, isPreviewingOwner, resumeToken } = req.query; // +++ Added resumeToken +++
+    const { forTaking, collectorId, isPreviewingOwner, resumeToken } = req.query; 
 
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
         return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
@@ -140,11 +137,10 @@ exports.getSurveyById = async (req, res) => {
     try {
         let surveyQuery = Survey.findById(surveyId);
         let actualCollectorDoc = null;
-        let partialResponseData = null; // +++ For resumed survey +++
+        let partialResponseData = null; 
 
         if (forTaking === 'true') {
             surveyQuery = surveyQuery
-                // +++ Added settings.customVariables to select +++
                 .select('title description welcomeMessage thankYouMessage status questions settings.completion settings.behaviorNavigation settings.customVariables globalSkipLogic randomizationLogic')
                 .populate({ path: 'questions', options: { sort: { order: 1 } } });
 
@@ -156,7 +152,7 @@ exports.getSurveyById = async (req, res) => {
                 if (!actualCollectorDoc) actualCollectorDoc = await Collector.findOne({ linkId: collectorId, survey: surveyId }).select(selectFields);
                 if (!actualCollectorDoc) actualCollectorDoc = await Collector.findOne({ 'settings.web_link.customSlug': collectorId, survey: surveyId }).select(selectFields);
             }
-        } else { // For admin/editing view
+        } else { 
             surveyQuery = surveyQuery.populate({ path: 'questions' }).populate('collectors');
         }
 
@@ -170,40 +166,35 @@ exports.getSurveyById = async (req, res) => {
         const effectiveIsOwnerPreviewing = isPreviewingOwner === 'true' && req.user && String(survey.createdBy) === String(req.user.id);
 
         if (forTaking === 'true') {
-            if (survey.status !== 'active' && !effectiveIsOwnerPreviewing && !resumeToken) { // Allow resume even if survey not active (if token valid)
+            if (survey.status !== 'active' && !effectiveIsOwnerPreviewing && !resumeToken) { 
                 return res.status(403).json({ success: false, message: 'This survey is not currently active.' });
             }
             if (collectorId && !actualCollectorDoc && !effectiveIsOwnerPreviewing && !resumeToken) {
                  return res.status(404).json({ success: false, message: 'Collector not found or invalid for this survey.' });
             }
 
-            // +++ Handle Resume Token +++
             if (resumeToken) {
                 const partialResponse = await PartialResponse.findOne({ resumeToken: resumeToken, survey: survey._id });
                 if (!partialResponse) {
                     return res.status(404).json({ success: false, message: 'Invalid or expired resume link.' });
                 }
                 if (partialResponse.expiresAt < new Date()) {
-                    // Optionally delete expired token here
-                    // await PartialResponse.deleteOne({ _id: partialResponse._id });
                     return res.status(410).json({ success: false, message: 'This resume link has expired.' });
                 }
                 if (partialResponse.completedAt) {
                      return res.status(410).json({ success: false, message: 'This survey session has already been completed.' });
                 }
-                partialResponseData = partialResponse.toObject(); // Pass to frontend
-                // If resuming, the collector associated with the partial response should be used
+                partialResponseData = partialResponse.toObject(); 
                 if (!actualCollectorDoc && partialResponse.collector) {
                      actualCollectorDoc = await Collector.findById(partialResponse.collector).select('+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist +settings.web_link.allowBackButton +settings.web_link.progressBarEnabled +settings.web_link.progressBarStyle +settings.web_link.progressBarPosition');
                 }
             }
 
-
             if (actualCollectorDoc) {
                 if (String(actualCollectorDoc.survey) !== String(survey._id)) return res.status(400).json({ success: false, message: 'Collector does not belong to this survey.' });
                 if (actualCollectorDoc.status !== 'open' && !effectiveIsOwnerPreviewing && !resumeToken) return res.status(403).json({ success: false, message: `Link is ${actualCollectorDoc.status}.` });
 
-                if (actualCollectorDoc.settings?.web_link && !effectiveIsOwnerPreviewing && !resumeToken) { // Don't re-check IP if resuming
+                if (actualCollectorDoc.settings?.web_link && !effectiveIsOwnerPreviewing && !resumeToken) { 
                     const respondentIp = getIpAddress(req);
                     const { ipAllowlist, ipBlocklist } = actualCollectorDoc.settings.web_link;
                     if (respondentIp) {
@@ -211,7 +202,7 @@ exports.getSurveyById = async (req, res) => {
                         if (ipBlocklist?.length > 0 && ipBlocklist.some(blockedIpOrRange => ipRangeCheck(respondentIp, blockedIpOrRange))) return res.status(403).json({ success: false, message: 'Access to this survey is restricted from your current IP address (in blocklist).' });
                     }
                 }
-                if (actualCollectorDoc.type === 'web_link' && actualCollectorDoc.settings?.web_link?.password && !resumeToken) { // Don't ask for password if resuming
+                if (actualCollectorDoc.type === 'web_link' && actualCollectorDoc.settings?.web_link?.password && !resumeToken) { 
                     const providedPassword = req.headers['x-survey-password'];
                     const passwordMatch = await actualCollectorDoc.comparePassword(providedPassword);
                     if (!providedPassword || !passwordMatch) return res.status(401).json({ success: false, message: 'Password required or incorrect.', requiresPassword: true });
@@ -233,7 +224,6 @@ exports.getSurveyById = async (req, res) => {
                 autoAdvance: false, 
                 questionNumberingEnabled: true, 
                 questionNumberingFormat: '123',
-                // +++ NEW DEFAULTS FOR SURVEY TAKING +++
                 saveAndContinueEnabled: false,
                 saveAndContinueEmailLinkExpiryDays: 7,
             };
@@ -245,7 +235,6 @@ exports.getSurveyById = async (req, res) => {
                     ...defaultBehaviorNav,
                     ...(surveyResponseData.settings?.behaviorNavigation || {})
                 },
-                // +++ Ensure customVariables is passed +++
                 customVariables: surveyResponseData.settings?.customVariables || defaultCustomVariables
             };
             
@@ -267,7 +256,6 @@ exports.getSurveyById = async (req, res) => {
                 };
                 surveyResponseData.actualCollectorObjectId = null;
             }
-            // +++ Add partial response data if resuming +++
             if (partialResponseData) {
                 surveyResponseData.partialResponse = partialResponseData;
             }
@@ -293,27 +281,17 @@ exports.updateSurvey = async (req, res) => {
         if (req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') { await session.abortTransaction(); session.endSession(); return res.status(403).json({ success: false, message: 'Not authorized.' }); }
 
         if (updates.hasOwnProperty('questions') && Array.isArray(updates.questions)) {
-            // ... (question update logic - no changes needed here for now)
             const receivedQuestionObjects = updates.questions;
             const newQuestionObjectIdsForSurvey = [];
-
             for (let i = 0; i < receivedQuestionObjects.length; i++) {
                 const qDataFromPayload = receivedQuestionObjects[i];
-                if (!qDataFromPayload._id || !mongoose.Types.ObjectId.isValid(qDataFromPayload._id)) {
-                    await session.abortTransaction(); session.endSession();
-                    return res.status(400).json({ success: false, message: `Invalid or missing _id for question object at index ${i}.` });
-                }
+                if (!qDataFromPayload._id || !mongoose.Types.ObjectId.isValid(qDataFromPayload._id)) { await session.abortTransaction(); session.endSession(); return res.status(400).json({ success: false, message: `Invalid or missing _id for question object at index ${i}.` }); }
                 const questionObjectId = new mongoose.Types.ObjectId(qDataFromPayload._id);
                 newQuestionObjectIdsForSurvey.push(questionObjectId);
                 const { _id, survey: qPayloadSurveyId, createdAt, updatedAt, ...questionUpdateData } = qDataFromPayload;
                 questionUpdateData.survey = survey._id;
                 const setOps = {}; const unsetOps = {};
-                for (const key in questionUpdateData) {
-                    if (questionUpdateData.hasOwnProperty(key)) {
-                        if (questionUpdateData[key] === undefined) unsetOps[key] = "";
-                        else setOps[key] = questionUpdateData[key];
-                    }
-                }
+                for (const key in questionUpdateData) { if (questionUpdateData.hasOwnProperty(key)) { if (questionUpdateData[key] === undefined) unsetOps[key] = ""; else setOps[key] = questionUpdateData[key]; } }
                 const updateCommand = {};
                 if (Object.keys(setOps).length > 0) updateCommand.$set = setOps;
                 if (Object.keys(unsetOps).length > 0) updateCommand.$unset = unsetOps;
@@ -342,39 +320,23 @@ exports.updateSurvey = async (req, res) => {
         
         if (updates.settings) {
             survey.settings = survey.settings || {}; 
-            const defaultBehaviorNav = { 
-                autoAdvance: false, questionNumberingEnabled: true, questionNumberingFormat: '123', 
-                questionNumberingCustomPrefix: '', saveAndContinueEnabled: false, saveAndContinueEmailLinkExpiryDays: 7 
-            };
+            const defaultBehaviorNav = { autoAdvance: false, questionNumberingEnabled: true, questionNumberingFormat: '123', questionNumberingCustomPrefix: '', saveAndContinueEnabled: false, saveAndContinueEmailLinkExpiryDays: 7 };
             const defaultCustomVariables = [];
-
             for (const categoryKey in updates.settings) {
                 if (updates.settings.hasOwnProperty(categoryKey)) {
-                    if (categoryKey === 'customVariables') { // Handle customVariables as an array
-                        survey.settings.customVariables = Array.isArray(updates.settings.customVariables) 
-                            ? updates.settings.customVariables 
-                            : defaultCustomVariables;
+                    if (categoryKey === 'customVariables') { survey.settings.customVariables = Array.isArray(updates.settings.customVariables) ? updates.settings.customVariables : defaultCustomVariables;
                     } else if (typeof updates.settings[categoryKey] === 'object' && updates.settings[categoryKey] !== null && !Array.isArray(updates.settings[categoryKey])) {
-                        survey.settings[categoryKey] = {
-                            ...(survey.settings[categoryKey] || (categoryKey === 'behaviorNavigation' ? defaultBehaviorNav : {})), // Apply defaults for nested
-                            ...updates.settings[categoryKey]
-                        };
-                    } else {
-                        survey.settings[categoryKey] = updates.settings[categoryKey];
-                    }
+                        survey.settings[categoryKey] = { ...(survey.settings[categoryKey] || (categoryKey === 'behaviorNavigation' ? defaultBehaviorNav : {})), ...updates.settings[categoryKey] };
+                    } else { survey.settings[categoryKey] = updates.settings[categoryKey]; }
                 }
             }
-            // Ensure defaults are present if a category was not in updates but should exist
             if (!survey.settings.behaviorNavigation) survey.settings.behaviorNavigation = defaultBehaviorNav;
             else survey.settings.behaviorNavigation = { ...defaultBehaviorNav, ...survey.settings.behaviorNavigation };
-
             if (!survey.settings.customVariables) survey.settings.customVariables = defaultCustomVariables;
         }
 
         const allowedTopLevelFields = ['title', 'description', 'status', 'randomizationLogic', 'welcomeMessage', 'thankYouMessage', 'globalSkipLogic'];
-        for (const key of allowedTopLevelFields) {
-            if (updates.hasOwnProperty(key)) survey[key] = updates[key];
-        }
+        for (const key of allowedTopLevelFields) { if (updates.hasOwnProperty(key)) survey[key] = updates[key]; }
         survey.updatedAt = Date.now();
         const updatedSurvey = await survey.save({ session });
         await session.commitTransaction();
@@ -391,25 +353,18 @@ exports.updateSurvey = async (req, res) => {
 };
 
 exports.deleteSurvey = async (req, res) => {
-    // ... (no changes needed here for now)
     const { surveyId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(surveyId)) return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
         const survey = await Survey.findById(surveyId).session(session);
-        if (!survey) {
-            await session.abortTransaction(); session.endSession();
-            return res.status(404).json({ success: false, message: 'Survey not found.' });
-        }
-        if (req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
-            await session.abortTransaction(); session.endSession();
-            return res.status(403).json({ success: false, message: 'Not authorized to delete this survey.' });
-        }
+        if (!survey) { await session.abortTransaction(); session.endSession(); return res.status(404).json({ success: false, message: 'Survey not found.' }); }
+        if (req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') { await session.abortTransaction(); session.endSession(); return res.status(403).json({ success: false, message: 'Not authorized to delete this survey.' }); }
         await Question.deleteMany({ survey: survey._id }, { session });
         await Answer.deleteMany({ survey: survey._id }, { session });
         await Response.deleteMany({ survey: survey._id }, { session });
-        await PartialResponse.deleteMany({ survey: survey._id }, { session }); // +++ Delete partial responses +++
+        await PartialResponse.deleteMany({ survey: survey._id }, { session }); 
         await Collector.deleteMany({ survey: survey._id }, { session });
         await Survey.findByIdAndDelete(surveyId, { session });
         await session.commitTransaction();
@@ -425,7 +380,7 @@ exports.deleteSurvey = async (req, res) => {
 
 exports.submitSurveyAnswers = async (req, res) => {
     const { surveyId: surveyParamId } = req.params;
-    const { answers: answersPayload, sessionId: payloadSessionId, collectorId: collectorParamId, recaptchaToken, startedAt: clientStartedAt, customVariables: passedCustomVariables, resumeToken } = req.body; // +++ Added customVariables, resumeToken +++
+    const { answers: answersPayload, sessionId: payloadSessionId, collectorId: collectorParamId, recaptchaToken, startedAt: clientStartedAt, customVariables: passedCustomVariables, resumeToken } = req.body; 
     const respondentIp = getIpAddress(req);
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const sessionIdToUse = payloadSessionId || new mongoose.Types.ObjectId().toString();
@@ -436,37 +391,81 @@ exports.submitSurveyAnswers = async (req, res) => {
         mongoSession.startTransaction();
         
         const survey = await Survey.findById(surveyParamId).populate('questions').session(mongoSession);
-        if (!survey) { await mongoSession.abortTransaction(); return res.status(404).json({ success: false, message: 'Survey not found.' }); }
+        if (!survey) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Survey not found.' }); }
         
-        const collector = await Collector.findById(collectorParamId).select('+settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist').session(mongoSession);
-        if (!collector) { await mongoSession.abortTransaction(); return res.status(404).json({ success: false, message: 'Collector not found.' }); }
+        // Collector ID might be null if resuming and not passed explicitly, but partial response should have it.
+        // If not resuming, collectorId is essential.
+        let collector;
+        if (collectorParamId && mongoose.Types.ObjectId.isValid(collectorParamId)) {
+            collector = await Collector.findById(collectorParamId)
+                .select('+settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist')
+                .session(mongoSession);
+        }
+        
+        if (!collector && !resumeToken) { // If no collectorId provided and not resuming, it's an issue.
+            await mongoSession.abortTransaction(); mongoSession.endSession();
+            return res.status(404).json({ success: false, message: 'Collector information is missing or invalid.' });
+        }
+        // If resuming, collector might be loaded later from partialResponse if not provided in params
         
         const isOwnerPreviewingDraft = survey.status === 'draft' && req.user && String(survey.createdBy) === String(req.user.id);
 
-        if (survey.status !== 'active' && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: 'This survey is not currently active.' }); }
-        if (collector.status !== 'open' && !isOwnerPreviewingDraft) { await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: `This survey link is ${collector.status}.` }); }
+        if (survey.status !== 'active' && !isOwnerPreviewingDraft && !resumeToken) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(403).json({ success: false, message: 'This survey is not currently active.' }); }
+        
+        if (collector && collector.status !== 'open' && !isOwnerPreviewingDraft && !resumeToken) { 
+            await mongoSession.abortTransaction(); mongoSession.endSession(); 
+            return res.status(403).json({ success: false, message: `This survey link is ${collector.status}.` }); 
+        }
 
-        if (collector.type === 'web_link' && collector.settings?.web_link && !isOwnerPreviewingDraft) {
+        if (collector && collector.type === 'web_link' && collector.settings?.web_link && !isOwnerPreviewingDraft && !resumeToken) {
             const { ipAllowlist, ipBlocklist } = collector.settings.web_link;
             if (respondentIp) {
-                if (ipAllowlist?.length > 0 && !ipAllowlist.some(allowedIpOrRange => ipRangeCheck(respondentIp, allowedIpOrRange))) { await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: 'Access restricted (not in allowlist).' }); }
-                if (ipBlocklist?.length > 0 && ipBlocklist.some(blockedIpOrRange => ipRangeCheck(respondentIp, blockedIpOrRange))) { await mongoSession.abortTransaction(); return res.status(403).json({ success: false, message: 'Access restricted (in blocklist).' }); }
+                if (ipAllowlist?.length > 0 && !ipAllowlist.some(allowedIpOrRange => ipRangeCheck(respondentIp, allowedIpOrRange))) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(403).json({ success: false, message: 'Access restricted (not in allowlist).' }); }
+                if (ipBlocklist?.length > 0 && ipBlocklist.some(blockedIpOrRange => ipRangeCheck(respondentIp, blockedIpOrRange))) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(403).json({ success: false, message: 'Access restricted (in blocklist).' }); }
             }
         }
 
-        if (collector.type === 'web_link' && collector.settings?.web_link?.enableRecaptcha && !isOwnerPreviewingDraft) {
-            if (!recaptchaToken) { await mongoSession.abortTransaction(); return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed (token missing).' }); }
+        if (collector && collector.type === 'web_link' && collector.settings?.web_link?.enableRecaptcha && !isOwnerPreviewingDraft && !resumeToken) {
+            if (!recaptchaToken) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed (token missing).' }); }
             try {
                 const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
                 if (!recaptchaSecret) throw new Error("reCAPTCHA secret key not configured on server.");
                 const verificationUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${recaptchaToken}&remoteip=${respondentIp}`;
                 const recaptchaApiResponse = await axios.post(verificationUrl);
-                if (!recaptchaApiResponse.data.success) { await mongoSession.abortTransaction(); return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed.', errors: recaptchaApiResponse.data['error-codes'] }); }
+                if (!recaptchaApiResponse.data.success) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'reCAPTCHA verification failed.', errors: recaptchaApiResponse.data['error-codes'] }); }
             } catch (recaptchaError) {
                 console.error("[B_SUBMIT_ERROR] Error during reCAPTCHA verification:", recaptchaError.message);
-                await mongoSession.abortTransaction(); return res.status(500).json({ success: false, message: 'Error during reCAPTCHA verification.' });
+                await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(500).json({ success: false, message: 'Error during reCAPTCHA verification.' });
             }
         }
+        
+        let partialResponseDoc;
+        if (resumeToken) {
+            partialResponseDoc = await PartialResponse.findOne({ resumeToken: resumeToken, survey: survey._id }).session(mongoSession);
+            if (!partialResponseDoc) {
+                await mongoSession.abortTransaction(); mongoSession.endSession();
+                return res.status(404).json({ success: false, message: 'Resume token invalid or expired.' });
+            }
+            if (partialResponseDoc.completedAt) {
+                await mongoSession.abortTransaction(); mongoSession.endSession();
+                return res.status(410).json({ success: false, message: 'This survey session was already completed.' });
+            }
+            if (!collector && partialResponseDoc.collector) { // Load collector from partial response if not already loaded
+                collector = await Collector.findById(partialResponseDoc.collector)
+                    .select('+settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist')
+                    .session(mongoSession);
+                if (!collector) {
+                     await mongoSession.abortTransaction(); mongoSession.endSession();
+                     return res.status(404).json({ success: false, message: 'Collector associated with resume token not found.' });
+                }
+            }
+        }
+        
+        if (!collector) { // Final check if collector is still not resolved (shouldn't happen if logic is correct)
+             await mongoSession.abortTransaction(); mongoSession.endSession();
+             return res.status(400).json({ success: false, message: 'Collector could not be determined for this submission.' });
+        }
+
 
         const answersToUpsert = [];
         if (answersPayload && Array.isArray(answersPayload)) {
@@ -484,7 +483,7 @@ exports.submitSurveyAnswers = async (req, res) => {
         if (answersToUpsert.length > 0) {
             const bulkWriteResult = await Answer.bulkWrite(answersToUpsert, { session: mongoSession });
             if (bulkWriteResult.hasWriteErrors()) {
-               await mongoSession.abortTransaction();
+               await mongoSession.abortTransaction(); mongoSession.endSession();
                return res.status(500).json({ success: false, message: 'Error saving some answers.', details: bulkWriteResult.getWriteErrors() });
             }
         }
@@ -494,8 +493,7 @@ exports.submitSurveyAnswers = async (req, res) => {
             ipAddress: collector.settings?.web_link?.anonymousResponses ? undefined : respondentIp,
             userAgent: collector.settings?.web_link?.anonymousResponses ? undefined : userAgent,
             isTestResponse: isOwnerPreviewingDraft,
-            // +++ Store Custom Variables +++
-            customVariables: passedCustomVariables || new Map() // Store as a Map
+            customVariables: passedCustomVariables || new Map() 
         };
 
         const updatedResponse = await Response.findOneAndUpdate(
@@ -516,7 +514,7 @@ exports.submitSurveyAnswers = async (req, res) => {
 
         if (!isOwnerPreviewingDraft) {
             await Collector.updateOne({ _id: collector._id }, { $inc: { responseCount: 1 } }, { session: mongoSession });
-            const updatedCollector = await Collector.findById(collector._id).session(mongoSession); // Re-fetch to check maxResponses
+            const updatedCollector = await Collector.findById(collector._id).session(mongoSession); 
             if (updatedCollector && updatedCollector.settings?.web_link?.maxResponses && updatedCollector.responseCount >= updatedCollector.settings.web_link.maxResponses) {
                 await Collector.updateOne({ _id: updatedCollector._id }, { $set: { status: 'overquota' } }, { session: mongoSession });
                 if (updatedResponse) { updatedResponse.status = 'overquota'; await updatedResponse.save({ session: mongoSession }); }
@@ -526,16 +524,14 @@ exports.submitSurveyAnswers = async (req, res) => {
             await updatedResponse.save({ session: mongoSession });
         }
 
-        // +++ If survey was resumed, mark the partial response as completed +++
-        if (resumeToken) {
-            await PartialResponse.updateOne(
-                { resumeToken: resumeToken, survey: survey._id },
-                { $set: { completedAt: new Date(), respondentEmail: undefined } }, // Clear email after completion for privacy if desired
-                { session: mongoSession }
-            );
+        if (partialResponseDoc) { // If survey was resumed, mark the partial response as completed
+            partialResponseDoc.completedAt = new Date();
+            // partialResponseDoc.respondentEmail = undefined; // Optionally clear email
+            await partialResponseDoc.save({ session: mongoSession });
         }
 
         await mongoSession.commitTransaction();
+        mongoSession.endSession();
 
         const finalResponseStatus = updatedResponse ? updatedResponse.status : 'completed';
         const responseMessage = finalResponseStatus === 'disqualified'
@@ -561,15 +557,11 @@ exports.submitSurveyAnswers = async (req, res) => {
         if (mongoSession && mongoSession.inTransaction()) {
             try { await mongoSession.abortTransaction(); } catch (abortError) { console.error("[B_SUBMIT_CRITICAL_ERROR] Failed to abort transaction:", abortError.message); }
         }
+         if (mongoSession) mongoSession.endSession(); // Ensure session is always ended
         if (!res.headersSent) res.status(500).json({ success: false, message: error.message || 'An unexpected error occurred on the server while submitting answers.' });
-    } finally {
-        if (mongoSession) {
-            try { if (typeof mongoSession.endSession === 'function') await mongoSession.endSession(); } catch (e) { console.error("Error ending session", e); }
-        }
     }
 };
 
-// +++ NEW: Endpoint to handle "Save and Continue Later" requests +++
 exports.savePartialResponse = async (req, res) => {
     const { surveyId } = req.params;
     const { collectorId, respondentEmail, currentAnswers, otherInputValues, currentVisibleIndex, visitedPath, sessionId } = req.body;
@@ -577,29 +569,28 @@ exports.savePartialResponse = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(surveyId) || (collectorId && !mongoose.Types.ObjectId.isValid(collectorId))) {
         return res.status(400).json({ success: false, message: 'Invalid Survey or Collector ID.' });
     }
-    if (!respondentEmail) { // Basic validation
-        return res.status(400).json({ success: false, message: 'Email address is required to save progress.' });
+    if (!respondentEmail || !/\S+@\S+\.\S+/.test(respondentEmail)) {
+        return res.status(400).json({ success: false, message: 'A valid email address is required to save progress.' });
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    const mongoSession = await mongoose.startSession();
+    mongoSession.startTransaction();
     try {
-        const survey = await Survey.findById(surveyId).select('settings.behaviorNavigation').session(session);
+        const survey = await Survey.findById(surveyId).select('title settings.behaviorNavigation').session(mongoSession);
         if (!survey) {
-            await session.abortTransaction(); session.endSession();
+            await mongoSession.abortTransaction(); mongoSession.endSession();
             return res.status(404).json({ success: false, message: 'Survey not found.' });
         }
         if (!survey.settings?.behaviorNavigation?.saveAndContinueEnabled) {
-            await session.abortTransaction(); session.endSession();
+            await mongoSession.abortTransaction(); mongoSession.endSession();
             return res.status(400).json({ success: false, message: 'Save and Continue feature is not enabled for this survey.' });
         }
 
-        const collector = await Collector.findById(collectorId).session(session);
-         if (!collector) { // Ensure collector is valid
-            await session.abortTransaction(); session.endSession();
+        const collector = await Collector.findById(collectorId).session(mongoSession);
+         if (!collector) { 
+            await mongoSession.abortTransaction(); mongoSession.endSession();
             return res.status(404).json({ success: false, message: 'Collector not found.' });
         }
-
 
         const resumeToken = crypto.randomBytes(20).toString('hex');
         const expiryDays = survey.settings.behaviorNavigation.saveAndContinueEmailLinkExpiryDays || 7;
@@ -609,41 +600,44 @@ exports.savePartialResponse = async (req, res) => {
         const partialResponse = new PartialResponse({
             survey: surveyId,
             collector: collectorId,
-            sessionId: sessionId || new mongoose.Types.ObjectId().toString(), // Use provided session or generate new
+            sessionId: sessionId || new mongoose.Types.ObjectId().toString(),
             resumeToken,
             respondentEmail,
             answers: currentAnswers || {},
             otherInputValues: otherInputValues || {},
-            currentVisibleIndex: currentVisibleIndex || 0,
+            currentVisibleIndex: currentVisibleIndex === undefined ? 0 : currentVisibleIndex,
             visitedPath: visitedPath || [],
             expiresAt,
         });
-        await partialResponse.save({ session });
+        await partialResponse.save({ session: mongoSession });
 
-        // TODO: Send email with the resume link
-        const resumeLink = `${process.env.FRONTEND_URL}/surveys/${surveyId}/resume/${resumeToken}`; // Adjust URL structure as needed
-        console.log(`[SavePartial] TODO: Email resume link to ${respondentEmail}: ${resumeLink}`);
-        // await emailService.sendResumeLink(respondentEmail, survey.title, resumeLink, expiryDays);
-        // For now, we'll just log it. In a real app, this would use an email service.
+        const resumeLink = `${process.env.FRONTEND_URL}/surveys/${surveyId}/resume/${resumeToken}`;
+        
+        await emailService.sendResumeEmail(respondentEmail, survey.title, resumeLink, expiryDays);
 
-        await session.commitTransaction();
-        session.endSession();
-        res.status(200).json({ success: true, message: `A link to resume this survey has been sent to ${respondentEmail}. It will expire in ${expiryDays} days.` });
+        await mongoSession.commitTransaction();
+        mongoSession.endSession();
+        res.status(200).json({ 
+            success: true, 
+            message: `Progress saved! A link to resume this survey has been sent to ${respondentEmail}. It will expire in ${expiryDays} days.`
+        });
 
     } catch (error) {
-        if (session.inTransaction()) await session.abortTransaction();
-        session.endSession();
+        if (mongoSession.inTransaction()) await mongoSession.abortTransaction();
+        mongoSession.endSession(); // Ensure session is always ended
         console.error(`[savePartialResponse] Error saving partial response for survey ${surveyId}:`, error);
         if (error.name === 'ValidationError') {
             return res.status(400).json({ success: false, message: 'Validation error saving progress.', details: error.errors });
         }
-        res.status(500).json({ success: false, message: 'Error saving progress.' });
+        if (error.message && error.message.startsWith('Failed to send resume email')) {
+             return res.status(500).json({ success: false, message: error.message });
+        }
+        res.status(500).json({ success: false, message: 'Error saving progress or sending resume email.' });
     }
 };
 
 
 exports.getSurveyResults = async (req, res) => {
-    // ... (no changes needed here for now)
     const { surveyId } = req.params;
     const { page = 1, limit = 10, status, startDate, endDate, collectorId } = req.query;
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
@@ -704,7 +698,6 @@ exports.getSurveyResults = async (req, res) => {
 };
 
 exports.exportSurveyResults = async (req, res) => {
-    // ... (no changes needed here for now)
     const { surveyId } = req.params;
     const { format = 'csv', collectorId, status, startDate, endDate } = req.query;
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
@@ -742,7 +735,6 @@ exports.exportSurveyResults = async (req, res) => {
                 DurationSeconds: response.durationSeconds,
                 IPAddress: response.ipAddress || '', UserAgent: response.userAgent || '',
             };
-            // Ensure customVariables is a Map or an object before trying to iterate
             const customVars = response.customVariables instanceof Map ? response.customVariables : new Map(Object.entries(response.customVariables || {}));
             customVars.forEach((value, key) => { row[`CustomVar_${key}`] = value; });
             
@@ -772,4 +764,4 @@ exports.exportSurveyResults = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error exporting survey results.' });
     }
 };
-// ----- END OF COMPLETE UPDATED FILE (vNext25 - Handle Save & Continue, Custom Vars Settings) -----
+// ----- END OF COMPLETE UPDATED FILE (vNext26 - Integrated Email Service) -----
