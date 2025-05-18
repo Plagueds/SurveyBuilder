@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext14 - AutoAdvance, QNumbering, PB Position) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext14.1 - Reordered Callbacks) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -47,9 +47,8 @@ const isAnswerEmpty = (value, questionType) => {
 };
 const shuffleArray = (array) => { const newArray = [...array]; for (let i = newArray.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [newArray[i], newArray[j]] = [newArray[j], newArray[i]]; } return newArray; };
 
-// Helper for Roman numerals (simple version for up to 39, common for question numbering)
 const toRoman = (num) => {
-    if (num < 1 || num > 39) return String(num); // Fallback for out of typical range
+    if (num < 1 || num > 39) return String(num);
     const roman = { M: 1000, CM: 900, D: 500, CD: 400, C: 100, XC: 90, L: 50, XL: 40, X: 10, IX: 9, V: 5, IV: 4, I: 1 };
     let str = '';
     for (let i of Object.keys(roman)) {
@@ -59,8 +58,7 @@ const toRoman = (num) => {
     }
     return str;
 };
-// Helper for Alphabetic numbering (A, B, ..., Z, AA, AB...)
-const toLetters = (num) => { // num is 1-based index
+const toLetters = (num) => {
     let letters = '';
     while (num > 0) {
         let remainder = (num - 1) % 26;
@@ -104,15 +102,14 @@ function SurveyTakingPage() {
     const [recaptchaToken, setRecaptchaToken] = useState(null);
     const recaptchaRef = useRef(null);
 
-    // --- Behavior & Navigation States ---
     const [allowBackButton, setAllowBackButton] = useState(true);
     const [progressBarEnabledState, setProgressBarEnabledState] = useState(false);
     const [progressBarStyleState, setProgressBarStyleState] = useState('percentage');
-    const [progressBarPositionState, setProgressBarPositionState] = useState('top'); // New
-    const [autoAdvanceState, setAutoAdvanceState] = useState(false); // New
-    const [qNumEnabledState, setQNumEnabledState] = useState(true); // New
-    const [qNumFormatState, setQNumFormatState] = useState('123'); // New
-    const autoAdvanceTimeoutRef = useRef(null); // For clearing timeout if user navigates away quickly
+    const [progressBarPositionState, setProgressBarPositionState] = useState('top');
+    const [autoAdvanceState, setAutoAdvanceState] = useState(false);
+    const [qNumEnabledState, setQNumEnabledState] = useState(true);
+    const [qNumFormatState, setQNumFormatState] = useState('123');
+    const autoAdvanceTimeoutRef = useRef(null);
 
     const NA_VALUE_INTERNAL = '__NA__';
     const OTHER_VALUE_INTERNAL = '__OTHER__';
@@ -124,16 +121,14 @@ function SurveyTakingPage() {
     const currentQToRenderMemoized = useMemo(() => {
         if (isLoading || !survey || visibleQuestionIndices.length === 0 || currentVisibleIndex < 0 || currentVisibleIndex >= visibleQuestionIndices.length) return null;
         const currentOriginalIdx = visibleQuestionIndices[currentVisibleIndex];
-        const questionToRender = originalQuestions[currentOriginalIdx] || null;
-        return questionToRender;
+        return originalQuestions[currentOriginalIdx] || null;
     }, [isLoading, survey, visibleQuestionIndices, currentVisibleIndex, originalQuestions]);
 
     const isSubmitStateDerived = useMemo(() => {
         if (isLoading || !survey) return false;
         if (visibleQuestionIndices.length === 0 && originalQuestions.length > 0 && !isLoading) return true;
         if (visibleQuestionIndices.length === 0 && originalQuestions.length === 0 && !isLoading) return true;
-        if (currentVisibleIndex >= visibleQuestionIndices.length && originalQuestions.length > 0 && !isLoading) return true;
-        return false;
+        return currentVisibleIndex >= visibleQuestionIndices.length && originalQuestions.length > 0 && !isLoading;
     }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
 
     useEffect(() => {
@@ -143,53 +138,36 @@ function SurveyTakingPage() {
 
     const fetchSurvey = useCallback(async (signal) => {
         setIsLoading(true); setError(null); setHiddenQuestionIds(new Set()); setIsDisqualified(false); setCurrentVisibleIndex(0); setVisitedPath([]); setRecaptchaToken(null);
-
         if (!surveyId) { setError("Survey ID is missing."); setIsLoading(false); return; }
-        if (!currentCollectorIdentifier && ! (location.state?.isPreviewingOwner) ) {
-            setError("Collector identifier is missing. Cannot load survey."); setIsLoading(false); return;
-        }
-
+        if (!currentCollectorIdentifier && !(location.state?.isPreviewingOwner)) { setError("Collector identifier is missing."); setIsLoading(false); return; }
         try {
             const options = { forTaking: 'true', signal, collectorId: currentCollectorIdentifier };
             if (location.state?.isPreviewingOwner) options.isPreviewingOwner = true;
-
             const responsePayload = await surveyApiFunctions.getSurveyById(surveyId, options);
             if (!responsePayload || !responsePayload.success || !responsePayload.data) throw new Error(responsePayload?.message || "Failed to retrieve survey data.");
             const surveyData = responsePayload.data;
             if (!surveyData || !Array.isArray(surveyData.questions)) throw new Error("Survey data is malformed.");
-
             const fetchedCollectorSettings = surveyData.collectorSettings || {};
             const fetchedActualCollectorObjectId = surveyData.actualCollectorObjectId || null;
-            const surveyWideSettings = surveyData.settings || {}; // Contains behaviorNavigation, completion etc.
-
+            const surveyWideSettings = surveyData.settings || {};
             setCollectorSettings(fetchedCollectorSettings);
             setActualCollectorObjectId(fetchedActualCollectorObjectId);
-
-            // Collector-specific settings
             setAllowBackButton(typeof fetchedCollectorSettings.allowBackButton === 'boolean' ? fetchedCollectorSettings.allowBackButton : true);
             setProgressBarEnabledState(typeof fetchedCollectorSettings.progressBarEnabled === 'boolean' ? fetchedCollectorSettings.progressBarEnabled : false);
             setProgressBarStyleState(fetchedCollectorSettings.progressBarStyle || 'percentage');
-            setProgressBarPositionState(fetchedCollectorSettings.progressBarPosition || 'top'); // New
-
-            // Survey-wide behavior settings
+            setProgressBarPositionState(fetchedCollectorSettings.progressBarPosition || 'top');
             const behaviorNavSettings = surveyWideSettings.behaviorNavigation || {};
-            setAutoAdvanceState(typeof behaviorNavSettings.autoAdvance === 'boolean' ? behaviorNavSettings.autoAdvance : false); // New
-            setQNumEnabledState(typeof behaviorNavSettings.questionNumberingEnabled === 'boolean' ? behaviorNavSettings.questionNumberingEnabled : true); // New
-            setQNumFormatState(behaviorNavSettings.questionNumberingFormat || '123'); // New
-
-
+            setAutoAdvanceState(typeof behaviorNavSettings.autoAdvance === 'boolean' ? behaviorNavSettings.autoAdvance : false);
+            setQNumEnabledState(typeof behaviorNavSettings.questionNumberingEnabled === 'boolean' ? behaviorNavSettings.questionNumberingEnabled : true);
+            setQNumFormatState(behaviorNavSettings.questionNumberingFormat || '123');
             const storageKeyCollectorId = fetchedActualCollectorObjectId || currentCollectorIdentifier;
-            if (fetchedCollectorSettings.allowMultipleResponses === false && storageKeyCollectorId) {
-                if (localStorage.getItem(`survey_${storageKeyCollectorId}_submitted`) === 'true') {
-                    setHasAlreadyResponded(true); setIsLoading(false); return;
-                }
+            if (fetchedCollectorSettings.allowMultipleResponses === false && storageKeyCollectorId && localStorage.getItem(`survey_${storageKeyCollectorId}_submitted`) === 'true') {
+                setHasAlreadyResponded(true); setIsLoading(false); return;
             }
             setHasAlreadyResponded(false);
-
             const enableRecaptchaFlag = Boolean(fetchedCollectorSettings.enableRecaptcha);
             setRecaptchaEnabled(enableRecaptchaFlag && (fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY));
             setRecaptchaSiteKey(fetchedCollectorSettings.recaptchaSiteKey || process.env.REACT_APP_RECAPTCHA_SITE_KEY || '');
-            
             setSurvey(surveyData);
             const fetchedQuestions = surveyData.questions || [];
             setOriginalQuestions(fetchedQuestions);
@@ -198,42 +176,49 @@ function SurveyTakingPage() {
             if (randomizationLogic?.type === 'all') initialOrderIndices = shuffleArray(initialOrderIndices);
             else if (randomizationLogic?.type === 'blocks' && ensureArray(randomizationLogic.blocks).length > 0) {
                 let newOrder = []; const unblockedIndices = [...initialOrderIndices];
-                randomizationLogic.blocks.forEach(block => {
-                    const blockIndices = ensureArray(block.questionIndices).filter(idx => unblockedIndices.includes(idx));
-                    if (block.randomize) newOrder.push(...shuffleArray(blockIndices)); else newOrder.push(...blockIndices);
-                    blockIndices.forEach(idx => { const pos = unblockedIndices.indexOf(idx); if (pos > -1) unblockedIndices.splice(pos, 1); });
-                });
+                randomizationLogic.blocks.forEach(block => { const blockIndices = ensureArray(block.questionIndices).filter(idx => unblockedIndices.includes(idx)); if (block.randomize) newOrder.push(...shuffleArray(blockIndices)); else newOrder.push(...blockIndices); blockIndices.forEach(idx => { const pos = unblockedIndices.indexOf(idx); if (pos > -1) unblockedIndices.splice(pos, 1); }); });
                 newOrder.push(...unblockedIndices); initialOrderIndices = newOrder;
             }
             setRandomizedQuestionOrder(initialOrderIndices);
-            const initialOptionOrders = {};
-            fetchedQuestions.forEach(q => { if (q && q.randomizeOptions && Array.isArray(q.options)) { initialOptionOrders[q._id] = shuffleArray(q.options.map((_, optIndex) => optIndex)); } });
-            setRandomizedOptionOrders(initialOptionOrders);
-            const initialAnswers = {};
-            fetchedQuestions.forEach(q => { if (q) { let defaultAnswer = ''; if (q.type === 'checkbox') defaultAnswer = []; else if (q.type === 'slider') defaultAnswer = String(Math.round(((q.sliderMin ?? 0) + (q.sliderMax ?? 100)) / 2)); else if (q.type === 'ranking') defaultAnswer = ensureArray(q.options?.map(opt => typeof opt === 'string' ? opt : (opt.text || String(opt)))); else if (q.type === 'cardsort') defaultAnswer = { assignments: {}, userCategories: [] }; else if (q.type === 'maxdiff') defaultAnswer = { best: null, worst: null }; else if (q.type === 'conjoint') defaultAnswer = {}; initialAnswers[q._id] = defaultAnswer; } });
-            setCurrentAnswers(initialAnswers);
-            setOtherInputValues({});
-
-        } catch (err) {
-            if (err.name === 'AbortError') { console.log('[SurveyTakingPage] Fetch survey aborted.'); }
-            else { const errorMessage = err.response?.data?.message || err.message || "Could not load survey."; setError(errorMessage); toast.error(`Error: ${errorMessage}`); }
-        } finally { setIsLoading(false); }
+            const initialOptionOrders = {}; fetchedQuestions.forEach(q => { if (q && q.randomizeOptions && Array.isArray(q.options)) { initialOptionOrders[q._id] = shuffleArray(q.options.map((_, optIndex) => optIndex)); } }); setRandomizedOptionOrders(initialOptionOrders);
+            const initialAnswers = {}; fetchedQuestions.forEach(q => { if (q) { let da = ''; if (q.type === 'checkbox') da = []; else if (q.type === 'slider') da = String(Math.round(((q.sliderMin ?? 0) + (q.sliderMax ?? 100)) / 2)); else if (q.type === 'ranking') da = ensureArray(q.options?.map(opt => typeof opt === 'string' ? opt : (opt.text || String(opt)))); else if (q.type === 'cardsort') da = { assignments: {}, userCategories: [] }; else if (q.type === 'maxdiff') da = { best: null, worst: null }; else if (q.type === 'conjoint') da = {}; initialAnswers[q._id] = da; } }); setCurrentAnswers(initialAnswers); setOtherInputValues({});
+        } catch (err) { if (err.name === 'AbortError') console.log('Fetch aborted.'); else { const msg = err.response?.data?.message || err.message || "Could not load survey."; setError(msg); toast.error(`Error: ${msg}`); } } finally { setIsLoading(false); }
     }, [surveyId, currentCollectorIdentifier, location.state]);
 
     useEffect(() => {
-        if (currentCollectorIdentifier || location.state?.isPreviewingOwner) {
-            const controller = new AbortController();
-            fetchSurvey(controller.signal);
-            return () => { controller.abort(); if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current); };
-        } else if (routeCollectorIdentifier === undefined && !location.state?.collectorIdentifier && !location.state?.isPreviewingOwner) {
-            setIsLoading(false); setError("Collector information is missing. Cannot load survey.");
-        }
+        if (currentCollectorIdentifier || location.state?.isPreviewingOwner) { const controller = new AbortController(); fetchSurvey(controller.signal); return () => { controller.abort(); if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current); }; }
+        else if (routeCollectorIdentifier === undefined && !location.state?.collectorIdentifier && !location.state?.isPreviewingOwner) { setIsLoading(false); setError("Collector information is missing."); }
     }, [fetchSurvey, currentCollectorIdentifier, routeCollectorIdentifier, location.state]);
 
-    useEffect(() => { if (isLoading || !originalQuestions || originalQuestions.length === 0) { if(visibleQuestionIndices.length > 0) setVisibleQuestionIndices([]); return; } const newVisibleOriginalIndices = questionsInCurrentOrder.map(question => question ? questionIdToOriginalIndexMap[question._id] : undefined).filter(originalIndex => { if (originalIndex === undefined) return false; const question = originalQuestions[originalIndex]; return question && !hiddenQuestionIds.has(question._id); }); setVisibleQuestionIndices(prevIndices => { if (JSON.stringify(prevIndices) !== JSON.stringify(newVisibleOriginalIndices)) { return newVisibleOriginalIndices; } return prevIndices; }); }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices.length]);
-    useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0 && !allowBackButton) setVisitedPath([]); return; } const currentPointsToValidQuestion = currentVisibleIndex < visibleQuestionIndices.length; if (!currentPointsToValidQuestion && currentVisibleIndex !== visibleQuestionIndices.length) { if(allowBackButton) { for (let i = visitedPath.length - 1; i >= 0; i--) { const pathOriginalIndex = visitedPath[i]; const pathVisibleIndex = visibleQuestionIndices.indexOf(pathOriginalIndex); if (pathVisibleIndex !== -1) { setCurrentVisibleIndex(pathVisibleIndex); return; } } } setCurrentVisibleIndex(0); } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, visitedPath, allowBackButton]);
-
+    useEffect(() => { if (isLoading || !originalQuestions || originalQuestions.length === 0) { if(visibleQuestionIndices.length > 0) setVisibleQuestionIndices([]); return; } const newVisible = questionsInCurrentOrder.map(q => q ? questionIdToOriginalIndexMap[q._id] : undefined).filter(idx => idx !== undefined && !hiddenQuestionIds.has(originalQuestions[idx]._id)); if (JSON.stringify(visibleQuestionIndices) !== JSON.stringify(newVisible)) setVisibleQuestionIndices(newVisible); }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices]);
+    useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0 && !allowBackButton) setVisitedPath([]); return; } if (currentVisibleIndex >= visibleQuestionIndices.length && currentVisibleIndex !== 0) { if(allowBackButton && visitedPath.length > 0) { for (let i = visitedPath.length - 1; i >= 0; i--) { const pathOriginalIndex = visitedPath[i]; const pathVisibleIndex = visibleQuestionIndices.indexOf(pathOriginalIndex); if (pathVisibleIndex !== -1) { setCurrentVisibleIndex(pathVisibleIndex); return; } } } setCurrentVisibleIndex(0); } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, visitedPath, allowBackButton]);
+    
+    // --- START REORDERED CALLBACKS ---
     const evaluateDisabled = useCallback((questionOriginalIndex) => originalQuestions[questionOriginalIndex]?.isDisabled === true, [originalQuestions]);
+    
+    const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabled = false) => {
+        if (!question || isDisabled) return true;
+        if (question.addOtherOption && question.requireOtherIfSelected) {
+            const isOtherSelected = (question.type === 'multiple-choice' || question.type === 'dropdown' ? answer === OTHER_VALUE_INTERNAL : question.type === 'checkbox' && ensureArray(answer).includes(OTHER_VALUE_INTERNAL));
+            if (isOtherSelected) {
+                const otherTextValue = otherInputValues[question._id];
+                if (otherTextValue === undefined || otherTextValue.trim() === '') {
+                    if (!isSoftCheck) toast.error(`Please provide text for "Other" in: "${question.text}"`);
+                    return false;
+                }
+            }
+        }
+        if (question.requiredSetting === 'required' && isAnswerEmpty(answer, question.type)) return false;
+        if (question.type === 'checkbox' && !isAnswerEmpty(answer, question.type)) {
+            const naSelected = ensureArray(answer).includes(NA_VALUE_INTERNAL);
+            if (naSelected) return true;
+            const selectedCount = ensureArray(answer).filter(v => v !== NA_VALUE_INTERNAL).length;
+            if (question.minAnswersRequired && selectedCount < question.minAnswersRequired) { if (!isSoftCheck) toast.error(`Select at least ${question.minAnswersRequired} for "${question.text}".`); return false; }
+            if (question.limitAnswers && question.limitAnswersMax && selectedCount > question.limitAnswersMax) { if (!isSoftCheck) toast.error(`Select no more than ${question.limitAnswersMax} for "${question.text}".`); return false; }
+        }
+        return true;
+    }, [otherInputValues, OTHER_VALUE_INTERNAL, NA_VALUE_INTERNAL]);
+
     const evaluateGlobalLogic = useCallback(() => { if (!survey || !survey.globalSkipLogic || survey.globalSkipLogic.length === 0) return null; return evaluateSurveyLogic(survey.globalSkipLogic, currentAnswers, originalQuestions); }, [survey, currentAnswers, originalQuestions]);
     const evaluateActionLogic = useCallback((questionOriginalIndex) => { const question = originalQuestions[questionOriginalIndex]; if (!question || !question.skipLogic || !Array.isArray(question.skipLogic.rules) || question.skipLogic.rules.length === 0) return null; return evaluateSurveyLogic(question.skipLogic.rules, currentAnswers, originalQuestions); }, [originalQuestions, currentAnswers]);
 
@@ -243,79 +228,58 @@ function SurveyTakingPage() {
         const question = originalQuestions[currentOriginalIndex];
         if (!question) { setCurrentVisibleIndex(prev => prev + 1); return; }
         const isDisabledBySetting = evaluateDisabled(currentOriginalIndex);
-        const isQuestionValid = validateQuestion(question, currentAnswers[question._id], false, isDisabledBySetting);
-        if (!isQuestionValid) { if (question.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[question._id], question.type)) { toast.error(`Please answer the current question: "${question.text}"`); } return; }
+        if (!validateQuestion(question, currentAnswers[question._id], false, isDisabledBySetting)) { if (question.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[question._id], question.type)) toast.error(`Answer required: "${question.text}"`); return; }
         if (allowBackButton) setVisitedPath(prev => [...prev, currentOriginalIndex]);
         const globalAction = evaluateGlobalLogic();
         if (globalAction) {
-            if (globalAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(globalAction.disqualificationMessage || "You do not meet the criteria for this survey."); return; }
-            if (globalAction.type === 'skipToQuestion') { const targetQOriginalIndex = questionIdToOriginalIndexMap[globalAction.targetQuestionId]; if (targetQOriginalIndex !== undefined) { const targetVisibleIndex = visibleQuestionIndices.indexOf(targetQOriginalIndex); if (targetVisibleIndex !== -1) setCurrentVisibleIndex(targetVisibleIndex); else { toast.warn("Global logic: Jump target question is not currently visible or does not exist. Proceeding sequentially."); if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length); } } else { toast.error("Global logic: Target question ID for skip not found in survey. Proceeding sequentially."); if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length); } return; }
+            if (globalAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(globalAction.disqualificationMessage || "Criteria not met."); return; }
+            if (globalAction.type === 'skipToQuestion') { const targetIdx = questionIdToOriginalIndexMap[globalAction.targetQuestionId]; const targetVisIdx = targetIdx !== undefined ? visibleQuestionIndices.indexOf(targetIdx) : -1; if (targetVisIdx !== -1) setCurrentVisibleIndex(targetVisIdx); else { toast.warn("Global skip target not visible."); if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length); } return; }
             if (globalAction.type === 'markAsCompleted') { setCurrentVisibleIndex(visibleQuestionIndices.length); return; }
         }
         const localAction = evaluateActionLogic(currentOriginalIndex);
         if (localAction) {
-            if (localAction.type === 'jumpToQuestion' || localAction.type === 'skipToQuestion') { const targetQOriginalIndex = questionIdToOriginalIndexMap[localAction.targetQuestionId]; if (targetQOriginalIndex !== undefined) { const targetVisibleIndex = visibleQuestionIndices.indexOf(targetQOriginalIndex); if (targetVisibleIndex !== -1) setCurrentVisibleIndex(targetVisibleIndex); else { toast.warn("Local logic: Jump target question is not currently visible or does not exist. Proceeding sequentially."); if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length); } } else { toast.error("Local logic: Target question ID for skip not found in survey. Proceeding sequentially."); if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length); } return;
-            } else if (localAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(localAction.disqualificationMessage || "You do not meet the criteria based on your answer."); return;
-            } else if (localAction.type === 'endSurvey' || localAction.type === 'markAsCompleted') { setCurrentVisibleIndex(visibleQuestionIndices.length); return; }
+            if (localAction.type === 'jumpToQuestion' || localAction.type === 'skipToQuestion') { const targetIdx = questionIdToOriginalIndexMap[localAction.targetQuestionId]; const targetVisIdx = targetIdx !== undefined ? visibleQuestionIndices.indexOf(targetIdx) : -1; if (targetVisIdx !== -1) setCurrentVisibleIndex(targetVisIdx); else { toast.warn("Local skip target not visible."); if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1); else setCurrentVisibleIndex(visibleQuestionIndices.length); } return; }
+            else if (localAction.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(localAction.disqualificationMessage || "Criteria not met."); return; }
+            else if (localAction.type === 'endSurvey' || localAction.type === 'markAsCompleted') { setCurrentVisibleIndex(visibleQuestionIndices.length); return; }
         }
         if (currentVisibleIndex < visibleQuestionIndices.length - 1) setCurrentVisibleIndex(prev => prev + 1);
         else setCurrentVisibleIndex(visibleQuestionIndices.length);
-    }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap, setIsDisqualified, setDisqualificationMessage]);
+    }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap]);
 
     const handleInputChange = useCallback((questionId, value) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
         const question = questionsById[questionId];
-        if (question && question.addOtherOption && value !== OTHER_VALUE_INTERNAL) {
-            setOtherInputValues(prev => ({ ...prev, [questionId]: '' }));
-        }
-
-        // --- Auto-Advance Logic ---
+        if (question && question.addOtherOption && value !== OTHER_VALUE_INTERNAL) { setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); }
         if (autoAdvanceState && question) {
-            const autoAdvanceTypes = ['multiple-choice', 'rating', 'nps']; // Add 'dropdown' if desired
+            const autoAdvanceTypes = ['multiple-choice', 'rating', 'nps'];
             if (autoAdvanceTypes.includes(question.type)) {
-                // Clear any existing timeout to prevent rapid double-advances if user clicks fast
-                if (autoAdvanceTimeoutRef.current) {
-                    clearTimeout(autoAdvanceTimeoutRef.current);
-                }
+                if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
                 autoAdvanceTimeoutRef.current = setTimeout(() => {
-                    // Re-validate before advancing, in case the selected value is part of a complex validation
-                    // that handleNext would check. For simple selections, this might be redundant but safer.
                     const isDisabled = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
-                    if (validateQuestion(question, value, true, isDisabled)) { // Soft check, as primary validation is in handleNext
-                         handleNext();
-                    }
-                }, 300); // 300ms delay
+                    if (validateQuestion(question, value, true, isDisabled)) handleNext();
+                }, 300);
             }
         }
     }, [questionsById, OTHER_VALUE_INTERNAL, autoAdvanceState, handleNext, evaluateDisabled, questionIdToOriginalIndexMap, validateQuestion]);
-
-    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { setCurrentAnswers(prevAnswers => { const currentVal = ensureArray(prevAnswers[questionId]); let newVal; if (isChecked) { newVal = [...currentVal, optionValue]; if (optionValue === NA_VALUE_INTERNAL) newVal = [NA_VALUE_INTERNAL]; else if (newVal.includes(NA_VALUE_INTERNAL)) newVal = newVal.filter(v => v !== NA_VALUE_INTERNAL); } else { newVal = currentVal.filter(v => v !== optionValue); } return { ...prevAnswers, [questionId]: newVal }; }); const question = questionsById[questionId]; if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) { setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); } }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
+    
+    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { setCurrentAnswers(prev => { const currentVal = ensureArray(prev[questionId]); let newVal; if (isChecked) { newVal = [...currentVal, optionValue]; if (optionValue === NA_VALUE_INTERNAL) newVal = [NA_VALUE_INTERNAL]; else if (newVal.includes(NA_VALUE_INTERNAL)) newVal = newVal.filter(v => v !== NA_VALUE_INTERNAL); } else { newVal = currentVal.filter(v => v !== optionValue); } return { ...prev, [questionId]: newVal }; }); const question = questionsById[questionId]; if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
     const handleOtherInputChange = useCallback((questionId, textValue) => { setOtherInputValues(prev => ({ ...prev, [questionId]: textValue })); }, []);
-    const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabled = false) => { if (!question) return true;  if (isDisabled) return true;  if (question.addOtherOption && question.requireOtherIfSelected) { const isOtherSelectedForMC = (question.type === 'multiple-choice' || question.type === 'dropdown') && answer === OTHER_VALUE_INTERNAL; const isOtherSelectedForCheckbox = question.type === 'checkbox' && ensureArray(answer).includes(OTHER_VALUE_INTERNAL); const isOtherSelected = isOtherSelectedForMC || isOtherSelectedForCheckbox; if (isOtherSelected) { const otherTextValue = otherInputValues[question._id]; const isOtherTextEmpty = otherTextValue === undefined || otherTextValue === "undefined" || (typeof otherTextValue === 'string' && otherTextValue.trim() === ''); if (isOtherTextEmpty) { if(!isSoftCheck) toast.error(`Please provide text for the "Other" option in question: "${question.text}"`); return false; } } } if (question.requiredSetting === 'required' && isAnswerEmpty(answer, question.type)) return false; if (question.type === 'checkbox' && !isAnswerEmpty(answer, question.type)) { const naIsSelected = ensureArray(answer).includes(NA_VALUE_INTERNAL); if (naIsSelected) return true;  const selectedOptions = ensureArray(answer).filter(val => val !== NA_VALUE_INTERNAL); const selectedCount = selectedOptions.length; if (question.minAnswersRequired && selectedCount < question.minAnswersRequired) { if(!isSoftCheck) toast.error(`Please select at least ${question.minAnswersRequired} options for "${question.text}".`); return false; } if (question.limitAnswers && question.limitAnswersMax && selectedCount > question.limitAnswersMax) { if(!isSoftCheck) toast.error(`Please select no more than ${question.limitAnswersMax} options for "${question.text}".`); return false; } } return true; }, [otherInputValues, OTHER_VALUE_INTERNAL, NA_VALUE_INTERNAL]);
 
     const renderQuestion = useCallback((questionToRenderArg) => {
         if (!questionToRenderArg) return <div className={styles.loading}>Loading question content...</div>;
-        if (!questionToRenderArg.type) { return <div>Error: Question data is missing 'type'. Cannot render.</div>; }
-        
-        const question = {...questionToRenderArg}; // Clone to modify text for numbering
+        if (!questionToRenderArg.type) return <div>Error: Question type missing.</div>;
+        const question = {...questionToRenderArg};
         const value = currentAnswers[question._id];
         const otherText = otherInputValues[question._id] || '';
         const isDisabled = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
-
-        // --- Question Numbering Logic ---
         if (qNumEnabledState && visibleQuestionIndices.includes(questionIdToOriginalIndexMap[question._id])) {
-            const qNumber = currentVisibleIndex + 1; // 1-based index for display
+            const qNumber = currentVisibleIndex + 1;
             let prefix = "";
             if (qNumFormatState === '123') prefix = `${qNumber}. `;
             else if (qNumFormatState === 'ABC') prefix = `${toLetters(qNumber)}. `;
             else if (qNumFormatState === 'roman') prefix = `${toRoman(qNumber)}. `;
-            // else if (qNumFormatState === 'custom' && survey.settings.behaviorNavigation.questionNumberingCustomPrefix) {
-            //     prefix = `${survey.settings.behaviorNavigation.questionNumberingCustomPrefix}${qNumber}. `;
-            // }
             question.text = `${prefix}${question.text}`;
         }
-        // --- End Question Numbering ---
-
         const commonProps = { question, currentAnswer: value, onAnswerChange: handleInputChange, onCheckboxChange: handleCheckboxChange, otherValue: otherText, onOtherTextChange: handleOtherInputChange, disabled: isDisabled, optionsOrder: randomizedOptionOrders[question._id], isPreviewMode: false };
         switch (question.type) {
             case 'text': return <ShortTextQuestion {...commonProps} />;
@@ -332,13 +296,13 @@ function SurveyTakingPage() {
             case 'conjoint': return <ConjointQuestion {...commonProps} />;
             case 'ranking': return <RankingQuestion {...commonProps} />;
             case 'cardsort': return <CardSortQuestion {...commonProps} />;
-            default: return <div>Unsupported question type: {question.type || "Type is missing"}</div>;
+            default: return <div>Unsupported question type: {question.type}</div>;
         }
     }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled, qNumEnabledState, qNumFormatState, currentVisibleIndex, visibleQuestionIndices]);
 
     const handlePrevious = useCallback(() => {
         if (!allowBackButton || isDisqualified || isLoading || visitedPath.length === 0) return;
-        if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current); // Clear auto-advance if navigating back
+        if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
         const lastVisitedOriginalIndex = visitedPath[visitedPath.length - 1];
         const lastVisitedVisibleIndex = visibleQuestionIndices.indexOf(lastVisitedOriginalIndex);
         if (lastVisitedVisibleIndex !== -1) { setCurrentVisibleIndex(lastVisitedVisibleIndex); setVisitedPath(prev => prev.slice(0, -1)); }
@@ -348,68 +312,54 @@ function SurveyTakingPage() {
     const handleSubmit = useCallback(async (e) => {
         e.preventDefault(); setIsSubmitting(true); setError(null);
         if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
-        if (!actualCollectorObjectId) { toast.error("Collector information is incomplete. Cannot submit."); setError("Collector information is incomplete. Cannot submit."); setIsSubmitting(false); return; }
-        if (recaptchaEnabled && !recaptchaToken && recaptchaSiteKey) { toast.error("Please complete reCAPTCHA."); setIsSubmitting(false); return; }
-        let firstInvalidVisibleIndex = -1;
-        for (let visIdx = 0; visIdx < visibleQuestionIndices.length; visIdx++) { const originalIdx = visibleQuestionIndices[visIdx]; const q = originalQuestions[originalIdx]; const isDisabled = evaluateDisabled(originalIdx); if (q && !validateQuestion(q, currentAnswers[q._id], false, isDisabled)) { firstInvalidVisibleIndex = visIdx; break; } }
-        if (firstInvalidVisibleIndex !== -1) { setCurrentVisibleIndex(firstInvalidVisibleIndex); const qFailed = originalQuestions[visibleQuestionIndices[firstInvalidVisibleIndex]]; if (qFailed.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[qFailed._id], qFailed.type)) toast.error(`Please complete all required questions. Problem with: "${qFailed.text}"`); setIsSubmitting(false); return; }
-        const answersToSubmit = Object.entries(currentAnswers).filter(([questionId, ]) => { const question = questionsById[questionId]; return question && visibleQuestionIndices.includes(questionIdToOriginalIndexMap[question._id]); }).map(([questionId, answerValue]) => { const question = questionsById[questionId]; let textForOther = null; if (question.addOtherOption) { if (((question.type === 'multiple-choice' || question.type === 'dropdown') && answerValue === OTHER_VALUE_INTERNAL) || (question.type === 'checkbox' && ensureArray(answerValue).includes(OTHER_VALUE_INTERNAL))) { textForOther = otherInputValues[questionId]?.trim(); if (textForOther === '' || otherInputValues[questionId] === 'undefined' || otherInputValues[questionId] === undefined) textForOther = null; } } return { questionId, questionType: question.type, answerValue, otherText: textForOther, questionText: question.text || question.title }; });
-        if (answersToSubmit.every(ans => isAnswerEmpty(ans.answerValue, ans.questionType) && !ans.otherText) && originalQuestions.length > 0 && visibleQuestionIndices.length > 0) { const anyRequiredVisibleAndUnanswered = visibleQuestionIndices.some(idx => { const q = originalQuestions[idx]; return q?.requiredSetting === 'required' && !evaluateDisabled(idx) && isAnswerEmpty(currentAnswers[q._id], q.type); }); if (anyRequiredVisibleAndUnanswered) { toast.info("It seems some required questions were missed. Please review."); setIsSubmitting(false); return; } }
+        if (!actualCollectorObjectId) { toast.error("Collector info incomplete."); setError("Collector info incomplete."); setIsSubmitting(false); return; }
+        if (recaptchaEnabled && !recaptchaToken && recaptchaSiteKey) { toast.error("Complete reCAPTCHA."); setIsSubmitting(false); return; }
+        let firstInvalidIdx = -1;
+        for (let i = 0; i < visibleQuestionIndices.length; i++) { const originalIdx = visibleQuestionIndices[i]; const q = originalQuestions[originalIdx]; if (q && !validateQuestion(q, currentAnswers[q._id], false, evaluateDisabled(originalIdx))) { firstInvalidIdx = i; break; } }
+        if (firstInvalidIdx !== -1) { setCurrentVisibleIndex(firstInvalidIdx); const qFail = originalQuestions[visibleQuestionIndices[firstInvalidIdx]]; if (qFail.requiredSetting === 'required' && isAnswerEmpty(currentAnswers[qFail._id], qFail.type)) toast.error(`Complete required: "${qFail.text}"`); setIsSubmitting(false); return; }
+        const answersToSubmit = Object.entries(currentAnswers).filter(([qId, ]) => { const q = questionsById[qId]; return q && visibleQuestionIndices.includes(questionIdToOriginalIndexMap[q._id]); }).map(([qId, ansVal]) => { const q = questionsById[qId]; let otherTxt = null; if (q.addOtherOption && (((q.type === 'multiple-choice' || q.type === 'dropdown') && ansVal === OTHER_VALUE_INTERNAL) || (q.type === 'checkbox' && ensureArray(ansVal).includes(OTHER_VALUE_INTERNAL)))) { otherTxt = otherInputValues[qId]?.trim() || null; } return { questionId: qId, questionType: q.type, answerValue: ansVal, otherText: otherTxt, questionText: q.text || q.title }; });
+        if (answersToSubmit.every(a => isAnswerEmpty(a.answerValue, a.questionType) && !a.otherText) && originalQuestions.length > 0 && visibleQuestionIndices.length > 0) { const anyReqMissed = visibleQuestionIndices.some(idx => { const q = originalQuestions[idx]; return q?.requiredSetting === 'required' && !evaluateDisabled(idx) && isAnswerEmpty(currentAnswers[q._id], q.type); }); if (anyReqMissed) { toast.info("Some required questions missed."); setIsSubmitting(false); return; } }
         const payload = { answers: answersToSubmit, sessionId, collectorId: actualCollectorObjectId, recaptchaToken: recaptchaEnabled && recaptchaSiteKey ? recaptchaToken : undefined, startedAt: surveyStartedAt, };
         try {
-            const result = await surveyApiFunctions.submitSurveyAnswers(surveyId, payload); toast.success(result.message || "Survey submitted successfully!");
+            const result = await surveyApiFunctions.submitSurveyAnswers(surveyId, payload); toast.success(result.message || "Submitted!");
             const storageKeyCollectorId = actualCollectorObjectId || currentCollectorIdentifier;
             if (collectorSettings && collectorSettings.allowMultipleResponses === false && storageKeyCollectorId) localStorage.setItem(`survey_${storageKeyCollectorId}_submitted`, 'true');
             if (result.action?.type === 'disqualifyRespondent') { setIsDisqualified(true); setDisqualificationMessage(result.action.disqualificationMessage || "Disqualified."); }
             else navigate(result.redirectUrl || '/thank-you', { state: { responseId: result.responseId } });
-        } catch (errCatch) { const errorMessage = errCatch.response?.data?.message || errCatch.message || "Submission error."; setError(errorMessage); toast.error(`Failed: ${errorMessage}`); if (recaptchaEnabled && recaptchaRef.current && recaptchaSiteKey) { recaptchaRef.current.reset(); setRecaptchaToken(null); }
-        } finally { setIsSubmitting(false); }
-    }, [actualCollectorObjectId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, recaptchaRef, questionIdToOriginalIndexMap, surveyStartedAt, OTHER_VALUE_INTERNAL, isDisqualified, currentCollectorIdentifier]);
+        } catch (errCatch) { const msg = errCatch.response?.data?.message || errCatch.message || "Submission error."; setError(msg); toast.error(`Failed: ${msg}`); if (recaptchaEnabled && recaptchaRef.current && recaptchaSiteKey) { recaptchaRef.current.reset(); setRecaptchaToken(null); } } finally { setIsSubmitting(false); }
+    }, [actualCollectorObjectId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, questionIdToOriginalIndexMap, surveyStartedAt, OTHER_VALUE_INTERNAL, currentCollectorIdentifier]);
+    // --- END REORDERED CALLBACKS ---
 
     const renderProgressBar = () => {
-        if (!progressBarEnabledState || isLoading || !survey || visibleQuestionIndices.length === 0 || isSubmitStateDerived) {
-            return null;
-        }
-        let progressText = '';
-        let progressPercent = 0;
+        if (!progressBarEnabledState || isLoading || !survey || visibleQuestionIndices.length === 0 || isSubmitStateDerived) return null;
+        let progressText = ''; let progressPercent = 0;
         if (progressBarStyleState === 'pages') {
             progressText = `Question ${currentVisibleIndex + 1} of ${visibleQuestionIndices.length}`;
             progressPercent = ((currentVisibleIndex + 1) / visibleQuestionIndices.length) * 100;
-        } else { 
+        } else {
             progressPercent = ((currentVisibleIndex + 1) / visibleQuestionIndices.length) * 100;
             progressText = `${Math.round(progressPercent)}% Complete`;
         }
-        return (
-            <div className={styles.progressBarContainer} /* Position handled by CSS or wrapper div below */>
-                <div className={styles.progressBarTrack}>
-                    <div className={styles.progressBarFill} style={{ width: `${progressPercent}%` }} />
-                </div>
-                <div className={styles.progressBarText}>{progressText}</div>
-            </div>
-        );
+        return ( <div className={styles.progressBarContainer}> <div className={styles.progressBarTrack}> <div className={styles.progressBarFill} style={{ width: `${progressPercent}%` }} /> </div> <div className={styles.progressBarText}>{progressText}</div> </div> );
     };
 
-    if (hasAlreadyResponded) { return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> <div className={styles.alreadyRespondedBox}> <h2>Already Responded</h2> <p>Our records indicate that you have already completed this survey.</p> <p>Multiple submissions are not permitted for this link.</p> <button onClick={() => navigate('/')} className={styles.navButton}>Go to Homepage</button> </div> </div> ); }
+    if (hasAlreadyResponded) return ( <div className={styles.surveyContainer}> <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1> <div className={styles.alreadyRespondedBox}> <h2>Already Responded</h2> <p>You have already completed this survey.</p> <button onClick={() => navigate('/')} className={styles.navButton}>Go to Homepage</button> </div> </div> );
     if (isLoading && !survey) return <div className={styles.loading}>Loading survey...</div>;
-    if (error && !survey && !hasAlreadyResponded) return <div className={styles.errorContainer}><h2>Error Loading Survey</h2><p>{error}</p><button onClick={() => { const controller = new AbortController(); fetchSurvey(controller.signal); }} className={styles.navButton}>Retry</button></div>;
+    if (error && !survey && !hasAlreadyResponded) return <div className={styles.errorContainer}><h2>Error Loading Survey</h2><p>{error}</p><button onClick={() => { const c = new AbortController(); fetchSurvey(c.signal); }} className={styles.navButton}>Retry</button></div>;
     if (!survey && !isLoading && !error && !hasAlreadyResponded) return <div className={styles.errorContainer}>Survey not found or could not be loaded.</div>;
     if (isDisqualified) return ( <div className={styles.surveyContainer}><h1 className={styles.surveyTitle}>{survey?.title||'Survey'}</h1><div className={styles.disqualifiedBox}><h2>Survey Ended</h2><p>{disqualificationMessage || "You do not qualify."}</p></div></div> );
 
     const finalCurrentQToRender = currentQToRenderMemoized;
     const finalIsSubmitState = isSubmitStateDerived;
     const isCurrentQuestionDisabled = finalCurrentQToRender ? evaluateDisabled(questionIdToOriginalIndexMap[finalCurrentQToRender._id]) : false;
-
     const progressBarComponent = renderProgressBar();
 
     return (
         <div className={styles.surveyContainer}>
-            {progressBarPositionState === 'top' && progressBarComponent} {/* Render progress bar at top */}
-            
+            {progressBarPositionState === 'top' && progressBarComponent}
             <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1>
-            
             {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>}
             {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>}
-            
             {isLoading && survey ? <div className={styles.loading}>Loading question...</div> :
                 <div className={`${styles.questionBox} ${isCurrentQuestionDisabled ? styles.disabled : ''}`}>
                     {finalIsSubmitState ? ( <div className={styles.submitPrompt}> <p>End of survey.</p> <p>Click "Submit" to record responses.</p> </div> )
@@ -418,35 +368,23 @@ function SurveyTakingPage() {
                     : (isLoading ? <div className={styles.loading}>Preparing...</div> : <div className={styles.loading}>Survey empty or issue.</div>) )}
                 </div>
             }
-
             {finalIsSubmitState && recaptchaEnabled && recaptchaSiteKey && (
                 <div className={styles.recaptchaContainer}>
-                    <ReCAPTCHA ref={recaptchaRef} sitekey={recaptchaSiteKey} onChange={(token) => setRecaptchaToken(token)} onExpired={() => setRecaptchaToken(null)} onErrored={() => { toast.error("reCAPTCHA failed. Refresh."); setRecaptchaToken(null); }} />
+                    <ReCAPTCHA ref={recaptchaRef} sitekey={recaptchaSiteKey} onChange={setRecaptchaToken} onExpired={() => setRecaptchaToken(null)} onErrored={() => { toast.error("reCAPTCHA failed."); setRecaptchaToken(null); }} />
                 </div>
             )}
-
             <div className={styles.surveyNavigationArea}>
-                {allowBackButton && (
-                    <button onClick={handlePrevious} className={styles.navButton} disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) } >
-                        Previous
-                    </button>
-                )}
-                {!allowBackButton && <div style={{width: '100px'}}></div>} 
-
+                {allowBackButton && ( <button onClick={handlePrevious} className={styles.navButton} disabled={isDisqualified || isLoading || isSubmitting || (currentVisibleIndex === 0 && visitedPath.length <= 1) } > Previous </button> )}
+                {!allowBackButton && <div style={{width: '100px'}}></div>}
                 {finalIsSubmitState || (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified && !isLoading) ? (
-                    <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} >
-                        {isSubmitting ? 'Submitting...' : 'Submit'}
-                    </button>
+                    <button onClick={handleSubmit} className={styles.submitButton} disabled={isDisqualified || isSubmitting || isLoading || (recaptchaEnabled && recaptchaSiteKey && !recaptchaToken)} > {isSubmitting ? 'Submitting...' : 'Submit'} </button>
                 ) : (
-                    <button onClick={handleNext} className={styles.navButton} disabled={isDisqualified || isSubmitting || isLoading || !finalCurrentQToRender } >
-                        Next
-                    </button>
+                    <button onClick={handleNext} className={styles.navButton} disabled={isDisqualified || isSubmitting || isLoading || !finalCurrentQToRender } > Next </button>
                 )}
             </div>
-            
-            {progressBarPositionState === 'bottom' && progressBarComponent} {/* Render progress bar at bottom */}
+            {progressBarPositionState === 'bottom' && progressBarComponent}
         </div>
     );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext14 - AutoAdvance, QNumbering, PB Position) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext14.1 - Reordered Callbacks) -----
