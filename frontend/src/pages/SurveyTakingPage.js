@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext14.1 - Reordered Callbacks) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext14.2 - AutoAdvance Logging) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -193,7 +193,6 @@ function SurveyTakingPage() {
     useEffect(() => { if (isLoading || !originalQuestions || originalQuestions.length === 0) { if(visibleQuestionIndices.length > 0) setVisibleQuestionIndices([]); return; } const newVisible = questionsInCurrentOrder.map(q => q ? questionIdToOriginalIndexMap[q._id] : undefined).filter(idx => idx !== undefined && !hiddenQuestionIds.has(originalQuestions[idx]._id)); if (JSON.stringify(visibleQuestionIndices) !== JSON.stringify(newVisible)) setVisibleQuestionIndices(newVisible); }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices]);
     useEffect(() => { if (isLoading || !survey || isDisqualified) return; if (visibleQuestionIndices.length === 0) { if (currentVisibleIndex !== 0) setCurrentVisibleIndex(0); if(visitedPath.length > 0 && !allowBackButton) setVisitedPath([]); return; } if (currentVisibleIndex >= visibleQuestionIndices.length && currentVisibleIndex !== 0) { if(allowBackButton && visitedPath.length > 0) { for (let i = visitedPath.length - 1; i >= 0; i--) { const pathOriginalIndex = visitedPath[i]; const pathVisibleIndex = visibleQuestionIndices.indexOf(pathOriginalIndex); if (pathVisibleIndex !== -1) { setCurrentVisibleIndex(pathVisibleIndex); return; } } } setCurrentVisibleIndex(0); } }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, visitedPath, allowBackButton]);
     
-    // --- START REORDERED CALLBACKS ---
     const evaluateDisabled = useCallback((questionOriginalIndex) => originalQuestions[questionOriginalIndex]?.isDisabled === true, [originalQuestions]);
     
     const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabled = false) => {
@@ -246,21 +245,64 @@ function SurveyTakingPage() {
         else setCurrentVisibleIndex(visibleQuestionIndices.length);
     }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap]);
 
+    // --- MODIFIED handleInputChange with LOGGING ---
     const handleInputChange = useCallback((questionId, value) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
         const question = questionsById[questionId];
-        if (question && question.addOtherOption && value !== OTHER_VALUE_INTERNAL) { setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); }
+
+        if (question && question.addOtherOption && value !== OTHER_VALUE_INTERNAL) {
+            setOtherInputValues(prev => ({ ...prev, [questionId]: '' }));
+        }
+
+        console.log('[AutoAdvance] Check | autoAdvanceState:', autoAdvanceState, '| questionId:', questionId, '| question type:', question?.type, '| value:', value);
+
         if (autoAdvanceState && question) {
             const autoAdvanceTypes = ['multiple-choice', 'rating', 'nps'];
             if (autoAdvanceTypes.includes(question.type)) {
-                if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
+                console.log('[AutoAdvance] Eligible type confirmed:', question.type);
+                if (autoAdvanceTimeoutRef.current) {
+                    clearTimeout(autoAdvanceTimeoutRef.current);
+                    console.log('[AutoAdvance] Cleared existing timeout');
+                }
                 autoAdvanceTimeoutRef.current = setTimeout(() => {
+                    console.log('[AutoAdvance] Timeout triggered. Attempting to advance for Q:', questionId);
                     const isDisabled = evaluateDisabled(questionIdToOriginalIndexMap[question._id]);
-                    if (validateQuestion(question, value, true, isDisabled)) handleNext();
+                    
+                    let canAdvance = true;
+                    if (question.addOtherOption && question.requireOtherIfSelected && value === OTHER_VALUE_INTERNAL) {
+                        const otherTextValue = otherInputValues[question._id]; // Use current otherInputValues
+                        console.log('[AutoAdvance] "Other" selected. Text required:', question.requireOtherIfSelected, 'Text value:', `"${otherTextValue}"`);
+                        if (otherTextValue === undefined || otherTextValue.trim() === '') {
+                            console.log('[AutoAdvance] Blocked: "Other" selected but text is empty and required.');
+                            canAdvance = false;
+                        }
+                    }
+                    
+                    console.log('[AutoAdvance] Soft validation for advance. isDisabled:', isDisabled, 'canAdvance based on Other:', canAdvance);
+
+                    if (canAdvance) {
+                        console.log('[AutoAdvance] Calling handleNext()');
+                        handleNext();
+                    } else {
+                        console.log('[AutoAdvance] Not calling handleNext() due to "Other" text requirement.');
+                    }
                 }, 300);
+            } else {
+                console.log('[AutoAdvance] Question type not eligible or question undefined. Type:', question?.type);
             }
+        } else {
+            if (!autoAdvanceState) console.log('[AutoAdvance] autoAdvanceState is false.');
+            if (!question) console.log('[AutoAdvance] Question object is undefined for ID:', questionId);
         }
-    }, [questionsById, OTHER_VALUE_INTERNAL, autoAdvanceState, handleNext, evaluateDisabled, questionIdToOriginalIndexMap, validateQuestion]);
+    }, [
+        questionsById, 
+        OTHER_VALUE_INTERNAL, 
+        autoAdvanceState, 
+        handleNext, 
+        evaluateDisabled, 
+        questionIdToOriginalIndexMap, 
+        otherInputValues // Dependency added
+    ]);
     
     const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { setCurrentAnswers(prev => { const currentVal = ensureArray(prev[questionId]); let newVal; if (isChecked) { newVal = [...currentVal, optionValue]; if (optionValue === NA_VALUE_INTERNAL) newVal = [NA_VALUE_INTERNAL]; else if (newVal.includes(NA_VALUE_INTERNAL)) newVal = newVal.filter(v => v !== NA_VALUE_INTERNAL); } else { newVal = currentVal.filter(v => v !== optionValue); } return { ...prev, [questionId]: newVal }; }); const question = questionsById[questionId]; if (question && question.addOtherOption && optionValue === OTHER_VALUE_INTERNAL && !isChecked) setOtherInputValues(prev => ({ ...prev, [questionId]: '' })); }, [questionsById, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
     const handleOtherInputChange = useCallback((questionId, textValue) => { setOtherInputValues(prev => ({ ...prev, [questionId]: textValue })); }, []);
@@ -328,7 +370,6 @@ function SurveyTakingPage() {
             else navigate(result.redirectUrl || '/thank-you', { state: { responseId: result.responseId } });
         } catch (errCatch) { const msg = errCatch.response?.data?.message || errCatch.message || "Submission error."; setError(msg); toast.error(`Failed: ${msg}`); if (recaptchaEnabled && recaptchaRef.current && recaptchaSiteKey) { recaptchaRef.current.reset(); setRecaptchaToken(null); } } finally { setIsSubmitting(false); }
     }, [actualCollectorObjectId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, questionIdToOriginalIndexMap, surveyStartedAt, OTHER_VALUE_INTERNAL, currentCollectorIdentifier]);
-    // --- END REORDERED CALLBACKS ---
 
     const renderProgressBar = () => {
         if (!progressBarEnabledState || isLoading || !survey || visibleQuestionIndices.length === 0 || isSubmitStateDerived) return null;
@@ -387,4 +428,4 @@ function SurveyTakingPage() {
     );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext14.1 - Reordered Callbacks) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext14.2 - AutoAdvance Logging) -----

@@ -1,5 +1,5 @@
 // backend/controllers/collectorController.js
-// ----- START OF COMPLETE UPDATED FILE (v1.4 - Handle ProgressBar Settings) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.5 - Handle ProgressBar Position) -----
 const mongoose = require('mongoose');
 const Collector = require('../models/Collector');
 const Survey = require('../models/Survey');
@@ -32,15 +32,16 @@ exports.createCollector = async (req, res) => {
         if (collectorData.type === 'web_link') {
             collectorData.settings.web_link = {};
             if (settings && settings.web_link) {
-                // --- MODIFIED: Added progressBarEnabled & progressBarStyle to allowedKeys ---
+                // --- MODIFIED: Added progressBarPosition to allowedKeys ---
                 const allowedKeys = [
                     'customSlug', 'password', 'openDate', 'closeDate',
                     'maxResponses', 'allowMultipleResponses', 'anonymousResponses',
                     'enableRecaptcha', 'recaptchaSiteKey',
                     'ipAllowlist', 'ipBlocklist',
                     'allowBackButton',
-                    'progressBarEnabled', // <<< ADDED
-                    'progressBarStyle'  // <<< ADDED
+                    'progressBarEnabled',
+                    'progressBarStyle',
+                    'progressBarPosition' // <<< ADDED
                 ];
                 for (const key of allowedKeys) {
                     if (settings.web_link.hasOwnProperty(key)) {
@@ -53,11 +54,14 @@ exports.createCollector = async (req, res) => {
                             collectorData.settings.web_link[key] = Array.isArray(settings.web_link[key])
                                 ? settings.web_link[key].filter(ip => typeof ip === 'string' && ip.trim() !== '')
                                 : [];
-                        } else if (key === 'allowBackButton' || key === 'enableRecaptcha' || key === 'allowMultipleResponses' || key === 'anonymousResponses' || key === 'progressBarEnabled') { // <<< MODIFIED: Added progressBarEnabled
+                        } else if (['allowBackButton', 'enableRecaptcha', 'allowMultipleResponses', 'anonymousResponses', 'progressBarEnabled'].includes(key)) {
                             collectorData.settings.web_link[key] = !!settings.web_link[key]; // Ensure boolean
                         } else if (key === 'progressBarStyle') {
                             const validStyles = ['percentage', 'pages'];
                             collectorData.settings.web_link[key] = validStyles.includes(settings.web_link[key]) ? settings.web_link[key] : 'percentage';
+                        } else if (key === 'progressBarPosition') { // <<< ADDED
+                            const validPositions = ['top', 'bottom'];
+                            collectorData.settings.web_link[key] = validPositions.includes(settings.web_link[key]) ? settings.web_link[key] : 'top';
                         }
                         else {
                             collectorData.settings.web_link[key] = settings.web_link[key];
@@ -185,7 +189,7 @@ exports.updateCollector = async (req, res) => {
 
     try {
         let collector = await Collector.findOne({ _id: collectorId, survey: surveyId })
-                                     .select('+settings.web_link.password')
+                                     .select('+settings.web_link.password') // Ensure password comes back for hashing if changed
                                      .session(session);
 
         if (!collector) {
@@ -196,6 +200,7 @@ exports.updateCollector = async (req, res) => {
 
         if (name !== undefined) collector.name = name;
         if (type !== undefined && type !== collector.type) {
+            // Handle type change logic if necessary (e.g., clearing other settings types)
             collector.type = type;
         }
         if (status !== undefined) collector.status = status;
@@ -207,25 +212,35 @@ exports.updateCollector = async (req, res) => {
 
                 if (settings.web_link) {
                     const newWebLinkSettings = settings.web_link;
-                    // --- MODIFIED: Added progressBarEnabled & progressBarStyle to allowedWebLinkKeys ---
+                    // --- MODIFIED: Added progressBarPosition to allowedWebLinkKeys ---
                     const allowedWebLinkKeys = [
                         'customSlug', 'password', 'openDate', 'closeDate',
                         'maxResponses', 'allowMultipleResponses', 'anonymousResponses',
                         'enableRecaptcha', 'recaptchaSiteKey',
                         'ipAllowlist', 'ipBlocklist',
                         'allowBackButton',
-                        'progressBarEnabled', // <<< ADDED
-                        'progressBarStyle'  // <<< ADDED
+                        'progressBarEnabled',
+                        'progressBarStyle',
+                        'progressBarPosition' // <<< ADDED
                     ];
 
                     for (const key of allowedWebLinkKeys) {
                         if (newWebLinkSettings.hasOwnProperty(key)) {
                              if (key === 'password') {
-                                collector.settings.web_link.password = newWebLinkSettings.password || undefined;
+                                // Only update/hash if a new password is provided.
+                                // If it's an empty string and was previously set, it should be unset by the pre-save hook if logic allows.
+                                // If null is sent, it means "remove password".
+                                if (newWebLinkSettings.password === null) { // Explicitly remove password
+                                    collector.settings.web_link.password = undefined;
+                                } else if (newWebLinkSettings.password) { // New password provided
+                                     collector.settings.web_link.password = newWebLinkSettings.password;
+                                }
+                                // If newWebLinkSettings.password is undefined or empty string, we don't touch the existing one here,
+                                // relying on pre-save hook for hashing new non-empty passwords.
                             } else if (key === 'maxResponses') {
                                 const parsedMax = parseInt(newWebLinkSettings.maxResponses, 10);
                                 collector.settings.web_link.maxResponses = (isNaN(parsedMax) || parsedMax <=0) ? null : parsedMax;
-                            } else if (key === 'enableRecaptcha' || key === 'allowMultipleResponses' || key === 'anonymousResponses' || key === 'allowBackButton' || key === 'progressBarEnabled') { // <<< MODIFIED: Added progressBarEnabled
+                            } else if (['enableRecaptcha', 'allowMultipleResponses', 'anonymousResponses', 'allowBackButton', 'progressBarEnabled'].includes(key)) {
                                 collector.settings.web_link[key] = !!newWebLinkSettings[key]; // Ensure boolean
                             } else if (key === 'ipAllowlist' || key === 'ipBlocklist') {
                                 collector.settings.web_link[key] = Array.isArray(newWebLinkSettings[key])
@@ -234,8 +249,11 @@ exports.updateCollector = async (req, res) => {
                             } else if (key === 'progressBarStyle') {
                                 const validStyles = ['percentage', 'pages'];
                                 collector.settings.web_link[key] = validStyles.includes(newWebLinkSettings[key]) ? newWebLinkSettings[key] : 'percentage';
+                            } else if (key === 'progressBarPosition') { // <<< ADDED
+                                const validPositions = ['top', 'bottom'];
+                                collector.settings.web_link[key] = validPositions.includes(newWebLinkSettings[key]) ? newWebLinkSettings[key] : 'top';
                             }
-                            else {
+                            else { // For other keys like customSlug, openDate, closeDate, recaptchaSiteKey
                                 collector.settings.web_link[key] = newWebLinkSettings[key];
                             }
                         }
@@ -244,7 +262,7 @@ exports.updateCollector = async (req, res) => {
                     if (newWebLinkSettings.customSlug && newWebLinkSettings.customSlug !== (collector.settings.web_link && collector.settings.web_link.customSlug)) {
                          const existingSlug = await Collector.findOne({
                             'settings.web_link.customSlug': newWebLinkSettings.customSlug,
-                            _id: { $ne: collectorId }
+                            _id: { $ne: collectorId } // Exclude the current collector
                         }).session(session);
                         if (existingSlug) {
                             await session.abortTransaction();
@@ -252,16 +270,23 @@ exports.updateCollector = async (req, res) => {
                             return res.status(400).json({ success: false, message: 'This custom slug is already in use.' });
                         }
                     }
+                     // If passwordProtectionEnabled is explicitly set to false in payload, and it's not handled by key 'password' directly
+                    if (newWebLinkSettings.hasOwnProperty('passwordProtectionEnabled') && newWebLinkSettings.passwordProtectionEnabled === false) {
+                         collector.settings.web_link.password = undefined;
+                    }
                 }
             }
-            collector.markModified('settings');
+            // Ensure other types of settings are also handled if 'type' changes or specific settings for other types are sent
+            // For now, focusing on web_link as it's the primary one being modified.
+            collector.markModified('settings'); // Important to tell Mongoose the nested settings object has changed
         }
 
-        const updatedCollector = await collector.save({ session });
+        const updatedCollector = await collector.save({ session }); // This will trigger pre-save hooks (e.g., for password hashing)
         await session.commitTransaction();
         session.endSession();
 
         const collectorObject = updatedCollector.toObject();
+        // Remove password before sending back, even if it's just a hash placeholder
         if (collectorObject.settings && collectorObject.settings.web_link && collectorObject.settings.web_link.password) {
             delete collectorObject.settings.web_link.password;
         }
@@ -277,7 +302,7 @@ exports.updateCollector = async (req, res) => {
             const messages = Object.values(error.errors).map(val => val.message);
             return res.status(400).json({ success: false, message: messages.join('. '), errors: error.errors });
         }
-        if (error.code === 11000) {
+        if (error.code === 11000) { // Duplicate key error
              if (error.keyValue && error.keyValue['settings.web_link.customSlug']) {
                 return res.status(400).json({ success: false, message: 'This custom slug is already in use (database constraint).' });
             }
@@ -304,12 +329,17 @@ exports.deleteCollector = async (req, res) => {
             session.endSession();
             return res.status(404).json({ success: false, message: 'Collector not found or does not belong to this survey.' });
         }
-        await Collector.findByIdAndDelete(collectorId, { session });
+        // Instead of findByIdAndDelete, use the instance's delete method if available and preferred,
+        // or ensure all related data is handled if necessary (e.g., responses linked to this collector if not cascade deleted by survey deletion)
+        await Collector.deleteOne({ _id: collectorId }, { session }); // Using deleteOne
+
+        // Remove collector reference from survey
         await Survey.findByIdAndUpdate(
             surveyId,
             { $pull: { collectors: collectorId } },
-            { session, new: true }
+            { session, new: true } // new: true is not strictly necessary for $pull if not using the result
         );
+
         await session.commitTransaction();
         session.endSession();
         res.status(200).json({ success: true, message: 'Collector deleted successfully.', data: { id: collectorId } });
@@ -322,4 +352,4 @@ exports.deleteCollector = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error deleting collector.' });
     }
 };
-// ----- END OF COMPLETE UPDATED FILE (v1.4 - Handle ProgressBar Settings) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.5 - Handle ProgressBar Position) -----
