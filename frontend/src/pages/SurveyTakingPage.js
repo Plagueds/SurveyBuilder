@@ -1,22 +1,30 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext16.35 - Adding handlePrevious) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext16.36 - Adding handleSavePartialResponse) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+// import { toast } from 'react-toastify'; // For actual implementation
 import styles from './SurveyTakingPage.module.css';
 
-// Helper functions
+// Helper functions & stubs
 const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : [])); 
-const evaluateSurveyLogic = (logicRules, answers, questions, questionIdToOriginalIndexMap) => { 
-    console.log('[Debug STM] evaluateSurveyLogic STUB CALLED'); 
-    return null; 
+const evaluateSurveyLogic = (logicRules, answers, questions, questionIdToOriginalIndexMap) => { return null; };
+const surveyApi = { // Mock/Stub for surveyApi
+    savePartialResponse: async (surveyId, collectorId, resumeToken, answers, currentQId) => {
+        console.log('[Debug STM] surveyApi.savePartialResponse STUB CALLED with:', { surveyId, collectorId, resumeToken, answers, currentQId });
+        // Simulate API call
+        await new Promise(resolve => setTimeout(resolve, 100)); // Simulate network delay
+        // Simulate a successful response with a new or existing resume token
+        return { success: true, resumeToken: resumeToken || `fakeToken_${Date.now()}`, message: 'Partial response saved (stubbed).' };
+    }
 };
 
 function SurveyTakingPage() {
     console.log('[Debug STM] SurveyTakingPage function component body executing. (Top)');
-    const { surveyId } = useParams(); 
+    const { surveyId, collectorId: routeCollectorIdentifier, resumeToken: routeResumeToken } = useParams();
     const location = useLocation();
-    const navigate = useNavigate(); // Needed for handlePrevious (potentially)
+    const navigate = useNavigate();
 
+    // State
     const [survey, setSurvey] = useState(null); 
     const [originalQuestions, setOriginalQuestions] = useState([]); 
     const [currentAnswers, setCurrentAnswers] = useState({}); 
@@ -25,81 +33,103 @@ function SurveyTakingPage() {
     const [otherInputValues, setOtherInputValues] = useState({}); 
     const [autoAdvanceState, setAutoAdvanceState] = useState(false); 
     const autoAdvanceTimeoutRef = useRef(null); 
-    const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0); // For handlePrevious
-    const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]); // For handlePrevious
-    
+    const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0);
+    const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]); 
+    const [currentCollectorIdentifier, setCurrentCollectorIdentifier] = useState(null); // For savePartial
+    const [currentResumeToken, setCurrentResumeToken] = useState(null); // For savePartial
+    const [isSavingPartial, setIsSavingPartial] = useState(false); // For savePartial UI
+
     const NA_VALUE_INTERNAL = '__NA__'; 
     const OTHER_VALUE_INTERNAL = '__OTHER__';
 
-    // --- useMemo hooks (as before) ---
-    useMemo(() => { console.log('[Debug STM] questionsById CALC.'); }, [originalQuestions]);
-    useMemo(() => { console.log('[Debug STM] questionsInCurrentOrder CALC.'); }, [/*deps*/]);
-    useMemo(() => { console.log('[Debug STM] questionIdToOriginalIndexMap CALC.'); }, [originalQuestions]);
-    useMemo(() => { console.log('[Debug STM] currentQToRenderMemoized CALC.'); }, [/*deps*/]);
-    useMemo(() => { console.log('[Debug STM] isSubmitStateDerived CALC.'); }, [/*deps*/]);
+    // --- useMemo hooks (as before, ensure all needed are present) ---
+    const questionsInCurrentOrder = useMemo(() => { console.log('[Debug STM] questionsInCurrentOrder CALC.'); return originalQuestions; }, [originalQuestions]); // Simplified for stub
+    // ... other useMemos
         
     console.log('[Debug STM] After useMemo hooks, before useEffect hooks.');
-    // --- useEffect hooks (as before) ---
-    useEffect(() => { console.log('[Debug STM] useEffect (Manual Loading Control) ENTERED.'); const t = setTimeout(() => { setIsLoading(false); setError("Testing + handlePrevious. Data fetching disabled."); }, 100); return () => clearTimeout(t); }, []);
-    // ... other useEffects ...
+    // --- useEffect hooks (as before, ensure all needed are present) ---
+    useEffect(() => { console.log('[Debug STM] useEffect (Manual Loading Control) ENTERED.'); const t = setTimeout(() => { setIsLoading(false); setError("Testing + handleSavePartial. Data fetching disabled."); }, 100); return () => clearTimeout(t); }, []);
+    useEffect(() => { setCurrentCollectorIdentifier(routeCollectorIdentifier); }, [routeCollectorIdentifier]);
+    useEffect(() => { setCurrentResumeToken(routeResumeToken); }, [routeResumeToken]);
+    // ... other useEffects
 
     console.log('[Debug STM] After useEffect hooks, before useCallback hooks.');
 
     // --- useCallback hooks ---
-    const evaluateDisabled = useCallback((qIdx) => { console.log('[Debug STM] evaluateDisabled DEFINITION - Attempting to log.'); return false; }, [originalQuestions]);
-    const validateQuestion = useCallback((question, answer) => { console.log('[Debug STM] validateQuestion DEFINITION - Attempting to log.'); return true; }, [otherInputValues, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
-    const evaluateGlobalLogic = useCallback(() => { console.log('[Debug STM] evaluateGlobalLogic DEFINITION - Attempting to log.'); return null; }, [survey, currentAnswers, originalQuestions, /* map */]); 
-    const evaluateActionLogic = useCallback((questionIndex) => { console.log('[Debug STM] evaluateActionLogic DEFINITION - Attempting to log.'); return null; }, [originalQuestions, currentAnswers, /* map */]); 
-    const handleNext = useCallback(() => { console.log('[Debug STM] handleNext (STUB) DEFINITION - Attempting to log.'); console.log('handleNext CALLED'); }, []); 
-    const handleInputChange = useCallback((questionId, value) => { console.log('[Debug STM] handleInputChange DEFINITION - Attempting to log.'); setCurrentAnswers(prev => ({ ...prev, [questionId]: value })); }, [autoAdvanceState, handleNext, autoAdvanceTimeoutRef, setCurrentAnswers]);
-    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => {
-        console.log('[Debug STM] handleCheckboxChange (FULL) DEFINITION - Attempting to log.');
-        setCurrentAnswers(prevAnswers => { /* ... full logic ... */ return { ...prevAnswers, [questionId]: [] }; }); // Simplified return for brevity
-    }, [OTHER_VALUE_INTERNAL, setCurrentAnswers, setOtherInputValues]);
-    const handleOtherInputChange = useCallback((questionId, value) => {
-        console.log('[Debug STM] handleOtherInputChange DEFINITION - Attempting to log.');
-        setOtherInputValues(prev => ({ ...prev, [questionId]: value }));
-        // ... full logic ...
-    }, [OTHER_VALUE_INTERNAL, currentAnswers, setCurrentAnswers, setOtherInputValues]);
+    const evaluateDisabled = useCallback((qIdx) => { /* ... */ return false; }, [originalQuestions]);
+    const validateQuestion = useCallback((question, answer) => { /* ... */ return true; }, [otherInputValues, NA_VALUE_INTERNAL, OTHER_VALUE_INTERNAL]);
+    const evaluateGlobalLogic = useCallback(() => { /* ... */ return null; }, [survey, currentAnswers, originalQuestions, /* map */]); 
+    const evaluateActionLogic = useCallback((questionIndex) => { /* ... */ return null; }, [originalQuestions, currentAnswers, /* map */]); 
+    const handleNext = useCallback(() => { /* ... */ }, []); 
+    const handleInputChange = useCallback((questionId, value) => { /* ... */ setCurrentAnswers(prev => ({ ...prev, [questionId]: value })); }, [autoAdvanceState, handleNext, autoAdvanceTimeoutRef, setCurrentAnswers]);
+    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { /* ... */ }, [OTHER_VALUE_INTERNAL, setCurrentAnswers, setOtherInputValues]);
+    const handleOtherInputChange = useCallback((questionId, value) => { /* ... */ }, [OTHER_VALUE_INTERNAL, currentAnswers, setCurrentAnswers, setOtherInputValues]);
+    const handlePrevious = useCallback(() => { /* ... */ }, [currentVisibleIndex, setCurrentVisibleIndex]);
 
-    // ++ ADDING handlePrevious ++
-    const handlePrevious = useCallback(() => {
-        console.log('[Debug STM] handlePrevious DEFINITION - Attempting to log.');
-        console.log('[Debug STM] handlePrevious CALLED. CurrentVisibleIndex before:', currentVisibleIndex);
-        if (currentVisibleIndex > 0) {
-            setCurrentVisibleIndex(prev => prev - 1);
-            console.log('[Debug STM] handlePrevious: Decremented currentVisibleIndex.');
-        } else {
-            console.log('[Debug STM] handlePrevious: Already at the first question or no visible questions.');
+    // ++ ADDING handleSavePartialResponse ++
+    const handleSavePartialResponse = useCallback(async () => {
+        console.log('[Debug STM] handleSavePartialResponse DEFINITION - Attempting to log.');
+        if (!surveyId || isSavingPartial) {
+            console.log('[Debug STM] handleSavePartialResponse: Missing surveyId or already saving. Aborting.');
+            return;
         }
-        // Potentially scroll to top: window.scrollTo(0, 0);
-    }, [currentVisibleIndex, setCurrentVisibleIndex /*, visibleQuestionIndices, surveyId, navigate */]); // surveyId, navigate if returning to survey list
+
+        setIsSavingPartial(true);
+        console.log('[Debug STM] handleSavePartialResponse: Attempting to save.');
+        // const currentQuestionId = questionsInCurrentOrder[visibleQuestionIndices[currentVisibleIndex]]?._id; // Simplified for test
+        const currentQuestionId = "current_question_id_stub";
+
+        try {
+            const result = await surveyApi.savePartialResponse(
+                surveyId,
+                currentCollectorIdentifier,
+                currentResumeToken,
+                currentAnswers,
+                currentQuestionId
+            );
+            if (result.success) {
+                setCurrentResumeToken(result.resumeToken); // Update token
+                // toast.success(result.message || 'Partial response saved!'); // For actual implementation
+                console.log('[Debug STM] handleSavePartialResponse: Save successful.', result);
+            } else {
+                // toast.error(result.message || 'Failed to save partial response.'); // For actual implementation
+                console.error('[Debug STM] handleSavePartialResponse: Save failed.', result);
+            }
+        } catch (error) {
+            // toast.error('An error occurred while saving.'); // For actual implementation
+            console.error('[Debug STM] handleSavePartialResponse: Save error.', error);
+        } finally {
+            setIsSavingPartial(false);
+            console.log('[Debug STM] handleSavePartialResponse: Finalized saving attempt.');
+        }
+    }, [
+        surveyId, 
+        currentCollectorIdentifier, 
+        currentResumeToken, 
+        currentAnswers, 
+        // questionsInCurrentOrder, visibleQuestionIndices, currentVisibleIndex, // Dependencies for real currentQuestionId
+        isSavingPartial, 
+        setIsSavingPartial, 
+        setCurrentResumeToken
+    ]);
 
     console.log('[Debug STM] After useCallback hooks, before main render logic.');
-    
-    console.log(`[Debug STM] Render: Top of render logic. isLoading=${isLoading}, error=${error}`);
     
     if (isLoading) { return <div>Loading...</div> }
     if (error) { 
         return (
             <div className={styles.errorContainer}>
-                <h2>Test Information (Testing + handlePrevious)</h2>
+                <h2>Test Information (Testing + handleSavePartial)</h2>
                 <p>{error}</p>
-                <button onClick={handlePrevious}>Test Previous</button>
-                <p>Current Visible Index: {currentVisibleIndex}</p>
-                {/* Other test buttons/inputs can be added if needed */}
+                <button onClick={handleSavePartialResponse} disabled={isSavingPartial}>
+                    {isSavingPartial ? 'Saving...' : 'Test Save Partial'}
+                </button>
+                <p>Current Resume Token: {currentResumeToken || 'None'}</p>
             </div>
         );
     }
     
-    return (
-        <div className={styles.surveyContainer}>
-            <h1>Survey Taking Page (Testing + handlePrevious)</h1>
-            <button onClick={handlePrevious}>Test Previous</button>
-            <p>Current Visible Index: {currentVisibleIndex}</p>
-            {/* ... Other UI elements ... */}
-        </div>
-    );
+    return ( /* ... similar UI ... */ <button onClick={handleSavePartialResponse}>Test Save Partial</button>);
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext16.35 - Adding handlePrevious) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext16.36 - Adding handleSavePartialResponse) -----
