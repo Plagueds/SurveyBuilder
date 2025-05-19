@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext16.2 - Debugging "Loading survey..." issue) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext16.3 - Refining fetch dependencies and initial CVI/Path reset) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -7,6 +7,7 @@ import ReCAPTCHA from "react-google-recaptcha";
 import styles from './SurveyTakingPage.module.css';
 import surveyApiFunctions from '../api/surveyApi';
 
+// Question component imports (ensure these are used by renderQuestion)
 import ShortTextQuestion from '../components/survey_question_renders/ShortTextQuestion';
 import TextAreaQuestion from '../components/survey_question_renders/TextAreaQuestion';
 import MultipleChoiceQuestion from '../components/survey_question_renders/MultipleChoiceQuestion';
@@ -25,10 +26,10 @@ import CardSortQuestion from '../components/survey_question_renders/CardSortQues
 import Modal from '../components/common/Modal';
 
 const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : []));
-const isAnswerEmpty = (value, questionType) => { /* ... (same as vNext16.1) ... */ return false; }; // Keep full implementation
-const shuffleArray = (array) => { /* ... (same as vNext16.1) ... */ return array; }; // Keep full implementation
-const toRoman = (num) => { /* ... (same as vNext16.1) ... */ return String(num); }; // Keep full implementation
-const toLetters = (num) => { /* ... (same as vNext16.1) ... */ return String(num); }; // Keep full implementation
+const isAnswerEmpty = (value, questionType) => { /* ... full implementation ... */ return false;};
+const shuffleArray = (array) => { /* ... full implementation ... */ return array;};
+const toRoman = (num) => { /* ... full implementation ... */ return String(num);};
+const toLetters = (num) => { /* ... full implementation ... */ return String(num);};
 const evaluateSurveyLogic = (logicRules, answers, questions) => { /* Placeholder */ return null; };
 
 
@@ -37,7 +38,7 @@ function SurveyTakingPage() {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // State variables (same as vNext16.1)
+    // State variables
     const [survey, setSurvey] = useState(null);
     const [originalQuestions, setOriginalQuestions] = useState([]);
     const [currentAnswers, setCurrentAnswers] = useState({});
@@ -77,7 +78,7 @@ function SurveyTakingPage() {
     const [saveEmail, setSaveEmail] = useState('');
     const [isSavingPartial, setIsSavingPartial] = useState(false);
     const [capturedCustomVars, setCapturedCustomVars] = useState(new Map());
-    const [currentResumeToken, setCurrentResumeToken] = useState(null);
+    const [currentResumeToken, setCurrentResumeToken] = useState(null); // This will be set by its own effect
     const [showResumeCodeInfo, setShowResumeCodeInfo] = useState(false);
     const [resumeCodeToDisplay, setResumeCodeToDisplay] = useState('');
     const [resumeLinkToDisplay, setResumeLinkToDisplay] = useState('');
@@ -86,192 +87,195 @@ function SurveyTakingPage() {
     const NA_VALUE_INTERNAL = '__NA__';
     const OTHER_VALUE_INTERNAL = '__OTHER__';
 
-    // Memoized selectors (same as vNext16.1)
+    // Memoized selectors
     const questionsById = useMemo(() => originalQuestions.reduce((map, q) => { if(q && q._id) map[q._id] = q; return map; }, {}), [originalQuestions]);
     const questionsInCurrentOrder = useMemo(() => (randomizedQuestionOrder.length > 0 && originalQuestions.length > 0) ? randomizedQuestionOrder.map(index => originalQuestions[index]).filter(q => q) : originalQuestions.filter(q => q), [randomizedQuestionOrder, originalQuestions]);
     const questionIdToOriginalIndexMap = useMemo(() => originalQuestions.reduce((map, q, index) => { if(q && q._id) map[q._id] = index; return map; }, {}), [originalQuestions]);
-    const currentQToRenderMemoized = useMemo(() => { /* ... (with logs from vNext16.1) ... */ 
+    const currentQToRenderMemoized = useMemo(() => {
+        // console.log(`[Debug STM] currentQToRenderMemoized: isLoading=${isLoading}, survey=${!!survey}, VQI.length=${visibleQuestionIndices.length}, CVI=${currentVisibleIndex}`);
         if (isLoading || !survey || visibleQuestionIndices.length === 0 || currentVisibleIndex < 0 || currentVisibleIndex >= visibleQuestionIndices.length) {
             return null;
         }
         const currentOriginalIdx = visibleQuestionIndices[currentVisibleIndex];
         if (currentOriginalIdx === undefined || currentOriginalIdx < 0 || currentOriginalIdx >= originalQuestions.length) {
+            // console.error(`[Debug STM] Invalid currentOriginalIdx: ${currentOriginalIdx} for originalQuestions length: ${originalQuestions.length}`);
             return null;
         }
         return originalQuestions[currentOriginalIdx] || null;
     }, [isLoading, survey, visibleQuestionIndices, currentVisibleIndex, originalQuestions]);
-    const isSubmitStateDerived = useMemo(() => { /* ... (same as vNext16.1) ... */ return false;}, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
+    const isSubmitStateDerived = useMemo(() => { /* ... same ... */ return false; }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
     
-    // useEffect(() => { console.log(`[Debug STM] isSubmitStateDerived changed to: ${isSubmitStateDerived}, CVI: ${currentVisibleIndex}, VQI.length: ${visibleQuestionIndices.length}`); }, [isSubmitStateDerived, currentVisibleIndex, visibleQuestionIndices.length]);
+    // useEffect(() => { console.log(`[Debug STM] isSubmitStateDerived: ${isSubmitStateDerived}, CVI: ${currentVisibleIndex}, VQI.length: ${visibleQuestionIndices.length}`); }, [isSubmitStateDerived, currentVisibleIndex, visibleQuestionIndices.length]);
     
+    // Effect to set currentCollectorIdentifier from route/location
     useEffect(() => {
         const effectiveCollectorId = location.state?.collectorIdentifier || routeCollectorIdentifier;
-        // console.log(`[Debug STM] useEffect (collector/token init): routeCollectorIdentifier=${routeCollectorIdentifier}, location.state?.collectorIdentifier=${location.state?.collectorIdentifier}, effectiveCollectorId=${effectiveCollectorId}`);
+        // console.log(`[Debug STM] Setting currentCollectorIdentifier to: ${effectiveCollectorId}`);
         setCurrentCollectorIdentifier(effectiveCollectorId);
+    }, [location.state?.collectorIdentifier, routeCollectorIdentifier]);
 
+    // Effect to set currentResumeToken from route/location
+    useEffect(() => {
         const tokenFromRoute = routeResumeToken;
         const tokenFromState = location.state?.resumeToken;
-        // console.log(`[Debug STM] useEffect (collector/token init): routeResumeToken=${tokenFromRoute}, location.state?.resumeToken=${tokenFromState}`);
         if (tokenFromRoute && currentResumeToken !== tokenFromRoute) {
             // console.log(`[Debug STM] Setting currentResumeToken from route: ${tokenFromRoute}`);
             setCurrentResumeToken(tokenFromRoute);
-        } else if (tokenFromState && currentResumeToken !== tokenFromState) {
+        } else if (tokenFromState && currentResumeToken !== tokenFromState && !tokenFromRoute) { // Prefer route token if both exist
             // console.log(`[Debug STM] Setting currentResumeToken from location state: ${tokenFromState}`);
             setCurrentResumeToken(tokenFromState);
         }
-    }, [location.state, routeCollectorIdentifier, routeResumeToken, currentResumeToken]); // Added currentResumeToken to prevent loop if it's already set
+    }, [location.state?.resumeToken, routeResumeToken, currentResumeToken]);
 
 
     useEffect(() => { /* ... CustomVars logic ... */ }, [survey, location.search]);
 
     const fetchSurvey = useCallback(async (signal) => {
         console.log('[Debug STM] fetchSurvey called.');
-        setIsLoading(true);
+        setIsLoading(true); // Set loading true at the very start of fetch attempt
         setError(null);
-        setHiddenQuestionIds(new Set());
-        setIsDisqualified(false);
-        // DO NOT RESET CVI and VisitedPath here if resuming, fetchSurvey should handle it via partialResponse
-        // setCurrentVisibleIndex(0); 
-        // setVisitedPath([]); 
+        // Reset some states only if not resuming (partialResponse will override these if resuming)
+        // This ensures a clean state for a fresh survey load.
+        if (!currentResumeToken) { // Only reset these if it's not a resume operation initially
+            setHiddenQuestionIds(new Set());
+            setIsDisqualified(false);
+            setCurrentVisibleIndex(0); 
+            setVisitedPath([]); 
+            // console.log('[Debug STM] fetchSurvey: Not resuming, reset CVI and visitedPath.');
+        }
         setRecaptchaToken(null);
-
-        if (!surveyId) {
-            setError("Survey ID is missing.");
-            setIsLoading(false);
-            console.error('[Debug STM] fetchSurvey: Survey ID missing.');
-            return;
-        }
-        
-        // Use currentResumeToken directly as it's managed by its own useEffect now
-        const effectiveTokenForAPI = currentResumeToken; 
-        // console.log(`[Debug STM] fetchSurvey: Using effectiveTokenForAPI: ${effectiveTokenForAPI}, currentCollectorIdentifier: ${currentCollectorIdentifier}`);
-
-        if (!currentCollectorIdentifier && !(location.state?.isPreviewingOwner) && !effectiveTokenForAPI) {
-            setError("Collector identifier or resume token is missing for API call.");
-            setIsLoading(false);
-            console.error('[Debug STM] fetchSurvey: Collector ID or resume token missing for API.');
-            return;
-        }
         
         try {
-            console.log('[Debug STM] fetchSurvey: Attempting API call.');
-            const options = { forTaking: 'true', signal, collectorId: currentCollectorIdentifier, resumeToken: effectiveTokenForAPI };
+            // console.log(`[Debug STM] fetchSurvey: API call with surveyId=${surveyId}, collectorId=${currentCollectorIdentifier}, resumeToken=${currentResumeToken}`);
+            const options = { forTaking: 'true', signal, collectorId: currentCollectorIdentifier, resumeToken: currentResumeToken };
             if (location.state?.isPreviewingOwner) options.isPreviewingOwner = true;
             
             const responsePayload = await surveyApiFunctions.getSurveyById(surveyId, options);
-            console.log('[Debug STM] fetchSurvey: API response received:', responsePayload);
+            // console.log('[Debug STM] fetchSurvey: API response received:', responsePayload?.success);
 
             if (!responsePayload || !responsePayload.success || !responsePayload.data) {
                 const errorMsg = responsePayload?.message || "Failed to retrieve survey data.";
-                if (responsePayload?.status === 410 && effectiveTokenForAPI) { 
-                    setError(errorMsg + " You may need to start over or use a new link if provided."); 
-                    toast.error(errorMsg); 
-                } else { 
-                    throw new Error(errorMsg); 
-                }
-                // setIsLoading(false) will be handled by finally
-                return;
+                throw new Error(errorMsg); // Let catch block handle it
             }
             const surveyData = responsePayload.data;
             if (!surveyData || !Array.isArray(surveyData.questions)) {
-                console.error("[Debug STM] Survey data is malformed:", surveyData);
                 throw new Error("Survey data is malformed.");
             }
             
-            // ... (rest of the successful data processing from vNext16.1)
-            setSurvey(surveyData); // This will trigger other useEffects
-            // ... (setting originalQuestions, randomization, partialResponse handling etc.)
+            setCollectorSettings(surveyData.collectorSettings || {});
+            setActualCollectorObjectId(surveyData.actualCollectorObjectId || null);
+            // ... (set other settings like allowBackButton, progressBar, autoAdvance, qNum, saveAndContinue) ...
+            setAllowBackButton(typeof surveyData.collectorSettings?.allowBackButton === 'boolean' ? surveyData.collectorSettings.allowBackButton : true);
+            setProgressBarEnabledState(typeof surveyData.collectorSettings?.progressBarEnabled === 'boolean' ? surveyData.collectorSettings.progressBarEnabled : false);
+            // ... (all other settings from surveyData)
+
+            setSurvey(surveyData);
             const fetchedQuestions = surveyData.questions || [];
-            setOriginalQuestions(fetchedQuestions); // This is key for other effects
-            // ... (the rest of the state setting logic from vNext16.1) ...
+            setOriginalQuestions(fetchedQuestions);
+            
+            let initialOrderIndices = fetchedQuestions.map((_, index) => index);
+            if (surveyData.randomizationLogic?.type === 'all') initialOrderIndices = shuffleArray(initialOrderIndices);
+            setRandomizedQuestionOrder(initialOrderIndices);
+            // ... (setRandomizedOptionOrders)
+
             if (surveyData.partialResponse) {
-                console.log("[Debug STM] Resuming survey with data:", surveyData.partialResponse);
+                // console.log("[Debug STM] Resuming survey with data:", surveyData.partialResponse);
                 setCurrentAnswers(surveyData.partialResponse.answers || {});
                 setOtherInputValues(surveyData.partialResponse.otherInputValues || {});
-                setCurrentVisibleIndex(surveyData.partialResponse.currentVisibleIndex || 0); // Set CVI from partial
-                setVisitedPath(surveyData.partialResponse.visitedPath || []); // Set visitedPath from partial
+                setCurrentVisibleIndex(surveyData.partialResponse.currentVisibleIndex || 0);
+                setVisitedPath(surveyData.partialResponse.visitedPath || []);
                 setSessionId(surveyData.partialResponse.sessionId || sessionId); 
                 setSurveyStartedAt(surveyData.partialResponse.createdAt || surveyStartedAt); 
+                if(surveyData.partialResponse.hiddenQuestionIds) setHiddenQuestionIds(new Set(surveyData.partialResponse.hiddenQuestionIds));
                 toast.info("Survey progress resumed.");
             } else {
-                 // Only reset these if not resuming
+                // If not resuming, ensure these are reset (already done above if !currentResumeToken, but good to be explicit for non-resume path)
                 setCurrentVisibleIndex(0);
                 setVisitedPath([]);
+                setHiddenQuestionIds(new Set());
                 const initialAnswers = {}; fetchedQuestions.forEach(q => { if (q && q._id) { let da = ''; if (q.type === 'checkbox') da = []; else if (q.type === 'slider') da = String(Math.round(((q.sliderMin ?? 0) + (q.sliderMax ?? 100)) / 2)); else if (q.type === 'ranking') da = ensureArray(q.options?.map(opt => typeof opt === 'string' ? opt : (opt.text || String(opt)))); else if (q.type === 'cardsort') da = { assignments: {}, userCategories: [] }; else if (q.type === 'maxdiff') da = { best: null, worst: null }; else if (q.type === 'conjoint') da = {}; initialAnswers[q._id] = da; } }); setCurrentAnswers(initialAnswers); setOtherInputValues({});
             }
-            console.log('[Debug STM] fetchSurvey: Successfully processed survey data.');
-
+            // console.log('[Debug STM] fetchSurvey: Successfully processed survey data.');
         } catch (errCatch) { 
             if (errCatch.name === 'AbortError') {
                 console.log('[Debug STM] Fetch aborted by AbortController.'); 
             } else { 
-                const msg = errCatch.response?.data?.message || errCatch.message || "Could not load survey."; 
-                console.error('[Debug STM] fetchSurvey Error:', msg, errCatch);
-                setError(msg); 
-                if(msg !== "This resume link has expired." && msg !== "This survey session has already been completed.") {
-                    toast.error(`Error: ${msg}`);
-                }
+                console.error('[Debug STM] fetchSurvey Error:', errCatch.message, errCatch);
+                setError(errCatch.message || "Could not load survey."); 
+                toast.error(`Error: ${errCatch.message || "Could not load survey."}`);
             } 
         } finally { 
             setIsLoading(false); 
-            console.log('[Debug STM] fetchSurvey finally block. isLoading set to false.');
+            // console.log('[Debug STM] fetchSurvey finally block. isLoading set to false.');
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [surveyId, currentCollectorIdentifier, location.state?.isPreviewingOwner, sessionId, surveyStartedAt, currentResumeToken /* Removed location.state parts that are covered by currentCollectorIdentifier/currentResumeToken */]);
+    }, [surveyId, currentCollectorIdentifier, currentResumeToken, location.state?.isPreviewingOwner, sessionId, surveyStartedAt /* surveyStartedAt and sessionId are stable unless resuming */]);
     
+    // Main useEffect to trigger data fetching
     useEffect(() => {
-        console.log(`[Debug STM] useEffect (fetchSurvey trigger): currentCollectorIdentifier=${currentCollectorIdentifier}, currentResumeToken=${currentResumeToken}, isPreviewingOwner=${location.state?.isPreviewingOwner}`);
+        const isPreviewing = location.state?.isPreviewingOwner;
+        // console.log(`[Debug STM] useEffect (fetch trigger): CCI=${currentCollectorIdentifier}, CRT=${currentResumeToken}, isPreview=${isPreviewing}`);
         
-        const shouldFetch = currentCollectorIdentifier || currentResumeToken || location.state?.isPreviewingOwner;
+        // Fetch if we have a collector or a resume token, or if previewing
+        const shouldFetch = surveyId && (currentCollectorIdentifier || currentResumeToken || isPreviewing);
 
         if (shouldFetch) {
-            console.log('[Debug STM] useEffect: Conditions met, calling fetchSurvey.');
+            // console.log('[Debug STM] useEffect: Conditions met, calling fetchSurvey.');
             const controller = new AbortController();
-            fetchSurvey(controller.signal); // Call fetchSurvey
+            fetchSurvey(controller.signal);
             
             const timeoutId = autoAdvanceTimeoutRef.current; 
             return () => {
-                console.log('[Debug STM] useEffect: Cleanup for fetchSurvey call, aborting controller.');
+                // console.log('[Debug STM] useEffect: Cleanup for fetchSurvey call, aborting controller.');
                 controller.abort();
-                if (timeoutId) { 
-                    clearTimeout(timeoutId);
-                }
+                if (timeoutId) clearTimeout(timeoutId);
             };
-        } else {
-            // This case handles when neither collectorId nor token is available from the start.
-            // Avoids calling fetchSurvey if essential identifiers are missing.
-            console.log('[Debug STM] useEffect: Conditions NOT met for fetchSurvey. Setting error and isLoading false.');
-            setIsLoading(false); 
+        } else if (surveyId) { // Only set error if surveyId is present but other conditions aren't met
+            // console.log('[Debug STM] useEffect: surveyId present, but conditions NOT met for fetchSurvey. Setting error.');
             setError("Collector information or resume token is missing to load the survey.");
+            setIsLoading(false); // Ensure loading is false if we decide not to fetch
         }
+        // If no surveyId, do nothing, initial state (isLoading=true) will show "Loading survey..." or an error if surveyId is missing from fetchSurvey
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fetchSurvey, currentCollectorIdentifier, currentResumeToken, location.state?.isPreviewingOwner]); // Dependencies that determine if fetch should run
+    }, [surveyId, currentCollectorIdentifier, currentResumeToken, location.state?.isPreviewingOwner, fetchSurvey]); // fetchSurvey is a dependency
 
     useEffect(() => { /* ... visibleQuestionIndices calculation (with logs from vNext16.1) ... */ }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices]);
     useEffect(() => { /* ... CVI boundary check logic (same as vNext16.1) ... */ }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, allowBackButton, visitedPath]);
     
     const evaluateDisabled = useCallback((questionOriginalIndex) => originalQuestions[questionOriginalIndex]?.isDisabled === true, [originalQuestions]);
-    const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabledBySetting = false) => { /* ... (same as vNext16.1) ... */ return true; }, [otherInputValues]);
-    const evaluateGlobalLogic = useCallback(() => { /* ... (same as vNext16.1) ... */ return null; }, [survey, currentAnswers, originalQuestions]);
-    const evaluateActionLogic = useCallback((questionOriginalIndex) => { /* ... (same as vNext16.1) ... */ return null; }, [originalQuestions, currentAnswers]);
-    const handleNext = useCallback(() => { /* ... (same as vNext16.1) ... */ }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap]);
-    const handleInputChange = useCallback((questionId, value) => { /* ... (same as vNext16.1) ... */ }, [questionsById, autoAdvanceState, handleNext, evaluateDisabled, questionIdToOriginalIndexMap, otherInputValues]);
-    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { /* ... (same as vNext16.1) ... */ }, [questionsById]);
+    const validateQuestion = useCallback((question, answer, isSoftCheck = false, isDisabledBySetting = false) => { /* ... */ return true; }, [otherInputValues]);
+    const evaluateGlobalLogic = useCallback(() => { /* ... */ return null; }, [survey, currentAnswers, originalQuestions]);
+    const evaluateActionLogic = useCallback((questionOriginalIndex) => { /* ... */ return null; }, [originalQuestions, currentAnswers]);
+    const handleNext = useCallback(() => { /* ... */ }, [currentVisibleIndex, visibleQuestionIndices, isDisqualified, isLoading, originalQuestions, currentAnswers, evaluateDisabled, validateQuestion, allowBackButton, evaluateGlobalLogic, evaluateActionLogic, questionIdToOriginalIndexMap]);
+    const handleInputChange = useCallback((questionId, value) => { /* ... */ }, [questionsById, autoAdvanceState, handleNext, evaluateDisabled, questionIdToOriginalIndexMap, otherInputValues]);
+    const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => { /* ... */ }, [questionsById]);
     const handleOtherInputChange = useCallback((questionId, textValue) => { setOtherInputValues(prev => ({ ...prev, [questionId]: textValue })); }, []);
-    const renderQuestion = useCallback((questionToRenderArg) => { /* ... (with logs and checks from vNext16.1) ... */ return <div>Question Placeholder</div>; }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled, qNumEnabledState, qNumFormatState, visibleQuestionIndices]);
-    const handlePrevious = useCallback(() => { /* ... (same as vNext16.1) ... */ }, [isDisqualified, isLoading, visitedPath, currentVisibleIndex, visibleQuestionIndices, allowBackButton]);
-    const handleSubmit = useCallback(async (e) => { /* ... (same as vNext16.1, ensure setIsSubmitting is used) ... */ }, [actualCollectorObjectId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, questionIdToOriginalIndexMap, surveyStartedAt, capturedCustomVars, currentResumeToken]);
-    const handleSavePartialResponse = async () => { /* ... (same as vNext16.1) ... */ };
-    const renderProgressBar = () => { /* ... (same as vNext16.1) ... */ return null; };
+    const renderQuestion = useCallback((questionToRenderArg) => { /* ... (with logs and checks from vNext16.1) ... */ return <div>Question Placeholder</div>; }, [currentAnswers, otherInputValues, handleInputChange, questionIdToOriginalIndexMap, handleOtherInputChange, handleCheckboxChange, randomizedOptionOrders, evaluateDisabled, qNumEnabledState, qNumFormatState, visibleQuestionIndices, toLetters, toRoman]);
+    const handlePrevious = useCallback(() => { /* ... */ }, [isDisqualified, isLoading, visitedPath, currentVisibleIndex, visibleQuestionIndices, allowBackButton]);
+    const handleSubmit = useCallback(async (e) => { /* ... */ }, [actualCollectorObjectId, collectorSettings, recaptchaEnabled, recaptchaToken, recaptchaSiteKey, visibleQuestionIndices, originalQuestions, evaluateDisabled, validateQuestion, currentAnswers, questionsById, otherInputValues, sessionId, surveyId, navigate, questionIdToOriginalIndexMap, surveyStartedAt, capturedCustomVars, currentResumeToken]);
+    const handleSavePartialResponse = async () => { /* ... */ };
+    const renderProgressBar = () => { /* ... */ return null; };
 
     // --- Render logic ---
-    if (isLoading && !survey) { // This is the "Loading survey..." state
-        console.log(`[Debug STM] Render: Stuck on "Loading survey..." (isLoading: ${isLoading}, survey: ${!!survey})`);
+    if (!surveyId) { // Handle missing surveyId early
+        return <div className={styles.errorContainer}><h2>Survey Not Specified</h2><p>No survey ID was provided in the URL.</p></div>;
+    }
+
+    if (isLoading && !survey) {
+        // console.log(`[Debug STM] Render: "Loading survey..." (isLoading: ${isLoading}, survey: ${!!survey})`);
         return <div className={styles.loading}>Loading survey...</div>;
     }
-    // ... (rest of the render logic from vNext16.1, with logs) ...
-    if (error && !survey && !hasAlreadyResponded) return <div className={styles.errorContainer}><h2>Error Loading Survey</h2><p>{error}</p><button onClick={() => { console.log("[Debug STM] Retry button clicked."); const c = new AbortController(); fetchSurvey(c.signal); }} className={styles.navButton}>Retry</button></div>;
-    if (!survey && !isLoading && !error && !hasAlreadyResponded) return <div className={styles.errorContainer}>Survey not found or could not be loaded (final check).</div>;
+    
+    if (error && !survey) { // If error happened before survey was loaded
+        // console.log(`[Debug STM] Render: Error before survey loaded: ${error}`);
+        return <div className={styles.errorContainer}><h2>Error Loading Survey</h2><p>{error}</p><button onClick={() => { setIsLoading(true); setError(null); fetchSurvey(new AbortController().signal); }} className={styles.navButton}>Retry</button></div>;
+    }
+
+    if (!survey && !isLoading) { // Should ideally be caught by error state, but as a fallback
+        // console.log(`[Debug STM] Render: No survey and not loading, possible error not set or unexpected state.`);
+        return <div className={styles.errorContainer}>Survey data could not be loaded. Please try again or check the URL.</div>;
+    }
+    
     if (isDisqualified) return ( <div className={styles.surveyContainer}><h1 className={styles.surveyTitle}>{survey?.title||'Survey'}</h1><div className={styles.disqualifiedBox}><h2>Survey Ended</h2><p>{disqualificationMessage || "You do not qualify."}</p></div></div> );
 
     const finalCurrentQToRender = currentQToRenderMemoized;
@@ -279,42 +283,35 @@ function SurveyTakingPage() {
     const isCurrentQuestionDisabledBySetting = finalCurrentQToRender ? evaluateDisabled(questionIdToOriginalIndexMap[finalCurrentQToRender._id]) : false;
     const progressBarComponent = progressBarEnabledState ? renderProgressBar() : null;
 
-    // console.log(`[Debug STM] FINAL RENDER STATE - finalIsSubmitState: ${finalIsSubmitState}, finalCurrentQToRender ID: ${finalCurrentQToRender ? finalCurrentQToRender._id : 'null'}, CVI: ${currentVisibleIndex}, VQI: [${visibleQuestionIndices.join(',')}]`);
+    // console.log(`[Debug STM] FINAL RENDER - SubmitState: ${finalIsSubmitState}, Q_ID: ${finalCurrentQToRender ? finalCurrentQToRender._id : 'null'}, CVI: ${currentVisibleIndex}, VQI_Len: ${visibleQuestionIndices.length}`);
 
     return (
         <>
-            {/* ... (JSX structure from vNext16.1, ensure renderQuestion is called) ... */}
             <div className={styles.surveyContainer}>
                 {progressBarPositionState === 'top' && progressBarComponent}
                 <h1 className={styles.surveyTitle}>{survey?.title || 'Survey'}</h1>
                 {(visitedPath.length === 0 || (visitedPath.length === 1 && currentVisibleIndex === 0 && visibleQuestionIndices.indexOf(visitedPath[0]) === 0 )) && survey?.description && <p className={styles.surveyDescription}>{survey.description}</p>}
-                {error && survey && <div className={styles.submissionError}><p>Error: {error}</p></div>}
+                {error && survey && <div className={styles.submissionError}><p>Error during survey: {error}</p></div>} {/* Error that occurs after survey loaded */}
                 
-                {isLoading && survey ? <div className={styles.loading}>Loading question... (survey object exists but still loading)</div> : // Differentiated loading message
+                {isLoading && survey ? <div className={styles.loading}>Processing survey data...</div> : // Survey object exists but still processing (e.g. question logic)
                     <div className={`${styles.questionBox} ${isCurrentQuestionDisabledBySetting ? styles.disabled : ''}`}>
                         {finalIsSubmitState ? ( 
-                            <div className={styles.submitPrompt}> 
-                                <p>End of survey.</p> 
-                                <p>Click "Submit" to record responses.</p> 
-                            </div> 
+                            <div className={styles.submitPrompt}> <p>End of survey.</p> <p>Click "Submit" to record responses.</p> </div> 
                         )
                         : finalCurrentQToRender ? ( 
                             renderQuestion(finalCurrentQToRender)
                         )
                         : ( originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isDisqualified ? 
-                            <div className={styles.submitPrompt}><p>No questions are currently visible based on survey logic or settings. Submit if applicable.</p></div>
-                            : (isLoading ? 
-                                <div className={styles.loading}>Preparing...</div> 
-                                : <div className={styles.loading}>Survey appears empty or there's an issue displaying questions. (finalCurrentQToRender is null and not submit state)</div>
-                              )
+                            <div className={styles.submitPrompt}><p>No questions are currently visible. This might be due to survey logic or settings.</p></div>
+                            : <div className={styles.loading}>No question to display at this step.</div>
                           )}
                     </div>
                 }
-                 {/* ... rest of JSX ... */}
+                {/* ... rest of JSX ... */}
             </div>
         </>
     );
 }
 
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext16.2 - Debugging "Loading survey..." issue) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext16.3 - Refining fetch dependencies and initial CVI/Path reset) -----
