@@ -1,8 +1,8 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext16.19 - Re-introducing useMemos) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext16.20 - Re-introducing other useEffects) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { toast } from 'react-toastify'; // Keep for now, might be used by re-enabled callbacks later
+import { toast } from 'react-toastify';
 import ReCAPTCHA from "react-google-recaptcha"; // Keep for now
 import styles from './SurveyTakingPage.module.css';
 import surveyApiFunctions from '../api/surveyApi'; // Keep for now
@@ -10,113 +10,147 @@ import surveyApiFunctions from '../api/surveyApi'; // Keep for now
 // Commented out, not used in this simplified version yet
 // import ShortTextQuestion from '../components/survey_question_renders/ShortTextQuestion';
 // ... etc.
-// import Modal from '../components/common/Modal'; // Commented out if no modals in simplified JSX
+// import Modal from '../components/common/Modal';
+
+// Helper functions (Full implementations from vNext16.16)
+const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : []));
+const isAnswerEmpty = (value, questionType) => { /* ... */ return false; };
+const shuffleArray = (array) => { /* ... */ return array; };
+const toRoman = (num) => { /* ... */ return String(num); };
+const toLetters = (num) => { /* ... */ return String(num); };
+const evaluateSurveyLogic = (logicRules, answers, questions, questionIdToOriginalIndexMap) => { /* ... */ return null; };
+
 
 function SurveyTakingPage() {
     console.log('[Debug STM] SurveyTakingPage function component body executing. (Top)');
     const { surveyId, collectorId: routeCollectorIdentifier, resumeToken: routeResumeToken } = useParams();
     // const navigate = useNavigate(); 
-    const location = useLocation(); // Needed for one of the re-enabled useMemos (currentQToRenderMemoized's dependencies)
+    const location = useLocation(); // Needed for re-enabled useEffects
 
     console.log(`[Debug STM] useParams results: surveyId=${surveyId}, routeCollectorIdentifier=${routeCollectorIdentifier}, routeResumeToken=${routeResumeToken}`);
 
-    // State needed for re-enabled useMemos and active effects
-    const [survey, setSurvey] = useState(null); // For currentQToRenderMemoized, isSubmitStateDerived
-    const [originalQuestions, setOriginalQuestions] = useState([]); // For many useMemos
+    // State needed for active useMemos and re-enabled/active useEffects
+    const [survey, setSurvey] = useState(null);
+    const [originalQuestions, setOriginalQuestions] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [currentCollectorIdentifier, setCurrentCollectorIdentifier] = useState(null);
-    const [randomizedQuestionOrder, setRandomizedQuestionOrder] = useState([]); // For questionsInCurrentOrder
-    const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]);   // For currentQToRenderMemoized, isSubmitStateDerived
-    const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0);       // For currentQToRenderMemoized, isSubmitStateDerived
-    // const [isDisqualified, setIsDisqualified] = useState(false); // Keep commented for now
+    const [currentResumeToken, setCurrentResumeToken] = useState(null); // For useEffect (set CRT)
+    const [randomizedQuestionOrder, setRandomizedQuestionOrder] = useState([]);
+    const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]);
+    const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0);
+    const [hiddenQuestionIds, setHiddenQuestionIds] = useState(new Set()); // For visibleQuestionIndices effect
+    const [isDisqualified, setIsDisqualified] = useState(false); // For CVI boundary check effect
+    const [capturedCustomVars, setCapturedCustomVars] = useState(new Map()); // For CustomVars effect
 
     console.log('[Debug STM] Before useMemo hooks.');
 
-    const questionsById = useMemo(() => {
-        console.log('[Debug STM] questionsById CALC. originalQuestions.length:', originalQuestions.length);
-        return originalQuestions.reduce((map, q) => { if(q && q._id) map[q._id] = q; return map; }, {});
-    }, [originalQuestions]);
-
-    // ++ RE-ENABLING useMemo: questionsInCurrentOrder ++
-    const questionsInCurrentOrder = useMemo(() => {
-        console.log('[Debug STM] questionsInCurrentOrder CALC. OQ.length:', originalQuestions.length, 'RQO.length:', randomizedQuestionOrder.length);
-        return (randomizedQuestionOrder.length > 0 && originalQuestions.length > 0) ? randomizedQuestionOrder.map(index => originalQuestions[index]).filter(q => q) : originalQuestions.filter(q => q);
-    }, [randomizedQuestionOrder, originalQuestions]);
-
-    // ++ RE-ENABLING useMemo: questionIdToOriginalIndexMap ++
-    const questionIdToOriginalIndexMap = useMemo(() => {
-        console.log('[Debug STM] questionIdToOriginalIndexMap CALC. OQ.length:', originalQuestions.length);
-        return originalQuestions.reduce((map, q, index) => { if(q && q._id) map[q._id] = index; return map; }, {});
-    }, [originalQuestions]);
-    
-    // ++ RE-ENABLING useMemo: currentQToRenderMemoized (using its full original definition with logs) ++
-    const currentQToRenderMemoized = useMemo(() => {
-        console.log(`[Debug STM] currentQToRenderMemoized CALC: isLoading=${isLoading}, survey=${!!survey}, VQI.length=${visibleQuestionIndices.length}, CVI=${currentVisibleIndex}, OQ.length=${originalQuestions.length}`);
-        if (isLoading || !survey || visibleQuestionIndices.length === 0 || currentVisibleIndex < 0 || currentVisibleIndex >= visibleQuestionIndices.length) {
-            console.log('[Debug STM] currentQToRenderMemoized -> null (PRE-CONDITION FAILED)');
-            return null;
-        }
-        const currentOriginalIdx = visibleQuestionIndices[currentVisibleIndex];
-        console.log(`[Debug STM] currentQToRenderMemoized: currentOriginalIdx = VQI[${currentVisibleIndex}] = ${currentOriginalIdx}`);
-        if (currentOriginalIdx === undefined || currentOriginalIdx < 0 || currentOriginalIdx >= originalQuestions.length) {
-            console.error(`[Debug STM] currentQToRenderMemoized -> null (INVALID currentOriginalIdx: ${currentOriginalIdx} for OQ length: ${originalQuestions.length})`);
-            return null;
-        }
-        const q = originalQuestions[currentOriginalIdx];
-        if (!q || !q._id) {
-            console.error(`[Debug STM] currentQToRenderMemoized -> null (Question object or _id is FALSY at originalQuestions[${currentOriginalIdx}]). Question object:`, q);
-            return null;
-        }
-        console.log(`[Debug STM] currentQToRenderMemoized -> RETURNING question ID: ${q._id}`);
-        return q;
-    }, [isLoading, survey, visibleQuestionIndices, currentVisibleIndex, originalQuestions]);
-
-    // ++ RE-ENABLING useMemo: isSubmitStateDerived (using its full original definition with logs) ++
-    const isSubmitStateDerived = useMemo(() => {
-        console.log(`[Debug STM] isSubmitStateDerived CALC: isLoading=${isLoading}, survey=${!!survey}, VQI.length=${visibleQuestionIndices.length}, OQ.length=${originalQuestions.length}, CVI=${currentVisibleIndex}`);
-        if (isLoading || !survey) {
-            console.log('[Debug STM] isSubmitStateDerived -> false (isLoading or no survey)');
-            return false;
-        }
-        if (originalQuestions.length > 0 && visibleQuestionIndices.length === 0 && !isLoading) {
-            console.log('[Debug STM] isSubmitStateDerived -> true (OQ > 0, VQI === 0, not loading)');
-            return true; 
-        }
-        if (originalQuestions.length === 0 && !isLoading) {
-            console.log('[Debug STM] isSubmitStateDerived -> true (No questions in survey, not loading)');
-            return true; 
-        }
-        const result = currentVisibleIndex >= visibleQuestionIndices.length && visibleQuestionIndices.length > 0 && !isLoading;
-        console.log(`[Debug STM] isSubmitStateDerived -> ${result} (final condition)`);
-        return result;
-    }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
+    // Active useMemos from vNext16.19
+    const questionsById = useMemo(() => { /* ... same as vNext16.19 ... */ return {}; }, [originalQuestions]);
+    const questionsInCurrentOrder = useMemo(() => { /* ... same as vNext16.19 ... */ return []; }, [randomizedQuestionOrder, originalQuestions]);
+    const questionIdToOriginalIndexMap = useMemo(() => { /* ... same as vNext16.19 ... */ return {}; }, [originalQuestions]);
+    const currentQToRenderMemoized = useMemo(() => { /* ... same as vNext16.19 ... */ return null; }, [isLoading, survey, visibleQuestionIndices, currentVisibleIndex, originalQuestions]);
+    const isSubmitStateDerived = useMemo(() => { /* ... same as vNext16.19 ... */ return false; }, [isLoading, survey, visibleQuestionIndices, originalQuestions, currentVisibleIndex]);
         
     console.log('[Debug STM] After useMemo hooks, before useEffect hooks.');
 
-    // Active useEffects from vNext16.18
+    // Active useEffects from vNext16.19
     useEffect(() => {
         console.log(`[Debug STM] useEffect (set CCI) ENTERED. routeCollectorIdentifier=${routeCollectorIdentifier}`);
-        const effectiveCollectorId = routeCollectorIdentifier; // Simplified as location is not fully re-enabled yet
+        const effectiveCollectorId = location.state?.collectorIdentifier || routeCollectorIdentifier; // Use location now
         console.log(`[Debug STM] useEffect (set CCI): effectiveCollectorId = ${effectiveCollectorId}. Setting currentCollectorIdentifier.`);
         setCurrentCollectorIdentifier(effectiveCollectorId);
-    }, [routeCollectorIdentifier]);
+    }, [location.state?.collectorIdentifier, routeCollectorIdentifier]);
 
+    // ++ RE-ENABLING useEffect (set CRT) ++
+    useEffect(() => {
+        console.log(`[Debug STM] useEffect (set CRT) ENTERED. routeResumeToken=${routeResumeToken}, location.state?.resumeToken=${location.state?.resumeToken}, currentToken=${currentResumeToken}`);
+        const tokenFromRoute = routeResumeToken;
+        const tokenFromState = location.state?.resumeToken;
+        if (tokenFromRoute && currentResumeToken !== tokenFromRoute) {
+            console.log(`[Debug STM] useEffect (set CRT): Setting currentResumeToken from route: ${tokenFromRoute}`);
+            setCurrentResumeToken(tokenFromRoute);
+        } else if (tokenFromState && currentResumeToken !== tokenFromState && !tokenFromRoute) {
+            console.log(`[Debug STM] useEffect (set CRT): Setting currentResumeToken from location state: ${tokenFromState}`);
+            setCurrentResumeToken(tokenFromState);
+        } else {
+            console.log(`[Debug STM] useEffect (set CRT): No change to currentResumeToken.`);
+        }
+    }, [location.state?.resumeToken, routeResumeToken, currentResumeToken]);
+
+    // ++ RE-ENABLING useEffect (CustomVars) ++
+    useEffect(() => {
+        console.log(`[Debug STM] useEffect (CustomVars) ENTERED. Survey exists: ${!!survey}, location.search: ${location.search}`);
+        // survey will be null here since fetchSurvey is commented. This effect might not do much.
+        if (survey && survey.settings && survey.settings.customVariables && survey.settings.customVariables.length > 0) {
+            const params = new URLSearchParams(location.search);
+            const newCapturedVars = new Map();
+            survey.settings.customVariables.forEach(cv => { if (params.has(cv.name)) { newCapturedVars.set(cv.name, params.get(cv.name)); } });
+            if (newCapturedVars.size > 0) { console.log('[Debug STM] Captured Custom Variables:', Object.fromEntries(newCapturedVars)); setCapturedCustomVars(newCapturedVars); }
+        } else {
+            console.log('[Debug STM] useEffect (CustomVars): Conditions not met (no survey or no custom vars in settings).');
+        }
+    }, [survey, location.search, setCapturedCustomVars]); // Added setCapturedCustomVars
+
+    // Manual Loading Control (from vNext16.19)
     useEffect(() => {
         console.log('[Debug STM] useEffect (Manual Loading Control) ENTERED.');
         const timer = setTimeout(() => {
             console.log('[Debug STM] Manual Loading Control: Setting isLoading to false.');
             setIsLoading(false);
-            setError("Test with re-enabled useMemos. Data fetching disabled.");
+            setError("Test with re-enabled useEffects. Data fetching disabled.");
         }, 100);
         return () => clearTimeout(timer);
     }, []);
 
-    // Other useEffects remain commented out
-    // useEffect(() => { /* ... (set CRT) ... */ }, [location.state?.resumeToken, routeResumeToken, currentResumeToken]);
-    // useEffect(() => { /* ... (CustomVars) ... */ }, [survey, location.search]);
-    // useEffect(() => { /* ... (visibleQuestionIndices) ... */ }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices]);
-    // useEffect(() => { /* ... (CVI boundary check) ... */ }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, originalQuestions.length]);
+    // ++ RE-ENABLING useEffect (visibleQuestionIndices) ++
+    useEffect(() => {
+        console.log(`[Debug STM] useEffect (visibleQuestionIndices) ENTERED. isLoading=${isLoading}, originalQuestions.length=${originalQuestions.length}`);
+        // Since originalQuestions will be empty (fetchSurvey commented), this will likely just return or set VQI to []
+        if (isLoading || !originalQuestions || originalQuestions.length === 0) { 
+            if(visibleQuestionIndices.length > 0) { 
+                console.log('[Debug STM] useEffect (visibleQuestionIndices): Clearing VQI because isLoading or no originalQuestions.'); 
+                setVisibleQuestionIndices([]); 
+            } else {
+                console.log('[Debug STM] useEffect (visibleQuestionIndices): Condition met (isLoading or no OQ), VQI already empty or not set.');
+            }
+            return; 
+        }
+        console.log(`[Debug STM] useEffect (visibleQuestionIndices): Calculating newVisible. OQ.length: ${originalQuestions.length}, QICO.length: ${questionsInCurrentOrder.length}, hiddenIds size: ${hiddenQuestionIds.size}`);
+        const newVisible = questionsInCurrentOrder
+            .map(q => q && q._id ? questionIdToOriginalIndexMap[q._id] : undefined)
+            .filter(idx => { 
+                if (idx === undefined) return false; 
+                const questionForHiddenCheck = originalQuestions[idx]; 
+                return questionForHiddenCheck ? !hiddenQuestionIds.has(questionForHiddenCheck._id) : false; 
+            });
+        console.log('[Debug STM] useEffect (visibleQuestionIndices): newVisible calculated:', JSON.stringify(newVisible));
+        if (JSON.stringify(visibleQuestionIndices) !== JSON.stringify(newVisible)) { 
+            console.log('[Debug STM] useEffect (visibleQuestionIndices): Setting visibleQuestionIndices to newVisible.'); 
+            setVisibleQuestionIndices(newVisible); 
+        } else { 
+            console.log('[Debug STM] useEffect (visibleQuestionIndices): visibleQuestionIndices did not change.');
+        }
+    }, [isLoading, originalQuestions, questionsInCurrentOrder, hiddenQuestionIds, questionIdToOriginalIndexMap, randomizedQuestionOrder, visibleQuestionIndices, setVisibleQuestionIndices]); // Added setVisibleQuestionIndices
+
+    // ++ RE-ENABLING useEffect (CVI boundary check) ++
+    useEffect(() => { 
+        console.log(`[Debug STM] useEffect (CVI boundary check) ENTERED. isLoading=${isLoading}, survey=${!!survey}, isDisqualified=${isDisqualified}, CVI=${currentVisibleIndex}, VQI.length=${visibleQuestionIndices.length}`);
+        // survey will be null. VQI will likely be empty. This effect might not do much.
+        if (!isLoading && survey && !isDisqualified) { 
+            if (currentVisibleIndex >= visibleQuestionIndices.length && visibleQuestionIndices.length > 0) {
+                console.log(`[Debug STM] CVI Boundary: CVI (${currentVisibleIndex}) >= VQI.length (${visibleQuestionIndices.length}). Setting CVI to VQI.length - 1.`);
+                setCurrentVisibleIndex(visibleQuestionIndices.length - 1);
+            } else if (currentVisibleIndex < 0 && visibleQuestionIndices.length > 0) {
+                console.log(`[Debug STM] CVI Boundary: CVI (${currentVisibleIndex}) < 0. Setting CVI to 0.`);
+                setCurrentVisibleIndex(0);
+            } else {
+                console.log('[Debug STM] CVI Boundary: Conditions for change not met.');
+            }
+        } else {
+            console.log('[Debug STM] CVI Boundary: Pre-conditions not met (isLoading, no survey, or disqualified).');
+        }
+    }, [visibleQuestionIndices, isLoading, survey, isDisqualified, currentVisibleIndex, originalQuestions.length, setCurrentVisibleIndex]); // Added setCurrentVisibleIndex
     
     // fetchSurvey and its trigger remain commented out
     // const fetchSurvey = useCallback(async (signal) => { /* ... */ }, [/* ... */]);
@@ -134,50 +168,37 @@ function SurveyTakingPage() {
     
     if (isLoading) { 
         console.log(`[Debug STM] Render: isLoading is true.`);
-        return <div className={styles.loading}>Loading (Re-introducing useMemos)...</div>; 
+        return <div className={styles.loading}>Loading (Re-introducing useEffects)...</div>; 
     }
     if (error) { 
         console.log(`[Debug STM] Render: Error display: ${error}`);
-        const finalQToRender = currentQToRenderMemoized; // Get value for display
-        const finalIsSubmit = isSubmitStateDerived; // Get value for display
         return (
             <div className={styles.errorContainer}>
-                <h2>Test Information (useMemos re-enabled)</h2>
+                <h2>Test Information (other useEffects re-enabled)</h2>
                 <p>{error}</p>
                 <p>Collector ID (state): {currentCollectorIdentifier}</p>
-                <p>questionsById keys: {Object.keys(questionsById).join(', ')}</p>
-                <p>questionsInCurrentOrder length: {questionsInCurrentOrder.length}</p>
-                <p>questionIdToOriginalIndexMap keys: {Object.keys(questionIdToOriginalIndexMap).join(', ')}</p>
-                <p>currentQToRenderMemoized is null: {(finalQToRender === null).toString()}</p>
-                <p>isSubmitStateDerived: {finalIsSubmit.toString()}</p>
+                <p>Resume Token (state): {currentResumeToken || "null"}</p>
+                <p>Visible Question Indices Length: {visibleQuestionIndices.length}</p>
+                <p>Captured Custom Vars size: {capturedCustomVars.size}</p>
             </div>
         );
     }
     
-    console.log('[Debug STM] FINAL RENDER PREP (Simplified with useMemos)');
-    console.log('[Debug STM] Before main return statement (JSX - Simplified with useMemos).');
-
-    // Simplified JSX to display values from re-enabled useMemos
-    const finalQToRender = currentQToRenderMemoized;
-    const finalIsSubmit = isSubmitStateDerived;
+    console.log('[Debug STM] FINAL RENDER PREP (Simplified with more useEffects)');
+    console.log('[Debug STM] Before main return statement (JSX - Simplified with more useEffects).');
 
     return (
         <div className={styles.surveyContainer}>
-            <h1>Survey Taking Page (useMemos Re-enabled)</h1>
+            <h1>Survey Taking Page (other useEffects Re-enabled)</h1>
             <p>Survey ID: {surveyId}</p>
             <p>isLoading: {isLoading.toString()}</p>
             <p>Error: {error || "No error"}</p>
             <p>Collector Identifier (state): {currentCollectorIdentifier}</p>
-            <hr/>
-            <p><b>useMemo Test Values:</b></p>
-            <p>questionsById keys: {Object.keys(questionsById).join(', ')}</p>
-            <p>questionsInCurrentOrder length: {questionsInCurrentOrder.length}</p>
-            <p>questionIdToOriginalIndexMap keys: {Object.keys(questionIdToOriginalIndexMap).join(', ')}</p>
-            <p>currentQToRenderMemoized is null: {(finalQToRender === null).toString()}</p>
-            {finalQToRender && <p>currentQToRenderMemoized ID: {finalQToRender._id}</p>}
-            <p>isSubmitStateDerived: {finalIsSubmit.toString()}</p>
+            <p>Resume Token (state): {currentResumeToken || "null"}</p>
+            <p>Visible Question Indices Length: {visibleQuestionIndices.length}</p>
+            <p>Captured Custom Vars size: {capturedCustomVars.size}</p>
         </div>
     );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (vNext16.19 - Re-introducing useMemos) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext16.20 - Re-introducing other useEffects) -----
