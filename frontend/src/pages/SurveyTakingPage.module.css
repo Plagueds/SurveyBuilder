@@ -1,5 +1,5 @@
 /* frontend/src/pages/SurveyTakingPage.module.css */
-/* ----- START OF COMPLETE UPDATED FILE (v11.1 - Added Card Sort Styles) ----- */
+/* ----- START OF UPDATED FILE ----- */
 
 /* Container for the whole survey page */
 .surveyContainer {
@@ -12,472 +12,240 @@
     font-family: inherit;
 }
 
-/* Survey Title */
-.surveyTitle {
+.surveyHeader {
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border-color-light, #eee);
+}
+.surveyHeader h1 {
     text-align: center;
     color: var(--text-primary, #333);
-    margin-bottom: 15px;
-    border-bottom: 1px solid var(--border-color, #eee);
-    padding-bottom: 15px;
+    margin-bottom: 10px;
     font-size: 1.8em;
     font-weight: 600;
 }
-
-/* Survey Description */
-.surveyDescription {
+.surveyHeader .description { /* Ensure this class is used in JSX if not already */
     text-align: center;
     color: var(--text-secondary, #666);
-    margin-bottom: 30px;
-    font-size: 1.1em;
-    line-height: 1.5;
-}
-
-/* Box containing each question (label + input) */
-.questionBox {
-    padding: 25px;
     margin-bottom: 20px;
-    border: 1px solid var(--border-color-heavy, #e0e0e0);
-    border-radius: var(--border-radius-sm, 6px);
-    background-color: var(--background-accent, #f9f9f9);
-    transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; /* Added border-color */
-}
-
-.questionBox:focus-within {
-     border-color: var(--primary-color-light, #aaddff);
-     box-shadow: 0 0 5px var(--primary-color-alpha, rgba(0,123,255,0.1));
-}
-
-/* Style for the overall question box when disabled */
-.questionBox.disabled { /* Changed from .disabledQuestion to match usage */
-     background-color: #f8f9fa; /* Slightly different background */
-     border-left: 4px solid #ced4da; /* Indicator border */
-     padding-left: 15px; /* Adjust padding */
-     opacity: 0.7; /* Dim the whole box slightly */
-}
-.questionBox.disabled .questionLabel {
-    color: #6c757d; /* Muted label color */
-}
-
-/* Label for the question text */
-.questionLabel {
-    display: block;
-    margin-bottom: 12px;
-    font-weight: bold;
     font-size: 1.1em;
-    color: var(--text-primary, #444);
-    line-height: 1.4;
-    cursor: default;
-}
-
-/* Question Description (if any) */
-.questionDescription {
-    font-size: 0.9em;
-    color: var(--text-muted, #6c757d);
-    margin-bottom: 15px;
-    margin-top: -8px;
-    line-height: 1.4;
-}
-
-/* Area containing the input elements for a question */
-.questionInputArea {
-    margin-top: 10px;
-}
-
-/* General styles for text, textarea, number, select inputs */
-.surveyInput,
-.surveySelect {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--input-border, #ccc);
-    border-radius: var(--border-radius-sm, 4px);
-    font-size: 1em;
-    box-sizing: border-box;
-    background-color: var(--input-bg, #fff);
-    color: var(--input-text, #333);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    line-height: 1.4;
-    font-family: inherit;
-}
-
-textarea.surveyInput {
-    resize: vertical;
-    overflow: auto;
     line-height: 1.5;
 }
 
-input[type="text"].surveyInput {
-    line-height: 1.4;
-}
 
-.surveySelect {
-    appearance: none;
-    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23007bff%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
-    background-repeat: no-repeat;
-    background-position: right .7em top 50%;
-    background-size: .65em auto;
-    padding-right: 2.5em;
-}
-
-.surveyInput:focus,
-.surveySelect:focus {
-    border-color: var(--link-color, #007bff);
-    box-shadow: 0 0 0 0.2rem var(--primary-color-alpha, rgba(0, 123, 255, 0.25));
-    outline: none;
-}
-
-/* --- START: Option Layout (Radio/Checkbox) --- */
-.optionsContainer { display: flex; flex-direction: column; gap: 12px; }
-.optionItem { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
-.radioInput,
-.checkboxInput { margin: 0; flex-shrink: 0; width: 1.1em; height: 1.1em; cursor: pointer; accent-color: var(--primary-color, #007bff); vertical-align: middle; }
-.radioInput:focus,
-.checkboxInput:focus { outline: 2px solid var(--primary-color-light, #7bceff); outline-offset: 1px; }
-.optionLabel { margin: 0; cursor: pointer; font-weight: normal; color: var(--text-primary, #333); line-height: 1.5; vertical-align: middle; }
-.otherTextInput { padding: 6px 10px; border: 1px solid var(--input-border, #ccc); border-radius: var(--border-radius-sm, 4px); font-size: 0.95em; box-sizing: border-box; background-color: var(--input-bg, #fff); color: var(--input-text, #333); transition: border-color 0.2s ease, box-shadow 0.2s ease; line-height: 1.4; margin-left: 5px; flex-grow: 1; max-width: 350px; }
-.otherTextInput:focus { border-color: var(--link-color, #007bff); box-shadow: 0 0 0 0.2rem var(--primary-color-alpha, rgba(0, 123, 255, 0.25)); outline: none; }
-/* --- END: Option Layout --- */
-
-
-/* --- START: Rating/NPS Styles --- */
-.ratingContainer,
-.npsContainer { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; padding: 15px 5px; border: 1px solid var(--border-color, #ccc); border-radius: var(--border-radius-sm, 4px); background-color: var(--background-accent, #f8f9fa); }
-.ratingItem,
-.npsItem { display: flex; flex-direction: column; align-items: center; min-width: 40px; text-align: center; }
-.ratingLabel,
-.npsLabel { font-size: 0.9em; margin-top: 4px; cursor: pointer; color: var(--text-primary, #333); }
-.npsLabelMin,
-.npsLabelMax { font-size: 0.85em; color: var(--text-muted, #6c757d); align-self: center; padding: 0 10px; text-align: center; flex-basis: 80px; line-height: 1.3; }
-.npsContainer { align-items: baseline; }
-.npsLabelMin { order: -1; }
-.npsLabelMax { order: 12; }
-/* --- END: Rating/NPS Styles --- */
-
-
-/* --- START: Ranking Styles (@dnd-kit) --- */
-.rankingList {
-    list-style: decimal; /* Use numbers for ranking */
-    padding-left: 30px; /* Indent list */
-    margin: 10px 0;
-    border: 1px solid var(--border-color, #ddd);
-    border-radius: var(--border-radius-sm, 4px);
-    background-color: var(--background-secondary, #fff);
-    min-height: 50px; /* Ensure it has some height even if empty */
-    position: relative; /* Needed for overlay */
-}
-
-.rankingItem {
-    padding: 10px 12px;
-    margin-bottom: -1px; /* Overlap borders */
-    border-bottom: 1px solid var(--border-color, #eee);
-    background-color: var(--background-secondary, #fff);
-    cursor: grab;
-    display: flex; /* Use flex for handle alignment */
-    align-items: center;
-    gap: 10px;
-    transition: background-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.rankingItem:last-child {
-    border-bottom: none; /* No border for the last item */
-}
-
-.rankingItem:hover {
-    background-color: var(--background-accent, #f5f5f5);
-}
-
-.dragHandle {
-    display: inline-block;
-    cursor: grab;
-    color: var(--text-muted, #aaa);
-    font-size: 1.2em;
-    line-height: 1;
-    margin-right: 5px;
-    user-select: none; /* Prevent text selection */
-}
-/* --- END: Ranking Styles --- */
-
-
-/* --- START: Card Sort Styles (@dnd-kit) --- */
-.cardSortContainer {
-    display: flex;
-    flex-wrap: wrap; /* Allow categories to wrap */
-    gap: 20px; /* Space between category dropzones */
-    padding: 10px;
-    border: 1px solid var(--border-color, #ddd);
-    border-radius: var(--border-radius-sm, 4px);
-    background-color: var(--background-accent, #f8f9fa);
-    min-height: 150px; /* Minimum height for the whole area */
-    position: relative; /* Needed for overlay */
-}
-
-.cardSortCategory {
-    flex: 1; /* Allow categories to grow */
-    min-width: 180px; /* Minimum width for a category */
-    padding: 15px;
-    border: 1px dashed var(--border-color, #ccc);
-    border-radius: var(--border-radius-sm, 6px);
-    background-color: var(--background-secondary, #fff); /* Default background */
-    transition: background-color 0.2s ease, border-color 0.2s ease;
-    display: flex;
-    flex-direction: column; /* Stack title and card container */
-}
-
-.cardSortCategoryHeader {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    padding-bottom: 5px;
-    border-bottom: 1px solid var(--border-color, #eee);
-}
-
-.cardSortCategoryTitle {
-    margin: 0;
-    font-size: 1em;
-    font-weight: bold;
-    color: var(--text-primary, #444);
-    /* text-align: center; Removed for header layout */
-}
-
-.removeCategoryButton {
-    background: none;
-    border: none;
-    color: #aaa;
-    font-size: 1.4em; /* Make slightly larger */
-    cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
-    margin-left: 5px; /* Space from title */
-}
-.removeCategoryButton:hover {
-    color: var(--error-text, #dc3545); /* Danger color on hover */
-}
-
-
-.cardSortCardContainer {
-    flex-grow: 1; /* Allow card area to fill space */
-    min-height: 80px; /* Minimum height for dropping cards */
-    display: flex;
-    flex-direction: column; /* Stack cards vertically */
-    gap: 8px; /* Space between cards */
-    padding: 5px 0;
-}
-
-.cardSortCard {
-    padding: 8px 12px;
-    border: 1px solid var(--border-color-heavy, #bbb);
-    border-radius: var(--border-radius-sm, 4px);
-    background-color: var(--background-secondary, #fff);
-    box-shadow: var(--shadow-light);
-    cursor: grab;
-    font-size: 0.95em;
-    transition: background-color 0.2s ease, box-shadow 0.2s ease;
-    user-select: none; /* Prevent text selection */
-}
-
-.cardSortCard:hover {
-    background-color: var(--background-accent, #f5f5f5);
-    border-color: var(--border-color-heavy, #999);
-}
-
-.emptyCategoryPlaceholder {
-    font-size: 0.85em;
-    color: #aaa;
-    text-align: center;
-    padding: 10px;
-    width: 100%;
-    align-self: center;
-    margin-top: 10px; /* Add some space */
-}
-
-.addUserCategory {
-    display: flex;
-    gap: 8px;
-    margin-top: 15px;
-    padding-top: 15px;
-    border-top: 1px dashed #ccc;
-    width: 100%; /* Span full width */
-    flex-wrap: wrap; /* Allow wrapping on small screens */
-    /* Add to the container for card sort */
-    order: 10; /* Try to push it to the end visually if wrapping */
-}
-
-.addUserCategoryInput {
-    flex-grow: 1;
-    padding: 6px 10px;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    min-width: 150px; /* Minimum width before wrapping */
-    /* Inherit font */
-}
-
-.addUserCategoryButton {
-    padding: 6px 12px;
-    font-size: 0.9em;
-    cursor: pointer;
-    border: 1px solid #6c757d;
-    background-color: #6c757d;
-    color: white;
-    border-radius: 3px;
-    white-space: nowrap; /* Prevent button text wrapping */
-    transition: background-color 0.2s ease;
-}
-.addUserCategoryButton:hover {
-    background-color: #5a6268;
-    border-color: #545b62;
-}
-/* --- END: Card Sort Styles --- */
-
-
-/* --- START: Slider Styles --- */
-.sliderContainer { display: flex; align-items: center; gap: 15px; padding: 10px 0; }
-.sliderInput { flex-grow: 1; cursor: pointer; accent-color: var(--primary-color, #007bff); height: 8px; }
-.sliderLabel { font-size: 0.9em; color: var(--text-muted, #6c757d); min-width: 25px; text-align: center; }
-.sliderValueDisplay { font-weight: bold; font-size: 1em; color: var(--primary-color, #007bff); min-width: 35px; text-align: right; background-color: var(--background-accent, #f0f0f0); padding: 3px 6px; border-radius: var(--border-radius-sm, 4px); }
-/* --- END: Slider Styles --- */
-
-
-/* --- START: Matrix Styles --- */
-.matrixTable { width: 100%; border-collapse: collapse; margin-top: 10px; background-color: var(--background-secondary, #fff); border: 1px solid var(--border-color-heavy, #dee2e6); }
-.matrixTable th,
-.matrixTable td { border: 1px solid var(--border-color, #dee2e6); padding: 10px 12px; text-align: center; vertical-align: middle; }
-.matrixTable th { background-color: var(--background-accent, #f8f9fa); font-weight: 600; font-size: 0.95em; }
-.matrixRowHeader { text-align: left; font-weight: bold; background-color: var(--background-accent, #f8f9fa); font-size: 0.95em; }
-.matrixRadio { cursor: pointer; width: 1.1em; height: 1.1em; accent-color: var(--primary-color, #007bff); }
-.matrixRadio:focus { outline: 2px solid var(--primary-color-light, #7bceff); outline-offset: 1px; }
-/* --- END: Matrix Styles --- */
-
-
-/* --- START: Heatmap Styles --- */
-.heatmapContainer { margin-top: 10px; text-align: center; }
-.heatmapImage { max-width: 100%; height: auto; border: 1px solid var(--border-color, #ccc); display: inline-block; cursor: crosshair; }
-.clickCount { font-size: 0.9em; color: var(--text-muted, #6c757d); margin-top: 8px; }
-.clearButton { background-color: var(--secondary-color, #6c757d); color: white; border: none; padding: 5px 10px; font-size: 0.85em; border-radius: var(--border-radius-sm, 4px); cursor: pointer; margin-top: 10px; transition: background-color 0.2s ease; }
-.clearButton:hover { background-color: var(--secondary-color-dark, #5a6268); }
-/* --- END: Heatmap Styles --- */
-
-
-/* --- START: MaxDiff Styles --- */
-.maxDiffTable { width: 100%; border-collapse: collapse; margin-top: 10px; background-color: var(--background-secondary, #fff); border: 1px solid var(--border-color-heavy, #dee2e6); }
-.maxDiffTable th,
-.maxDiffTable td { border: 1px solid var(--border-color, #dee2e6); padding: 10px 12px; text-align: center; vertical-align: middle; }
-.maxDiffTable th { background-color: var(--background-accent, #f8f9fa); font-weight: 600; width: 20%; }
-.maxDiffTable th:first-child { width: 60%; text-align: left; }
-.maxDiffTable td:first-child { text-align: left; }
-.maxDiffCell input[type="radio"] { cursor: pointer; width: 1.1em; height: 1.1em; accent-color: var(--primary-color, #007bff); }
-.maxDiffCell input[type="radio"]:focus { outline: 2px solid var(--primary-color-light, #7bceff); outline-offset: 1px; }
-/* --- END: MaxDiff Styles --- */
-
-
-/* --- START: Conjoint Styles --- */
-.conjointContainer { display: flex; flex-direction: column; gap: 15px; }
-.conjointProfile { border: 1px solid var(--border-color, #ccc); border-radius: var(--border-radius-sm, 6px); padding: 15px; background-color: var(--background-secondary, #fff); display: flex; align-items: flex-start; gap: 15px; cursor: pointer; transition: border-color 0.2s ease, background-color 0.2s ease; }
-.conjointProfile:hover { background-color: var(--background-accent, #f8f9fa); border-color: var(--border-color-heavy, #aaa); }
-.conjointProfile input[type="radio"] { margin-top: 5px; flex-shrink: 0; accent-color: var(--primary-color, #007bff); }
-.conjointProfileLabel { flex-grow: 1; cursor: pointer; }
-.conjointProfileLabel strong { display: block; margin-bottom: 8px; font-size: 1.05em; }
-.conjointProfileLabel ul { list-style: none; padding: 0; margin: 0; font-size: 0.95em; line-height: 1.5; color: var(--text-secondary, #555); }
-.conjointProfileLabel li { margin-bottom: 4px; }
-/* --- END: Conjoint Styles --- */
-
-
-/* --- START: Unsupported Message --- */
-.unsupportedMessage { font-style: italic; color: var(--text-muted, #6c757d); padding: 15px; border: 1px dashed var(--border-color, #ddd); border-radius: var(--border-radius-sm, 4px); background-color: var(--background-accent, #f8f9fa); text-align: center; }
-/* --- END: Unsupported Message --- */
-
-
-/* --- START: Navigation/Submit Area --- */
-.submitSection, .surveyNavigationArea { margin-top: 30px; padding-top: 25px; border-top: 1px solid var(--border-color-heavy, #eee); display: flex; justify-content: space-between; align-items: center; }
-/* --- END: Navigation/Submit Area --- */
-
-
-/* --- START: Button Styles --- */
-.navButton,
-.submitButton { background-color: var(--primary-color, #007bff); color: var(--primary-text-light, white); border: 1px solid var(--primary-color, #007bff); display: inline-block; padding: 10px 18px; border-radius: var(--border-radius-sm, 4px); cursor: pointer; text-decoration: none; font-size: 1em; font-weight: 500; margin: 0; text-align: center; transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease, opacity 0.2s ease; box-shadow: var(--shadow-light); line-height: 1.4; }
-.navButton:hover:not(:disabled),
-.submitButton:hover:not(:disabled) { background-color: var(--primary-color-dark, #0056b3); border-color: var(--primary-color-dark, #0056b3); box-shadow: var(--shadow-medium); transform: translateY(-1px); }
-.navButton:disabled,
-.submitButton:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; background-color: var(--button-disabled-bg, #6c757d); border-color: var(--button-disabled-bg, #6c757d); }
-/* --- END: Button Styles --- */
-
-
-/* Progress Indicator */
-.progressIndicator { margin-top: 15px; text-align: center; font-size: 0.9em; color: var(--text-muted, #6c757d); }
-
-
-/* --- START: Loading / Error / Thank You / Disqualified --- */
-.loading { text-align: center; padding: 40px; font-size: 1.2em; color: var(--text-secondary, #666); }
-.errorContainer { max-width: 600px; margin: 40px auto; padding: 30px 40px; text-align: center; background-color: var(--error-bg-light, #f8d7da); border: 1px solid var(--error-border, #f5c6cb); border-radius: var(--border-radius, 8px); line-height: 1.6; }
-.errorContainer h2 { color: var(--error-text-dark, #721c24); margin-bottom: 15px; }
-.errorContainer p { color: var(--error-text-dark, #721c24); margin-bottom: 20px; }
-.thankYouContainer { max-width: 600px; margin: 40px auto; padding: 30px 40px; text-align: center; border: 1px solid var(--success-border, #c3e6cb); background-color: var(--success-bg-light, #d4edda); border-radius: var(--border-radius, 8px); line-height: 1.6; }
-.thankYouContainer h1 { color: var(--success-text-dark, #155724); }
-.thankYouContainer p { color: var(--success-text-dark, #155724); }
-.disqualifiedBox { max-width: 600px; margin: 40px auto; padding: 30px 40px; text-align: center; background-color: var(--warning-bg-light, #fff3cd); border: 1px solid var(--warning-border, #ffeeba); border-radius: var(--border-radius, 8px); line-height: 1.6; }
-.disqualifiedBox h2 { color: var(--warning-text-dark, #856404); margin-bottom: 15px; }
-.disqualifiedBox p { color: var(--warning-text-dark, #856404); }
-/* Submission error message (shown above questions) */
-.submissionError { padding: 10px 15px; margin-bottom: 20px; background-color: var(--error-bg-light, #f8d7da); border: 1px solid var(--error-border, #f5c6cb); border-radius: var(--border-radius-sm, 4px); color: var(--error-text-dark, #721c24); font-size: 0.95em; }
-.submissionError p { margin: 0; }
-/* --- END: Loading / Error / Thank You / Disqualified --- */
-
-
-/* Required Indicator */
-.requiredIndicator { color: var(--error-text, #dc3545); margin-left: 4px; font-weight: bold; font-size: 1.1em; }
-
-/* Soft Required Hint */
-.softRequiredHint { color: var(--text-muted, #6c757d); margin-left: 8px; font-weight: normal; font-style: italic; font-size: 0.9em; }
-
-/* Selection Requirement/Limit Messages */
-.selectionRequirement { font-size: 0.9em; color: var(--text-secondary, #555); margin-bottom: 10px; font-style: italic; }
-.limitReachedMessage { font-size: 0.9em; color: var(--warning-text-dark, #856404); background-color: var(--warning-bg-light, #fff3cd); padding: 5px 10px; border-radius: var(--border-radius-sm, 4px); margin-bottom: 10px; text-align: center; }
-
-/* --- START: Disabled State Styles --- */
-.disabled { opacity: 0.6; pointer-events: none; cursor: not-allowed; }
-.disabled * { cursor: not-allowed !important; }
-.disabled input,
-.disabled textarea,
-.disabled select,
-.disabled button { background-color: #e9ecef !important; cursor: not-allowed !important; }
-.heatmapContainer.disabled .heatmapImage { opacity: 0.5; cursor: not-allowed; }
-.heatmapContainer.disabled .clearButton { opacity: 0.6; cursor: not-allowed; }
-.rankingList.disabled,
-.cardSortContainer.disabled { opacity: 0.5; position: relative; }
-.disabledOverlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(200, 200, 200, 0.1); z-index: 10; cursor: not-allowed; }
-.disabledOption { opacity: 0.6; cursor: not-allowed; }
-.disabledOption .optionLabel { cursor: not-allowed; color: var(--text-muted, #6c757d); }
-.disabledOption input { cursor: not-allowed; }
-/* --- END: Disabled State Styles --- */    
-
-/* --- ADD THESE STYLES for Progress Bar --- */
+/* --- Progress Bar Styles --- */
 .progressBarContainer {
   width: 100%;
-  margin: 15px 0 25px; /* Adjust margin as needed */
-  padding: 0 10px; /* Optional padding if you want space around the bar within its container */
+  margin: 20px 0; /* More distinct margin */
   box-sizing: border-box;
 }
 
-.progressBarTrack {
-  background-color: var(--progressbar-track-bg, #e0e0e0); /* Fallback if CSS var not loaded */
-  border-radius: var(--border-radius-sm, 4px);
-  height: 10px; /* Or your preferred height */
-  overflow: hidden; /* Ensures the fill doesn't exceed rounded corners */
+.progressBarTrack { /* Added this class for the visual track */
+  background-color: var(--progressbar-track-bg, #e9ecef); 
+  border-radius: var(--border-radius-md, 6px); /* Consistent border radius */
+  height: 12px; 
+  overflow: hidden; 
   width: 100%;
+  padding: 2px; /* Small padding to make the fill look inset */
+  border: 1px solid var(--border-color-light, #dee2e6);
 }
 
 .progressBarFill {
-  background-color: var(--progressbar-fill-bg, #3498db); /* Fallback */
-  height: 100%;
-  border-radius: var(--border-radius-sm, 4px); /* Match track's border-radius */
-  transition: width 0.3s ease-in-out; /* Smooth animation for width changes */
+  background-color: var(--progressbar-fill-bg, #007bff); /* Primary color */
+  height: 100%; /* Fill the track's inner height */
+  border-radius: var(--border-radius-sm, 4px); /* Slightly smaller radius for inset look */
+  transition: width 0.3s ease-in-out; 
+  display: flex; /* For potentially centering text inside fill, if desired */
+  align-items: center;
+  justify-content: center;
 }
 
-.progressBarText {
+.progressBarContainer span { /* Styling for the percentage text */
+  display: block; /* Make it a block to center it or position it */
   text-align: center;
   font-size: 0.85em;
-  color: var(--progressbar-text-color, #555555); /* Fallback */
+  color: var(--progressbar-text-color, #555555); 
   margin-top: 6px;
 }
 /* --- END Progress Bar Styles --- */
 
-/* ----- END OF COMPLETE UPDATED FILE (v11.1) ----- */
+
+.questionArea {
+    padding: 15px 0; /* Adjust padding as needed */
+    margin-bottom: 20px;
+}
+.questionArea h2 { /* Styling for question text if rendered directly here */
+    font-size: 1.2em;
+    font-weight: 600;
+    margin-bottom: 15px;
+    color: var(--text-primary);
+}
+.questionNumber { /* Style for question numbers */
+    font-weight: bold;
+    margin-right: 8px;
+    color: var(--text-secondary);
+}
+
+
+.surveyNavigation {
+    margin-top: 30px;
+    padding-top: 25px;
+    border-top: 1px solid var(--border-color-heavy, #eee);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px; /* Add gap between buttons */
+}
+
+.navButton,
+.navButtonPrimary,
+.navButtonSecondary {
+    padding: 10px 18px;
+    border-radius: var(--border-radius-sm, 4px);
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 500;
+    text-align: center;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease, opacity 0.2s ease;
+    line-height: 1.4;
+    border: 1px solid transparent;
+}
+
+.navButton { /* Standard Next/Previous */
+    background-color: var(--button-secondary-bg, #6c757d);
+    color: var(--button-secondary-text-light, white);
+    border-color: var(--button-secondary-border, #6c757d);
+}
+.navButton:hover:not(:disabled) {
+    background-color: var(--button-secondary-hover-bg, #5a6268);
+    border-color: var(--button-secondary-hover-border, #545b62);
+}
+
+.navButtonPrimary { /* Submit button */
+    background-color: var(--primary-color, #007bff);
+    color: var(--primary-text-light, white);
+    border-color: var(--primary-color, #007bff);
+}
+.navButtonPrimary:hover:not(:disabled) {
+    background-color: var(--primary-color-dark, #0056b3);
+    border-color: var(--primary-color-dark, #0056b3);
+}
+
+.navButtonSecondary { /* Save and Continue */
+    background-color: var(--background-accent, #f8f9fa);
+    color: var(--text-primary, #212529);
+    border-color: var(--border-color-medium, #ced4da);
+}
+.navButtonSecondary:hover:not(:disabled) {
+    background-color: var(--background-accent-hover, #e2e6ea);
+    border-color: var(--border-color-heavy, #adb5bd);
+}
+
+.navButton:disabled,
+.navButtonPrimary:disabled,
+.navButtonSecondary:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+
+.loadingContainer, .errorContainer, .surveyMessageContainer {
+    text-align: center;
+    padding: 40px 20px;
+    font-size: 1.1em;
+    color: var(--text-secondary, #555);
+}
+.errorContainer {
+    background-color: var(--error-bg-light, #f8d7da);
+    border: 1px solid var(--error-border, #f5c6cb);
+    color: var(--error-text-dark, #721c24);
+    border-radius: var(--border-radius-md);
+}
+.surveyMessage {
+    margin-bottom: 10px;
+}
+
+/* Modal Styles */
+.modalBackdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1050;
+}
+.modalContentWrapper {
+    background-color: #fff;
+    padding: 25px 30px;
+    border-radius: var(--border-radius-lg, 8px);
+    box-shadow: var(--shadow-xl, 0 10px 25px rgba(0,0,0,0.15));
+    width: 90%;
+    max-width: 500px;
+    text-align: left;
+}
+.modalContentWrapper h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.4em;
+    color: var(--text-primary);
+}
+.modalContentWrapper p {
+    margin-bottom: 10px;
+    font-size: 1em;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+.resumeCodeDisplay {
+    display: block;
+    font-size: 1.3em;
+    font-weight: bold;
+    color: var(--primary-color, #007bff);
+    background-color: var(--background-accent-light, #f0f8ff);
+    padding: 10px 15px;
+    border-radius: var(--border-radius-sm);
+    margin: 15px 0;
+    text-align: center;
+    word-break: break-all;
+}
+.emailInputForReminder {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 1px solid var(--input-border, #ccc);
+    border-radius: var(--border-radius-sm);
+    font-size: 1em;
+}
+.modalContentWrapper .button, .modalContentWrapper .buttonSecondary { /* General button styling within modal */
+    padding: 10px 15px;
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    font-size: 1em;
+    margin-right: 10px;
+    border: 1px solid transparent;
+}
+.modalContentWrapper .button { /* Primary button in modal */
+    background-color: var(--primary-color, #007bff);
+    color: white;
+    border-color: var(--primary-color);
+}
+.modalContentWrapper .button:hover {
+    background-color: var(--primary-color-dark, #0056b3);
+}
+.modalContentWrapper .buttonSecondary { /* Secondary/Close button in modal */
+    background-color: var(--button-secondary-bg, #6c757d);
+    color: white;
+    border-color: var(--button-secondary-border, #6c757d);
+}
+.modalContentWrapper .buttonSecondary:hover {
+    background-color: var(--button-secondary-hover-bg, #5a6268);
+}
+
+/* Removed .debugInfo styles */
+
+/* ----- END OF UPDATED FILE ----- */

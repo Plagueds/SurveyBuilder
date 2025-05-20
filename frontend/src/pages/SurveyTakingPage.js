@@ -1,12 +1,11 @@
 // frontend/src/pages/SurveyTakingPage.js
 // ----- START OF UPDATED FILE -----
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 // import { toast } from 'react-toastify';
 import surveyApi from '../api/surveyApi';
 import styles from './SurveyTakingPage.module.css';
 
-// --- Import ALL your question rendering components ---
 import CardSortQuestion from '../components/survey_question_renders/CardSortQuestion';
 import CheckboxQuestion from '../components/survey_question_renders/CheckboxQuestion';
 import ConjointQuestion from '../components/survey_question_renders/ConjointQuestion';
@@ -18,14 +17,13 @@ import MultipleChoiceQuestion from '../components/survey_question_renders/Multip
 import NpsQuestion from '../components/survey_question_renders/NpsQuestion';
 import RankingQuestion from '../components/survey_question_renders/RankingQuestion';
 import RatingQuestion from '../components/survey_question_renders/RatingQuestion';
-import ShortTextQuestion from '../components/survey_question_renders/ShortTextQuestion'; // Covers 'text' type
+import ShortTextQuestion from '../components/survey_question_renders/ShortTextQuestion';
 import SliderQuestion from '../components/survey_question_renders/SliderQuestion';
 import TextAreaQuestion from '../components/survey_question_renders/TextAreaQuestion';
 
 const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : []));
 
 function SurveyTakingPage() {
-    console.log('[Debug STM] SurveyTakingPage LOADED.');
     const { surveyId, collectorId, resumeToken: routeResumeToken } = useParams();
     const location = useLocation();
     const navigate = useNavigate();
@@ -50,40 +48,52 @@ function SurveyTakingPage() {
     const [showResumeCodeModal, setShowResumeCodeModal] = useState(false);
     const [generatedResumeCode, setGeneratedResumeCode] = useState('');
     const [emailForReminder, setEmailForReminder] = useState('');
+    const [promptForEmailOnSave, setPromptForEmailOnSave] = useState(false);
+
+    const autoAdvanceTimeoutRef = useRef(null);
 
     const OTHER_VALUE_INTERNAL = '__OTHER__';
 
-    const questionsById = useMemo(() => originalQuestions.reduce((acc, q) => { acc[q._id] = q; return acc; }, {}), [originalQuestions]);
+    const questionsById = useMemo(() => { // Memoize questionsById based on originalQuestions
+        if (!originalQuestions || originalQuestions.length === 0) return {};
+        return originalQuestions.reduce((acc, q) => { acc[q._id] = q; return acc; }, {});
+    }, [originalQuestions]);
 
     const currentQuestionToRender = useMemo(() => {
-        if (isLoadingSurvey || !survey || !visibleQuestionIndices || visibleQuestionIndices.length === 0 || currentVisibleIndex < 0 || currentVisibleIndex >= visibleQuestionIndices.length) {
+        if (isLoadingSurvey || !survey || !originalQuestions.length || !visibleQuestionIndices.length || currentVisibleIndex < 0 || currentVisibleIndex >= visibleQuestionIndices.length) {
             return null;
         }
-        const originalQuestionIndexToFind = visibleQuestionIndices[currentVisibleIndex];
-        return originalQuestions.find(q => q.originalIndex === originalQuestionIndexToFind);
-    }, [isLoadingSurvey, survey, visibleQuestionIndices, currentVisibleIndex, originalQuestions]);
+        const originalIndexToFind = visibleQuestionIndices[currentVisibleIndex];
+        return originalQuestions.find(q => q.originalIndex === originalIndexToFind);
+    }, [isLoadingSurvey, survey, originalQuestions, visibleQuestionIndices, currentVisibleIndex]);
 
     const isSubmitState = useMemo(() => {
-        if (isLoadingSurvey || !survey || !visibleQuestionIndices || visibleQuestionIndices.length === 0) return false;
+        if (isLoadingSurvey || !survey || !visibleQuestionIndices.length) return false;
         return currentVisibleIndex >= visibleQuestionIndices.length - 1;
     }, [isLoadingSurvey, survey, visibleQuestionIndices, currentVisibleIndex]);
+
+    useEffect(() => {
+        return () => {
+            if (autoAdvanceTimeoutRef.current) {
+                clearTimeout(autoAdvanceTimeoutRef.current);
+            }
+        };
+    }, [currentVisibleIndex]); 
 
     useEffect(() => {
         if (!surveyId) { setSurveyError("Survey ID missing."); setIsLoadingSurvey(false); return; }
         if (!collectorId) { setSurveyError("Collector ID missing."); setIsLoadingSurvey(false); return; }
         
         if (location.state?.collectorSettings && JSON.stringify(collectorSettings) !== JSON.stringify(location.state.collectorSettings)) {
-            console.log("[Debug STM] Updating collectorSettings from location.state:", location.state.collectorSettings);
             setCollectorSettings(location.state.collectorSettings);
         }
         if (location.state?.surveyTitle && initialSurveyTitle !== location.state.surveyTitle) {
             setInitialSurveyTitle(location.state.surveyTitle);
         }
 
-        console.log(`[Debug STM] Fetching survey: ${surveyId}, Collector: ${collectorId}, ResumeToken (route): ${routeResumeToken}, CurrentToken (state): ${currentResumeToken}`);
         setIsLoadingSurvey(true); setSurveyError(null);
         
-        const effectiveTokenToUse = currentResumeToken || routeResumeToken; // Prioritize state token if set (e.g. after save)
+        const effectiveTokenToUse = currentResumeToken || routeResumeToken;
         const fetchOptions = { forTaking: 'true', collectorId };
         if (effectiveTokenToUse) {
             fetchOptions.resumeToken = effectiveTokenToUse;
@@ -92,54 +102,90 @@ function SurveyTakingPage() {
         surveyApi.getSurveyById(surveyId, fetchOptions)
             .then(response => {
                 if (response.success && response.data) {
-                    console.log("[Debug STM] Survey details fetched:", response.data);
                     setSurvey(response.data);
                     const fetchedQuestions = response.data.questions || [];
                     setOriginalQuestions(fetchedQuestions);
-                    setVisibleQuestionIndices(fetchedQuestions.map(q => q.originalIndex).sort((a, b) => a - b));
+                    
+                    const indices = fetchedQuestions
+                        .map(q => typeof q.originalIndex === 'number' ? q.originalIndex : null)
+                        .filter(idx => idx !== null) 
+                        .sort((a, b) => a - b);
+                    
+                    if (indices.length !== fetchedQuestions.length && fetchedQuestions.length > 0) {
+                        console.warn("[STM Debug] Some questions were missing a valid 'originalIndex'.", "Fetched:", fetchedQuestions.length, "Valid indices:", indices.length);
+                    }
+                    setVisibleQuestionIndices(indices);
                     
                     if (response.data.partialResponse) {
-                        console.log("[Debug STM] Resuming with partial response:", response.data.partialResponse);
                         setCurrentAnswers(response.data.partialResponse.answers || {});
                         setOtherInputValues(response.data.partialResponse.otherInputValues || {});
                         if (typeof response.data.partialResponse.currentVisibleIndex === 'number') {
                             setCurrentVisibleIndex(response.data.partialResponse.currentVisibleIndex);
                         }
-                        if(response.data.partialResponse.resumeToken) { // Ensure token from partial response is used
+                        if(response.data.partialResponse.resumeToken) {
                            setCurrentResumeToken(response.data.partialResponse.resumeToken);
                         }
                     } else if (effectiveTokenToUse && !response.data.partialResponse) {
-                        // If a token was used but no partial response came back, it might be invalid/expired.
-                        // Clear the token to prevent re-sending it.
-                        console.warn(`[Debug STM] Resume token ${effectiveTokenToUse} provided but no partial response found. Clearing token.`);
                         setCurrentResumeToken(null); 
-                        // Optionally, inform user: toast.warn("Could not resume previous session. Starting fresh.");
                     }
 
                     if (!initialSurveyTitle && response.data.title) {
                         setInitialSurveyTitle(response.data.title);
                     }
-                    if (!collectorSettings && response.data.collectorSettings) { // If not passed via state, use from survey
-                        console.log("[Debug STM] Using collectorSettings from survey response:", response.data.collectorSettings);
+                    if (!collectorSettings && response.data.collectorSettings) {
                         setCollectorSettings(response.data.collectorSettings);
                     } else if (collectorSettings && response.data.collectorSettings && JSON.stringify(collectorSettings) !== JSON.stringify(response.data.collectorSettings)) {
-                        // This case is less likely if PublicSurveyHandler is the entry point and passes settings.
-                        // But if direct access or preview, this might merge/update.
-                        console.log("[Debug STM] Merging/updating collectorSettings from survey response over location.state (if different).");
                         setCollectorSettings(response.data.collectorSettings);
                     }
 
                 } else { setSurveyError(response.message || "Failed to load survey details."); setSurvey(null); }
             })
-            .catch(err => { console.error("[Debug STM] Error fetching survey details:", err); setSurveyError(err.message || "Error loading survey details."); setSurvey(null); })
+            .catch(err => { console.error("[STM Debug] Error fetching survey details:", err); setSurveyError(err.message || "Error loading survey details."); setSurvey(null); })
             .finally(() => { setIsLoadingSurvey(false); });
-    }, [surveyId, collectorId, routeResumeToken, location.state]); // Removed currentResumeToken from here to avoid loop with set inside, use routeResumeToken for initial fetch trigger
+    }, [surveyId, collectorId, routeResumeToken, location.state]);
 
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
+    
+    const handleNext = useCallback(() => {
+        if (autoAdvanceTimeoutRef.current) {
+            clearTimeout(autoAdvanceTimeoutRef.current);
+            autoAdvanceTimeoutRef.current = null;
+        }
+
+        if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
+        if (!isSubmitState) {
+            setCurrentVisibleIndex(prev => prev + 1);
+        } else {
+            handleSubmit(); 
+        }
+    }, [isSubmitState, currentVisibleIndex, validateQuestion, currentQuestionToRender, currentAnswers, handleSubmit]);
 
     const handleInputChange = useCallback((questionId, value) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
-    }, []);
+
+        const autoAdvanceEnabled = collectorSettings?.autoAdvance ?? survey?.settings?.behaviorNavigation?.autoAdvance ?? false;
+        const question = questionsById[questionId]; // Use memoized questionsById
+        const autoAdvanceTypes = ['multiple-choice', 'nps', 'rating'];
+
+        // --- MODIFIED AUTO-ADVANCE LOGIC ---
+        // Do not auto-advance if "Other" is selected for a question that has an "Other" option.
+        const isOtherSelectedForOtherQuestion = question && question.addOtherOption && value === OTHER_VALUE_INTERNAL;
+
+        if (autoAdvanceEnabled && question && autoAdvanceTypes.includes(question.type) && !isSubmitState && !isOtherSelectedForOtherQuestion) {
+            if (autoAdvanceTimeoutRef.current) { 
+                clearTimeout(autoAdvanceTimeoutRef.current);
+            }
+            autoAdvanceTimeoutRef.current = setTimeout(() => {
+                handleNext();
+                autoAdvanceTimeoutRef.current = null; 
+            }, 500); 
+        } else if (autoAdvanceTimeoutRef.current && isOtherSelectedForOtherQuestion) {
+            // If "Other" was selected, and there was a pending auto-advance, cancel it.
+            clearTimeout(autoAdvanceTimeoutRef.current);
+            autoAdvanceTimeoutRef.current = null;
+        }
+    }, [collectorSettings, survey, questionsById, isSubmitState, handleNext]);
+
 
     const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => {
         setCurrentAnswers(prevAnswers => {
@@ -173,53 +219,104 @@ function SurveyTakingPage() {
         setIsSubmitting(true);
         try {
             const result = await surveyApi.submitSurveyAnswers(surveyId, { collectorId, answers: currentAnswers, otherInputValues, resumeToken: currentResumeToken });
-            if (result.success) { console.log("Survey submitted!", result); navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}}); }
-            else { console.error("Submission failed.", result); }
-        } catch (err) { console.error("Submission error.", err); }
-        finally { setIsSubmitting(false); }
+            if (result.success) {
+                console.log("Survey submitted!", result);
+                navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
+            } else {
+                console.error("Submission failed.", result);
+            }
+        } catch (err) {
+            console.error("Submission error.", err);
+        } finally {
+            setIsSubmitting(false);
+        }
     }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, validateQuestion, currentQuestionToRender, navigate, survey?.title, initialSurveyTitle]);
-
-    const handleNext = useCallback(() => {
-        if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
-        if (!isSubmitState) { setCurrentVisibleIndex(prev => prev + 1); } else { handleSubmit(); }
-    }, [isSubmitState, currentVisibleIndex, validateQuestion, currentQuestionToRender, currentAnswers, handleSubmit]);
     
-    const handlePrevious = useCallback(() => { if (currentVisibleIndex > 0) { setCurrentVisibleIndex(prev => prev - 1); } }, [currentVisibleIndex]);
+    const handlePrevious = useCallback(() => {
+        if (autoAdvanceTimeoutRef.current) { 
+            clearTimeout(autoAdvanceTimeoutRef.current);
+            autoAdvanceTimeoutRef.current = null;
+        }
+        if (currentVisibleIndex > 0) {
+            setCurrentVisibleIndex(prev => prev - 1);
+        }
+    }, [currentVisibleIndex]);
 
-    const handleSaveAndContinueLater = useCallback(async () => {
+    const performSaveAndContinue = async (emailForSave = null) => {
         if (!surveyId || !collectorId) { console.error("Cannot save, survey/collector ID missing."); return; }
         setIsSavingAndContinueLater(true);
         try {
-            const result = await surveyApi.savePartialResponse(surveyId, {
-                collectorId, answers: currentAnswers, otherInputValues,
-                currentVisibleIndex: currentVisibleIndex, 
-                resumeToken: currentResumeToken 
-            });
+            const payload = {
+                collectorId,
+                answers: currentAnswers,
+                otherInputValues,
+                currentVisibleIndex: currentVisibleIndex,
+                resumeToken: currentResumeToken
+            };
+            if (emailForSave) {
+                payload.respondentEmail = emailForSave;
+            }
+
+            const result = await surveyApi.savePartialResponse(surveyId, payload);
             if (result.success && result.resumeToken) {
-                setCurrentResumeToken(result.resumeToken); setGeneratedResumeCode(result.resumeToken); setShowResumeCodeModal(true);
+                setCurrentResumeToken(result.resumeToken);
+                setGeneratedResumeCode(result.resumeToken);
+                setShowResumeCodeModal(true); 
+                setPromptForEmailOnSave(false); 
                 console.log("Progress saved. Resume Code:", result.resumeToken);
-            } else { console.error("Failed to save for later.", result); }
-        } catch (err) { console.error("Error saving for later.", err); }
-        finally { setIsSavingAndContinueLater(false); }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, currentVisibleIndex]);
+            } else {
+                console.error("Failed to save for later.", result);
+            }
+        } catch (err) {
+            console.error("Error saving for later.", err);
+        } finally {
+            setIsSavingAndContinueLater(false);
+        }
+    };
+    
+    const handleSaveAndContinueLater = useCallback(async () => {
+        const saveMethod = survey?.settings?.behaviorNavigation?.saveAndContinueMethod || collectorSettings?.saveAndContinueMethod || 'email';
+        const needsEmailPrompt = (saveMethod === 'email' || saveMethod === 'both') && !emailForReminder;
 
-    const handleSendReminderEmail = useCallback(async () => {
-        if (!surveyId ||!generatedResumeCode || !emailForReminder) { console.warn("Missing data for reminder."); return; }
-        console.log(`Simulating sending email to ${emailForReminder} for survey ${surveyId}, code ${generatedResumeCode}`);
-        // Potentially: const result = await surveyApi.sendResumeEmail(surveyId, generatedResumeCode, emailForReminder);
-    }, [surveyId, generatedResumeCode, emailForReminder]);
+        if (needsEmailPrompt) {
+            setPromptForEmailOnSave(true); 
+            setShowResumeCodeModal(true); 
+            return; 
+        }
+        performSaveAndContinue(emailForReminder || null);
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, currentVisibleIndex, survey, collectorSettings, emailForReminder]);
 
+
+    const handleModalEmailSubmitAndSave = () => {
+        const saveMethod = survey?.settings?.behaviorNavigation?.saveAndContinueMethod || collectorSettings?.saveAndContinueMethod || 'email';
+        if ((saveMethod === 'email' || saveMethod === 'both') && !emailForReminder.trim()) {
+            alert("Please enter your email address to save and continue.");
+            return;
+        }
+        performSaveAndContinue(emailForReminder.trim());
+    };
+    
     const renderProgressBar = useCallback(() => {
-        // Use collectorSettings from state, which should be populated from location.state or survey response
         const showBar = collectorSettings?.progressBarEnabled ?? survey?.settings?.behaviorNavigation?.progressBarEnabled ?? false;
         if (!survey || !showBar || !visibleQuestionIndices || visibleQuestionIndices.length === 0) return null;
         const safeIdx = Math.min(currentVisibleIndex, visibleQuestionIndices.length - 1);
         const progress = visibleQuestionIndices.length > 0 ? ((safeIdx + 1) / visibleQuestionIndices.length) * 100 : 0;
-        return ( <div className={styles.progressBarContainer}><div className={styles.progressBarFill} style={{ width: `${progress.toFixed(2)}%` }}></div><span>{Math.round(progress)}%</span></div> );
+        return (
+            <div className={styles.progressBarContainer}>
+                <div className={styles.progressBarTrack}>
+                    <div className={styles.progressBarFill} style={{ width: `${progress.toFixed(2)}%` }}></div>
+                </div>
+                <span>{Math.round(progress)}% Complete</span>
+            </div>
+        );
     }, [survey, visibleQuestionIndices, currentVisibleIndex, collectorSettings]);
 
     const renderQuestionInputs = (question) => {
         if (!question) return <p>Error: Question data is missing.</p>;
+
+        const showQuestionNumber = survey?.settings?.behaviorNavigation?.questionNumberingEnabled ?? collectorSettings?.questionNumberingEnabled ?? false;
+        const questionNumberDisplay = showQuestionNumber ? `${currentVisibleIndex + 1}. ` : "";
+
         const commonProps = {
             question,
             currentAnswer: currentAnswers[question._id],
@@ -232,39 +329,32 @@ function SurveyTakingPage() {
             onOtherTextChange: handleOtherInputChange,
         };
 
+        let questionComponent;
         switch (question.type) {
-            case 'text': // Covers ShortTextQuestion
-                return <ShortTextQuestion {...commonProps} onAnswerChange={handleInputChange} />;
-            case 'textarea':
-                return <TextAreaQuestion {...commonProps} onAnswerChange={handleInputChange} />;
-            case 'multiple-choice': // Single select radio
-                return <MultipleChoiceQuestion {...choiceProps} onAnswerChange={handleInputChange} />;
-            case 'checkbox': // Multi-select
-                return <CheckboxQuestion {...choiceProps} onCheckboxChange={handleCheckboxChange} />;
-            case 'dropdown':
-                return <DropdownQuestion {...choiceProps} onAnswerChange={handleInputChange} />;
-            case 'nps':
-                return <NpsQuestion {...commonProps} onAnswerChange={handleInputChange} />;
-            case 'rating':
-                return <RatingQuestion {...commonProps} onAnswerChange={handleInputChange} />;
-            case 'slider':
-                return <SliderQuestion {...commonProps} onAnswerChange={handleInputChange} />;
-            case 'ranking':
-                return <RankingQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />;
-            case 'matrix':
-                return <MatrixQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />;
-            case 'heatmap':
-                return <HeatmapQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />;
-            case 'cardsort':
-                return <CardSortQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />;
-            case 'conjoint':
-                return <ConjointQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />;
-            case 'maxdiff': // Corrected from max_diff
-                return <MaxDiffQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />;
+            case 'text': questionComponent = <ShortTextQuestion {...commonProps} onAnswerChange={handleInputChange} />; break;
+            case 'textarea': questionComponent = <TextAreaQuestion {...commonProps} onAnswerChange={handleInputChange} />; break;
+            case 'multiple-choice': questionComponent = <MultipleChoiceQuestion {...choiceProps} onAnswerChange={handleInputChange} />; break;
+            case 'checkbox': questionComponent = <CheckboxQuestion {...choiceProps} onCheckboxChange={handleCheckboxChange} />; break;
+            case 'dropdown': questionComponent = <DropdownQuestion {...choiceProps} onAnswerChange={handleInputChange} />; break;
+            case 'nps': questionComponent = <NpsQuestion {...commonProps} onAnswerChange={handleInputChange} />; break;
+            case 'rating': questionComponent = <RatingQuestion {...commonProps} onAnswerChange={handleInputChange} />; break;
+            case 'slider': questionComponent = <SliderQuestion {...commonProps} onAnswerChange={handleInputChange} />; break;
+            case 'ranking': questionComponent = <RankingQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
+            case 'matrix': questionComponent = <MatrixQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
+            case 'heatmap': questionComponent = <HeatmapQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
+            case 'cardsort': questionComponent = <CardSortQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
+            case 'conjoint': questionComponent = <ConjointQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
+            case 'maxdiff': questionComponent = <MaxDiffQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
             default:
                 console.warn("Unsupported question type in SurveyTakingPage:", question.type, question);
-                return <p>Unsupported question type: {question.type}</p>;
+                questionComponent = <p>Unsupported question type: {question.type}</p>;
         }
+        return (
+            <>
+                {showQuestionNumber && question.text && <span className={styles.questionNumber}>{questionNumberDisplay}</span>}
+                {questionComponent}
+            </>
+        );
     };
 
     if (isLoadingSurvey) return <div className={styles.loadingContainer}>Loading survey questions...</div>;
@@ -273,8 +363,7 @@ function SurveyTakingPage() {
 
     const progressBarElement = renderProgressBar();
     const displayTitle = survey?.title || initialSurveyTitle || "Survey";
-    // Use collectorSettings from state for saveAndContinueEnabled
-    const saveAndContinueEnabled = collectorSettings?.allowResume ?? survey.settings?.behaviorNavigation?.saveAndContinueEnabled ?? false;
+    const saveAndContinueEnabled = collectorSettings?.allowResume ?? survey?.settings?.behaviorNavigation?.saveAndContinueEnabled ?? false;
 
     return (
         <div className={styles.surveyContainer}>
@@ -292,46 +381,75 @@ function SurveyTakingPage() {
                 !isSubmitting && currentVisibleIndex >= visibleQuestionIndices.length &&
                 <div className={styles.surveyMessageContainer}>
                     <p className={styles.surveyMessage}>Thank you for your responses!</p>
-                    <p className={styles.surveyMessage}>Click "Submit" to finalize your survey.</p>
+                    {visibleQuestionIndices.length > 0 &&
+                        <p className={styles.surveyMessage}>Click "Submit" to finalize your survey.</p>
+                    }
+                     {visibleQuestionIndices.length === 0 &&
+                        <p className={styles.surveyMessage}>Survey completed.</p>
+                    }
                 </div>
             )}
             
             <footer className={styles.surveyNavigation}>
                 {(collectorSettings?.allowBackButton ?? true) && currentVisibleIndex > 0 && (<button type="button" onClick={handlePrevious} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButton}>Previous</button>)}
-                {!isSubmitState && (<button type="button" onClick={handleNext} disabled={!currentQuestionToRender || isSubmitting || isSavingAndContinueLater} className={styles.navButton}>Next</button>)}
-                {isSubmitState && (<button type="button" onClick={handleSubmit} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>{isSubmitting ? 'Submitting...' : 'Submit'}</button>)}
-                {saveAndContinueEnabled && (<button type="button" onClick={handleSaveAndContinueLater} disabled={isSavingAndContinueLater || isSubmitting} className={styles.navButtonSecondary}>{isSavingAndContinueLater ? 'Saving...' : 'Save and Continue Later'}</button>)}
+                
+                {!( (collectorSettings?.allowBackButton ?? true) && currentVisibleIndex > 0) && <div style={{flexGrow: 1}}></div>}
+
+                {saveAndContinueEnabled && (<button type="button" onClick={handleSaveAndContinueLater} disabled={isSavingAndContinueLater || isSubmitting} className={styles.navButtonSecondary}>Save and Continue Later</button>)}
+                
+                {!isSubmitState && (<button type="button" onClick={handleNext} disabled={!currentQuestionToRender || isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>Next</button>)}
+                
+                {isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && 
+                    (<button type="button" onClick={handleSubmit} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>{isSubmitting ? 'Submitting...' : 'Submit'}</button>)
+                }
             </footer>
 
             {showResumeCodeModal && (
-                 <div className={styles.modalBackdrop} onClick={() => setShowResumeCodeModal(false)}>
+                 <div className={styles.modalBackdrop} onClick={() => { setShowResumeCodeModal(false); setPromptForEmailOnSave(false); setEmailForReminder(''); }}>
                     <div className={styles.modalContentWrapper} onClick={e => e.stopPropagation()}>
-                        <h3>Resume Later</h3>
-                        <p>Your progress has been saved. Use the following code to resume your survey later:</p>
-                        <strong className={styles.resumeCodeDisplay}>{generatedResumeCode}</strong>
-                        <hr />
-                        <p>Optionally, enter your email to receive this code and a resume link (if enabled):</p>
-                        <input type="email" value={emailForReminder} onChange={(e) => setEmailForReminder(e.target.value)} placeholder="your.email@example.com" className={styles.emailInputForReminder} />
-                        <button onClick={handleSendReminderEmail} className={styles.button}>Send Email Reminder</button>
-                        <button onClick={() => setShowResumeCodeModal(false)} className={styles.buttonSecondary} style={{marginTop: '10px'}}>Close</button>
+                        <h3>{promptForEmailOnSave ? "Save & Continue: Enter Email" : "Resume Later"}</h3>
+                        
+                        {(promptForEmailOnSave || (generatedResumeCode && (survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'email' || survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'both'))) && (
+                             <>
+                                <p>
+                                    {promptForEmailOnSave 
+                                        ? "Please enter your email address to receive a link to resume this survey later." 
+                                        : "Optionally, enter your email to also receive the resume code and link:"}
+                                </p>
+                                <input 
+                                    type="email" 
+                                    value={emailForReminder} 
+                                    onChange={(e) => setEmailForReminder(e.target.value)} 
+                                    placeholder="your.email@example.com" 
+                                    className={styles.emailInputForReminder} 
+                                />
+                             </>
+                        )}
+                        {generatedResumeCode && (survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'code' || survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'both') && (
+                            <>
+                                <p>Your progress has been saved. Use the following code to resume your survey later:</p>
+                                <strong className={styles.resumeCodeDisplay}>{generatedResumeCode}</strong>
+                                <hr style={{margin: '15px 0'}} />
+                            </>
+                        )}
+                        {!generatedResumeCode && !promptForEmailOnSave && <p>Saving your progress...</p>}
+
+                        {promptForEmailOnSave ? (
+                             <button onClick={handleModalEmailSubmitAndSave} className={styles.button} disabled={isSavingAndContinueLater}>
+                                {isSavingAndContinueLater ? "Saving..." : "Save and Send Email"}
+                             </button>
+                        ) : null }
+
+                        <button 
+                            onClick={() => { setShowResumeCodeModal(false); setPromptForEmailOnSave(false); setEmailForReminder('');}} 
+                            className={styles.buttonSecondary} 
+                            style={{marginTop: '10px', marginLeft: promptForEmailOnSave ? '10px' : '0'}}
+                        >
+                            Close
+                        </button>
                     </div>
                 </div>
             )}
-
-            <div className={styles.debugInfo}>
-                <p><strong>Debug Info (SurveyTakingPage):</strong></p>
-                <p>URL Params: surveyId: {surveyId}, collectorId: {collectorId}, routeResumeToken: {routeResumeToken || "N/A"}</p>
-                <p>Location State: surveyTitle: {location.state?.surveyTitle || "N/A"}, collectorSettings: {JSON.stringify(location.state?.collectorSettings)}</p>
-                <p>Survey Loaded: {survey ? `Title: ${survey.title}, Qs: ${originalQuestions.length}` : "No"}</p>
-                <p>CurrentAnswers: {JSON.stringify(currentAnswers)}</p>
-                <p>OtherInputValues: {JSON.stringify(otherInputValues)}</p>
-                <p>CurrentVisibleIndex: {currentVisibleIndex} (Original Index of Q: {currentQuestionToRender?.originalIndex ?? 'N/A'})</p>
-                <p>Visible Original Indices: {JSON.stringify(visibleQuestionIndices)}</p>
-                <p>Resume Token (State): {currentResumeToken || "None"}</p>
-                <p>Collector Settings (State): {JSON.stringify(collectorSettings)}</p>
-                <p>Save & Continue Enabled (Effective): {saveAndContinueEnabled.toString()}</p>
-                <p>Back Button Enabled (Effective): {(collectorSettings?.allowBackButton ?? true).toString()}</p>
-            </div>
         </div>
     );
 }
