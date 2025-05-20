@@ -1,3 +1,12 @@
+# Rule to proxy API requests to your OnRender backend
+[[redirects]]
+  from = "/api/*"  # Match any request starting with /api/
+  to = "https://surveybuilderapi.onrender.com/api/:splat" # Proxy to the same path on your backend
+  status = 200 # Or 200! for "force" if needed, but 200 usually works for proxying.
+               # For POST/PUT/DELETE, Netlify automatically uses the correct method.
+
+# Fallback rule for your Single Page Application (React Router)
+# This should come AFTER the API proxy rule.
 [[redirects]]
   from = "/*"
   to = "/index.html"
