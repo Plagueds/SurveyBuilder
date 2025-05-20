@@ -1,5 +1,5 @@
 // frontend/src/api/surveyApi.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext6 - Implemented Collector API functions) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext7 - Added Axios Interceptor Logging) -----
 import axios from 'axios';
 
 const envApiBaseUrl = process.env.REACT_APP_API_BASE_URL;
@@ -50,6 +50,33 @@ apiClient.interceptors.request.use(
         if (config.surveyPassword) {
             config.headers['X-Survey-Password'] = config.surveyPassword;
         }
+
+        // +++ ADDED LOGGING FOR SUBMIT REQUESTS +++
+        // Check if config.url exists before trying to use .includes() or .endsWith()
+        const isSubmitRequest = config.url && 
+                                config.url.includes('/submit') && 
+                                config.method && 
+                                config.method.toLowerCase() === 'post';
+
+        if (isSubmitRequest) {
+            console.log('[AXIOS INTERCEPTOR - SUBMIT REQUEST DETAILS]');
+            console.log('  Axios config.baseURL:', config.baseURL);
+            console.log('  Axios config.url (path relative to baseURL):', config.url);
+            // Construct the full URL carefully, ensuring no double slashes if baseURL ends with / and url starts with /
+            let fullUrl = config.baseURL;
+            if (config.baseURL && config.baseURL.endsWith('/') && config.url && config.url.startsWith('/')) {
+                fullUrl = config.baseURL + config.url.substring(1);
+            } else if (config.baseURL && !config.baseURL.endsWith('/') && config.url && !config.url.startsWith('/')) {
+                fullUrl = config.baseURL + '/' + config.url;
+            } else {
+                fullUrl = (config.baseURL || '') + (config.url || '');
+            }
+            console.log('  Full URL being requested by Axios (constructed):', fullUrl);
+            console.log('  Axios config.method:', config.method);
+            console.log('  Axios config.data (payload):', config.data);
+        }
+        // +++ END ADDED LOGGING +++
+
         return config;
     },
     (error) => {
@@ -67,6 +94,7 @@ apiClient.interceptors.response.use(
                 console.warn('[surveyApi] Unauthorized (401) response. Token might be invalid or expired. Logging out.');
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
+                // Consider redirecting to login page: window.location.href = '/login';
             }
         }
         return Promise.reject(error);
@@ -181,23 +209,23 @@ const getSurveyResults = async (surveyId, options = {}) => {
     try {
         const { signal, ...queryParams } = options;
         const response = await apiClient.get(`/surveys/${surveyId}/results`, { params: queryParams, signal: signal });
-        return response.data; // Expects { success: true, data: [...], ...pagination }
+        return response.data;
     } catch (error) {
         return handleApiError(error, `getSurveyResults (${surveyId})`);
     }
 };
 const exportSurveyResults = async (surveyId, options = {}) => { 
     try {
-        const { signal, format = 'csv', ...queryParams } = options; // Default format to csv
+        const { signal, format = 'csv', ...queryParams } = options;
         const response = await apiClient.get(`/surveys/${surveyId}/export`, { 
             params: { ...queryParams, format }, 
             signal: signal,
-            responseType: format.toLowerCase() === 'csv' ? 'blob' : 'json' // Handle response type for file download
+            responseType: format.toLowerCase() === 'csv' ? 'blob' : 'json'
         });
         if (format.toLowerCase() === 'csv') {
             return { data: response.data, contentType: response.headers['content-type'], filename: `survey_${surveyId}_results.csv` };
         }
-        return response.data; // For JSON
+        return response.data;
     } catch (error) {
         return handleApiError(error, `exportSurveyResults (${surveyId})`);
     }
@@ -254,7 +282,7 @@ const getCollectorsForSurvey = async (surveyId, options = {}) => {
     try {
         const { signal, ...queryParams } = options;
         const response = await apiClient.get(`/surveys/${surveyId}/collectors`, { params: queryParams, signal: signal });
-        return response.data; // Expects { success: true, count: Number, data: [...] }
+        return response.data;
     } catch (error) {
         return handleApiError(error, `getCollectorsForSurvey (${surveyId})`);
     }
@@ -263,7 +291,7 @@ const getCollectorsForSurvey = async (surveyId, options = {}) => {
 const createCollector = async (surveyId, collectorData, options = {}) => {
     try {
         const response = await apiClient.post(`/surveys/${surveyId}/collectors`, collectorData, { signal: options.signal });
-        return response.data; // Expects { success: true, data: { ...collector... }, message: '...' }
+        return response.data;
     } catch (error) {
         return handleApiError(error, `createCollector (${surveyId})`);
     }
@@ -272,7 +300,7 @@ const createCollector = async (surveyId, collectorData, options = {}) => {
 const updateCollector = async (surveyId, collectorId, collectorData, options = {}) => {
     try {
         const response = await apiClient.put(`/surveys/${surveyId}/collectors/${collectorId}`, collectorData, { signal: options.signal });
-        return response.data; // Expects { success: true, data: { ...collector... }, message: '...' }
+        return response.data;
     } catch (error) {
         return handleApiError(error, `updateCollector (${collectorId})`);
     }
@@ -281,7 +309,7 @@ const updateCollector = async (surveyId, collectorId, collectorData, options = {
 const deleteCollector = async (surveyId, collectorId, options = {}) => {
     try {
         const response = await apiClient.delete(`/surveys/${surveyId}/collectors/${collectorId}`, { signal: options.signal });
-        return response.data; // Expects { success: true, message: '...' }
+        return response.data;
     } catch (error) {
         return handleApiError(error, `deleteCollector (${collectorId})`);
     }
@@ -326,4 +354,4 @@ const surveyApiFunctions = {
 };
 
 export default surveyApiFunctions;
-// ----- END OF COMPLETE MODIFIED FILE (vNext6 - Implemented Collector API functions) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext7 - Added Axios Interceptor Logging) -----

@@ -1,9 +1,9 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (Restoring original handleNext) -----
+// ----- START OF UPDATED FILE (Restoring original handleNext, Added handleSubmit logging) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 // import { toast } from 'react-toastify';
-import surveyApi from '../api/surveyApi';
+import surveyApi from '../api/surveyApi'; // Assuming surveyApi is correctly imported as an object of functions
 import styles from './SurveyTakingPage.module.css';
 
 import CardSortQuestion from '../components/survey_question_renders/CardSortQuestion';
@@ -65,7 +65,7 @@ function SurveyTakingPage() {
         }
         const originalIndexToFind = visibleQuestionIndices[currentVisibleIndex];
         const question = originalQuestions.find(q => q.originalIndex === originalIndexToFind);
-        if (!question && visibleQuestionIndices.length > 0) { // Only log error if we expected questions
+        if (!question && visibleQuestionIndices.length > 0) {
              console.error(`[STM Debug] Could not find question for originalIndex ${originalIndexToFind} at currentVisibleIndex ${currentVisibleIndex}. VisibleIndices:`, visibleQuestionIndices, "OriginalQuestions:", originalQuestions);
         }
         return question;
@@ -108,18 +108,14 @@ function SurveyTakingPage() {
                 if (response.success && response.data) {
                     setSurvey(response.data);
                     const fetchedQuestions = response.data.questions || [];
-                    
-                    // Assuming originalIndex is now correctly provided by the backend
-                    // or you've added it to the Question schema and are populating it.
                     const questionsWithIndex = fetchedQuestions.map((q, idx) => ({
                         ...q,
-                        // Ensure originalIndex is present, fallback to array index if absolutely necessary (but backend should provide it)
                         originalIndex: typeof q.originalIndex === 'number' ? q.originalIndex : idx 
                     }));
                     setOriginalQuestions(questionsWithIndex);
                     
                     const indices = questionsWithIndex
-                        .map(q => q.originalIndex) // Now directly map, assuming it's a number
+                        .map(q => q.originalIndex)
                         .sort((a, b) => a - b);
                     
                     if (indices.length === 0 && fetchedQuestions.length > 0) {
@@ -157,27 +153,45 @@ function SurveyTakingPage() {
 
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
     
-    // --- RESTORING ORIGINAL handleSubmit ---
     const handleSubmit = useCallback(async () => {
+        // +++ ADDED LOGGING +++
+        console.log('[SurveyTakingPage - handleSubmit] Attempting submission...');
+        console.log('[SurveyTakingPage - handleSubmit] surveyId:', surveyId);
+        console.log('[SurveyTakingPage - handleSubmit] collectorId:', collectorId);
+        console.log('[SurveyTakingPage - handleSubmit] Expected API endpoint path (relative to base API URL):', `/surveys/${surveyId}/submit`);
+        // +++ END ADDED LOGGING +++
+
         if (!surveyId || !collectorId) { console.error("Cannot submit, survey/collector ID missing."); return; }
         if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
+        
         setIsSubmitting(true);
         try {
-            const result = await surveyApi.submitSurveyAnswers(surveyId, { collectorId, answers: currentAnswers, otherInputValues, resumeToken: currentResumeToken });
-            if (result.success) {
-                console.log("Survey submitted!", result);
+            const submissionPayload = { 
+                collectorId, 
+                answers: currentAnswers, 
+                otherInputValues, 
+                resumeToken: currentResumeToken 
+            };
+            // +++ ADDED LOGGING +++
+            console.log('[SurveyTakingPage - handleSubmit] Submission payload:', submissionPayload);
+            // Ensure you are calling the function from your imported surveyApi (which should be an object of functions)
+            const result = await surveyApi.submitSurveyAnswers(surveyId, submissionPayload);
+            console.log('[SurveyTakingPage - handleSubmit] API call result:', result); // +++ ADDED LOGGING +++
+            
+            if (result && result.success) { // Check if result and result.success are defined
+                console.log("Survey submitted successfully via frontend!", result);
                 navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
             } else {
-                console.error("Submission failed.", result);
+                console.error("Submission failed on frontend, API result indicates failure or is undefined:", result); // +++ MODIFIED LOGGING +++
             }
         } catch (err) {
-            console.error("Submission error.", err);
+            console.error("Submission error caught by try-catch in handleSubmit:", err); // +++ MODIFIED LOGGING +++
         } finally {
+            console.log('[SurveyTakingPage - handleSubmit] Reached finally block, setting isSubmitting to false.'); // +++ ADDED LOGGING +++
             setIsSubmitting(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, validateQuestion, currentQuestionToRender, navigate, survey?.title, initialSurveyTitle]);
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, validateQuestion, currentQuestionToRender, navigate, survey?.title, initialSurveyTitle, isSubmitState]); // Added isSubmitState to dependencies as it's used indirectly by calling handleSubmit
 
-    // --- RESTORING ORIGINAL handleNext ---
     const handleNext = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) {
             clearTimeout(autoAdvanceTimeoutRef.current);
@@ -369,7 +383,7 @@ function SurveyTakingPage() {
 
     if (isLoadingSurvey) return <div className={styles.loadingContainer}>Loading survey questions...</div>;
     if (surveyError) return <div className={styles.errorContainer}>Error loading survey: {surveyError}</div>;
-    if (!survey || !originalQuestions) return <div className={styles.errorContainer}>Survey data could not be loaded or no questions found.</div>; // Modified condition
+    if (!survey || !originalQuestions) return <div className={styles.errorContainer}>Survey data could not be loaded or no questions found.</div>;
 
     const progressBarElement = renderProgressBar();
     const displayTitle = survey?.title || initialSurveyTitle || "Survey";
@@ -391,10 +405,10 @@ function SurveyTakingPage() {
                 !isSubmitting && currentVisibleIndex >= visibleQuestionIndices.length &&
                 <div className={styles.surveyMessageContainer}>
                     <p className={styles.surveyMessage}>Thank you for your responses!</p>
-                    {(visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && // Show submit if there were questions OR answers
+                    {(visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) &&
                         <p className={styles.surveyMessage}>Click "Submit" to finalize your survey.</p>
                     }
-                     {visibleQuestionIndices.length === 0 && Object.keys(currentAnswers).length === 0 && // Only show "completed" if no questions AND no answers
+                     {visibleQuestionIndices.length === 0 && Object.keys(currentAnswers).length === 0 &&
                         <p className={styles.surveyMessage}>Survey completed.</p>
                     }
                 </div>
@@ -465,4 +479,4 @@ function SurveyTakingPage() {
 }
 
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (Restoring original handleNext) -----
+// ----- END OF UPDATED FILE (Restoring original handleNext, Added handleSubmit logging) -----
