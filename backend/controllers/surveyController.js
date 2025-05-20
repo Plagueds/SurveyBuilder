@@ -1,5 +1,5 @@
 // backend/controllers/surveyController.js
-// ----- START OF COMPLETE COMBINED AND UPDATED FILE -----
+// ----- START OF COMPLETE COMBINED AND UPDATED FILE (WITH DEBUG LOGS) -----
 const mongoose = require('mongoose');
 const { Parser } = require('json2csv');
 const crypto = require('crypto');
@@ -127,15 +127,13 @@ exports.getAllSurveys = async (req, res) => { // From your vNext28
             .select('-questions -globalSkipLogic -settings -randomizationLogic -collectors') // Exclude bulky fields from list view
             .sort({ createdAt: -1 });
         
-        // The `if (!surveys)` check is generally not needed as `find()` returns an empty array if no documents match, not null/undefined.
-        // An error during the query would be caught by the catch block.
         console.log(`[getAllSurveys] Found ${surveys.length} surveys.`);
         if (!res.headersSent) {
             res.status(200).json({ success: true, count: surveys.length, data: surveys });
         }
     } catch (error) {
         console.error(`[getAllSurveys] CRITICAL ERROR. User: ${req.user?.id}. Error: ${error.message}`, error.stack);
-        if (!res.headersSent) { // Ensure headers aren't already sent by a previous error response
+        if (!res.headersSent) { 
             res.status(500).json({ success: false, message: "Critical error fetching surveys on the server." });
         }
     }
@@ -145,7 +143,7 @@ exports.createSurvey = async (req, res) => { // From your vNext28
     console.log(`[createSurvey] User: ${req.user?.id}. Attempting to create survey.`);
     const { title, description, category, settings, welcomeMessage, thankYouMessage } = req.body;
     try {
-        if (!req.user || !req.user.id) { // Should be guaranteed by `protect` middleware
+        if (!req.user || !req.user.id) { 
             console.error('[createSurvey] User ID not found in request. Auth middleware issue?');
             return res.status(401).json({ success: false, message: 'User authentication failed.' });
         }
@@ -161,7 +159,6 @@ exports.createSurvey = async (req, res) => { // From your vNext28
         };
         const defaultCustomVariables = [];
 
-        // Deep merge settings, ensuring defaults are applied correctly
         const mergedSettings = {
             surveyWide: { ...(settings?.surveyWide || {}) },
             completion: { ...(settings?.completion || {}) },
@@ -177,11 +174,11 @@ exports.createSurvey = async (req, res) => { // From your vNext28
         const newSurvey = new Survey({
             title: title || 'Untitled Survey',
             description,
-            category, // Assuming category is a simple string or managed elsewhere
+            category, 
             createdBy: req.user.id,
             status: 'draft',
             settings: mergedSettings,
-            welcomeMessage: welcomeMessage || { text: "Welcome to the survey!" }, // Ensure these have a default structure if partially provided
+            welcomeMessage: welcomeMessage || { text: "Welcome to the survey!" }, 
             thankYouMessage: thankYouMessage || { text: "Thank you for completing the survey!" },
         });
         const savedSurvey = await newSurvey.save();
@@ -196,7 +193,7 @@ exports.createSurvey = async (req, res) => { // From your vNext28
     }
 };
 
-exports.getSurveyById = async (req, res) => { // From your vNext28, WITH PATH COLLISION FIX
+exports.getSurveyById = async (req, res) => { 
     const { surveyId } = req.params;
     const { forTaking, collectorId, isPreviewingOwner, resumeToken } = req.query;
     console.log(`[getSurveyById] Request for survey: ${surveyId}, forTaking: ${forTaking}, collectorId: ${collectorId}, resumeToken: ${resumeToken}, isPreviewingOwner: ${isPreviewingOwner}`);
@@ -223,12 +220,14 @@ exports.getSurveyById = async (req, res) => { // From your vNext28, WITH PATH CO
                 .populate({ path: 'questions', model: 'Question', options: { sort: { originalIndex: 1 } } });
 
             if (collectorId) {
-                // ***** MODIFICATION 1 HERE *****
                 const selectFields = 'status type linkId survey responseCount ' +
-                                     'settings.web_link ' +                     // Select the whole web_link sub-document
-                                     '+settings.web_link.password';             // Explicitly include the password
-                // Any other fields from settings.web_link that are not select:false will come automatically.
-                // If you need other top-level fields from 'settings' object (outside web_link), add them like 'settings.someOtherCategory'
+                                     'settings.web_link ' +                     
+                                     '+settings.web_link.password';             
+                
+                // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                // TEMPORARY DEBUG LOG - SPOT 1
+                console.log("DEBUG_SPOT_1: Initial collector fetch. Using selectFields:", selectFields);
+                // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
                 if (mongoose.Types.ObjectId.isValid(collectorId)) {
                     actualCollectorDoc = await Collector.findOne({ _id: collectorId, survey: surveyId }).select(selectFields);
@@ -280,18 +279,20 @@ exports.getSurveyById = async (req, res) => { // From your vNext28, WITH PATH CO
                 partialResponseData = partialDoc.toObject();
                 
                 if (!actualCollectorDoc && partialDoc.collector) {
-                     // ***** MODIFICATION 2 HERE *****
                      const selectFieldsForResume = 'status type linkId survey responseCount ' +
                                                    'settings.web_link ' +
                                                    '+settings.web_link.password';
+
+                     // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                     // TEMPORARY DEBUG LOG - SPOT 2
+                     console.log("DEBUG_SPOT_2: Resume collector fetch. Using selectFieldsForResume:", selectFieldsForResume);
+                     // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                                         
                      actualCollectorDoc = await Collector.findById(partialDoc.collector).select(selectFieldsForResume);
                      if (!actualCollectorDoc) {
                         console.error(`[getSurveyById] Collector ${partialDoc.collector} from partial response not found for survey ${surveyId}`);
                      }
                 }
-                // ** TODO from previous version still applies: When resuming, fetch individual Answer documents...
-                // const savedAnswersRaw = await Answer.find({ survey: survey._id, sessionId: partialDoc.sessionId });
-                // ... reconstruct answers and add to partialResponseData ...
             }
 
             if (actualCollectorDoc) {
@@ -382,12 +383,12 @@ exports.getSurveyById = async (req, res) => { // From your vNext28, WITH PATH CO
         res.status(200).json({ success: true, data: surveyResponseData });
 
     } catch (error) {
-        console.error(`[getSurveyById] CRITICAL ERROR fetching survey ${surveyId}. Error:`, error.stack); // Log the full error stack
+        console.error(`[getSurveyById] CRITICAL ERROR fetching survey ${surveyId}. Error:`, error.stack); 
         res.status(500).json({ success: false, message: 'Error fetching survey data on the server.' });
     }
 };
 
-exports.updateSurvey = async (req, res) => { // From your vNext28
+exports.updateSurvey = async (req, res) => { 
     const { surveyId } = req.params;
     const updates = req.body;
     console.log(`[updateSurvey] User: ${req.user?.id}. Attempting to update survey: ${surveyId}`);
@@ -395,7 +396,7 @@ exports.updateSurvey = async (req, res) => { // From your vNext28
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
         return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
     }
-    if (!req.user || !req.user.id) { // Should be guaranteed by `protect` and `authorizeSurveyAccess`
+    if (!req.user || !req.user.id) { 
         console.error('[updateSurvey] User ID not found. Auth middleware issue?');
         return res.status(401).json({ success: false, message: 'User authentication failed.' });
     }
@@ -409,49 +410,38 @@ exports.updateSurvey = async (req, res) => { // From your vNext28
             console.log(`[updateSurvey] Survey not found: ${surveyId}`);
             return res.status(404).json({ success: false, message: 'Survey not found.' });
         }
-        // Authorization check (also handled by authorizeSurveyAccess middleware if applied on route)
         if (String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
             await session.abortTransaction(); session.endSession();
             console.log(`[updateSurvey] Unauthorized attempt by user ${req.user.id} for survey ${surveyId}`);
             return res.status(403).json({ success: false, message: 'Not authorized to update this survey.' });
         }
 
-        // --- Handle Question Updates (Complex: usually separate endpoints or careful array management) ---
         if (updates.hasOwnProperty('questions') && Array.isArray(updates.questions)) {
-            // This is a simplified placeholder. Real question updates are complex.
-            // You'd typically have dedicated endpoints for adding/removing/updating individual questions
-            // or use Mongoose's array update operators carefully.
-            // For now, assuming `updates.questions` is an array of Question ObjectIDs.
-            // survey.questions = updates.questions; // Direct assignment can be risky without validation
             console.warn("[updateSurvey] Direct update of 'questions' array is complex and not fully implemented here. Consider dedicated question management endpoints.");
         } else if (updates.hasOwnProperty('questions') && updates.questions === null) {
-            // survey.questions = []; // Example: Clear all questions
+            // survey.questions = []; 
         }
 
-        // --- Handle Settings Updates (Deep Merge) ---
         if (updates.settings) {
-            survey.settings = survey.settings || {}; // Ensure settings object exists
-            const defaultBehaviorNav = { // Re-establish defaults for merging
+            survey.settings = survey.settings || {}; 
+            const defaultBehaviorNav = { 
                 autoAdvance: false, questionNumberingEnabled: true, questionNumberingFormat: '123',
                 questionNumberingCustomPrefix: '', saveAndContinueEnabled: false,
                 saveAndContinueEmailLinkExpiryDays: 7, saveAndContinueMethod: 'email'
             };
             const defaultCustomVariables = [];
 
-            // Iterate through categories in updates.settings (e.g., behaviorNavigation, completion)
             for (const categoryKey in updates.settings) {
                 if (Object.prototype.hasOwnProperty.call(updates.settings, categoryKey)) {
                     if (categoryKey === 'customVariables') {
                         survey.settings.customVariables = Array.isArray(updates.settings.customVariables)
-                            ? updates.settings.customVariables.filter(cv => cv.key && cv.key.trim() !== '') // Basic validation
+                            ? updates.settings.customVariables.filter(cv => cv.key && cv.key.trim() !== '') 
                             : defaultCustomVariables;
                     } else if (typeof updates.settings[categoryKey] === 'object' && updates.settings[categoryKey] !== null && !Array.isArray(updates.settings[categoryKey])) {
-                        // Merge object-based settings (like behaviorNavigation)
                         survey.settings[categoryKey] = {
-                            ...(survey.settings[categoryKey] || (categoryKey === 'behaviorNavigation' ? defaultBehaviorNav : {})), // Apply defaults if category didn't exist
-                            ...updates.settings[categoryKey] // Apply updates
+                            ...(survey.settings[categoryKey] || (categoryKey === 'behaviorNavigation' ? defaultBehaviorNav : {})), 
+                            ...updates.settings[categoryKey] 
                         };
-                        // Specific validation for saveAndContinueMethod if behaviorNavigation is updated
                         if (categoryKey === 'behaviorNavigation' && survey.settings.behaviorNavigation) {
                             const validMethods = ['email', 'code', 'both'];
                             if (updates.settings.behaviorNavigation.hasOwnProperty('saveAndContinueMethod') &&
@@ -460,32 +450,29 @@ exports.updateSurvey = async (req, res) => { // From your vNext28
                                 survey.settings.behaviorNavigation.saveAndContinueMethod = defaultBehaviorNav.saveAndContinueMethod;
                             }
                         }
-                    } else { // For direct value settings
+                    } else { 
                         survey.settings[categoryKey] = updates.settings[categoryKey];
                     }
                 }
             }
-            // Ensure default structures exist if not provided in update
             if (!survey.settings.behaviorNavigation) survey.settings.behaviorNavigation = defaultBehaviorNav;
             else survey.settings.behaviorNavigation = { ...defaultBehaviorNav, ...survey.settings.behaviorNavigation };
 
             if (!survey.settings.customVariables) survey.settings.customVariables = defaultCustomVariables;
         }
 
-        // --- Update Allowed Top-Level Fields ---
         const allowedTopLevelFields = ['title', 'description', 'status', 'category', 'randomizationLogic', 'welcomeMessage', 'thankYouMessage', 'globalSkipLogic'];
         for (const key of allowedTopLevelFields) {
             if (updates.hasOwnProperty(key)) {
                 survey[key] = updates[key];
             }
         }
-        survey.updatedAt = Date.now(); // Explicitly set, though timestamps:true also handles it
+        survey.updatedAt = Date.now(); 
 
         const updatedSurvey = await survey.save({ session });
         await session.commitTransaction();
         session.endSession();
 
-        // Repopulate for the response to ensure client gets full, updated data
         const populatedSurvey = await Survey.findById(updatedSurvey._id)
             .populate({ path: 'questions', model: 'Question', options: { sort: { originalIndex: 1 } } })
             .populate('collectors');
@@ -504,14 +491,14 @@ exports.updateSurvey = async (req, res) => { // From your vNext28
     }
 };
 
-exports.deleteSurvey = async (req, res) => { // From your vNext28, with added related data deletion
+exports.deleteSurvey = async (req, res) => { 
     const { surveyId } = req.params;
     console.log(`[deleteSurvey] User: ${req.user?.id}. Attempting to delete survey: ${surveyId}`);
 
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
         return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
     }
-    if (!req.user || !req.user.id) { // Should be guaranteed by `protect` and `authorizeSurveyAccess`
+    if (!req.user || !req.user.id) { 
         console.error('[deleteSurvey] User ID not found. Auth middleware issue?');
         return res.status(401).json({ success: false, message: 'User authentication failed.' });
     }
@@ -519,25 +506,23 @@ exports.deleteSurvey = async (req, res) => { // From your vNext28, with added re
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-        const survey = await Survey.findById(surveyId).select('createdBy').session(session); // Only need createdBy for auth
+        const survey = await Survey.findById(surveyId).select('createdBy').session(session); 
         if (!survey) {
             await session.abortTransaction(); session.endSession();
             console.log(`[deleteSurvey] Survey not found: ${surveyId}`);
             return res.status(404).json({ success: false, message: 'Survey not found.' });
         }
-        // Authorization (also handled by authorizeSurveyAccess middleware if applied on route)
         if (String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
             await session.abortTransaction(); session.endSession();
             console.log(`[deleteSurvey] Unauthorized attempt by user ${req.user.id} for survey ${surveyId}`);
             return res.status(403).json({ success: false, message: 'Not authorized to delete this survey.' });
         }
 
-        // Delete related data
         console.log(`[deleteSurvey] Deleting related data for survey ${surveyId}...`);
         await Question.deleteMany({ survey: surveyId }, { session });
         await Collector.deleteMany({ survey: surveyId }, { session });
-        await Response.deleteMany({ survey: surveyId }, { session }); // Response headers
-        await Answer.deleteMany({ survey: surveyId }, { session });   // Individual answers
+        await Response.deleteMany({ survey: surveyId }, { session }); 
+        await Answer.deleteMany({ survey: surveyId }, { session });   
         await PartialResponse.deleteMany({ survey: surveyId }, { session });
         
         await Survey.findByIdAndDelete(surveyId, { session });
@@ -555,20 +540,7 @@ exports.deleteSurvey = async (req, res) => { // From your vNext28, with added re
 };
 
 
-// --- SUBMIT SURVEY ANSWERS (REVISED FOR SEPARATE Answer DOCUMENTS) ---
 exports.submitSurveyAnswers = async (req, res) => {
-    // ... (The full submitSurveyAnswers function I provided in the previous response,
-    //      which uses Answer.bulkWrite() and doesn't store answers on Response doc) ...
-    // For brevity, I'm not pasting the entire thing again here, but it's the one from:
-    // "Okay, I will now provide the complete surveyController.js file." -> my previous response.
-    // Ensure that version is here.
-    // Key elements:
-    // - Uses Answer.bulkWrite()
-    // - Validates answers with validateAnswerDetailed
-    // - Handles reCAPTCHA v2
-    // - Handles "Allow Multiple Responses"
-    // - Creates/Updates a Response header document
-    // - Updates PartialResponse if resumed
     const { surveyId } = req.params;
     const { collectorId, answers, otherInputValues, resumeToken, recaptchaTokenV2, clientSessionId, customVariablesFromClient } = req.body;
 
@@ -630,7 +602,7 @@ exports.submitSurveyAnswers = async (req, res) => {
                 if (error) { validationErrors.push({ questionId: questionIdStr, text: question.text, message: error });}
             }
         }
-        for (const question of survey.questions) { // Check required questions not in answers
+        for (const question of survey.questions) { 
             if (!answers.hasOwnProperty(question._id.toString()) && question.requiredSetting === 'required') {
                  const error = validateAnswerDetailed(question, undefined, undefined); 
                  if (error) { validationErrors.push({ questionId: question._id.toString(), text: question.text, message: error });}
@@ -706,23 +678,10 @@ exports.submitSurveyAnswers = async (req, res) => {
 };
 
 
-// --- FUNCTIONS BELOW STILL NEED MODIFICATION FOR Answer.js MODEL ---
-
-exports.savePartialResponse = async (req, res) => { // From your vNext28 - NEEDS HEAVY MODIFICATION
+exports.savePartialResponse = async (req, res) => { 
     const { surveyId } = req.params;
-    const { collectorId, respondentEmail, currentAnswers, otherInputValues, currentVisibleIndex, visitedPath, sessionId, resumeToken: existingResumeToken } = req.body; // Added existingResumeToken from your model
+    const { collectorId, respondentEmail, currentAnswers, otherInputValues, currentVisibleIndex, visitedPath, sessionId, resumeToken: existingResumeToken } = req.body; 
     console.log(`[savePartialResponse] User: ${req.user?.id}. Attempting for survey: ${surveyId}`);
-
-    // TODO: CRITICAL - This function needs to be rewritten similar to submitSurveyAnswers.
-    // 1. It should NOT store `currentAnswers` or `otherInputValues` directly on the `PartialResponse` document.
-    //    Your `PartialResponse.js` model has `answers: Map, of: Mixed` and `otherInputValues: Map, of: String`.
-    //    These fields should ideally be REMOVED from `PartialResponse.js` if `Answer.js` is the single source of truth for answer data.
-    //    If you keep them on `PartialResponse` for some reason, be aware of data duplication/synchronization issues.
-    // 2. It SHOULD use `Answer.bulkWrite()` with upserts to save/update individual `Answer` documents
-    //    for the current `clientSessionId` (passed as `sessionId` in the request body).
-    // 3. The `PartialResponse` document itself will store metadata: `survey`, `collector`, `sessionId` (from client),
-    //    `resumeToken` (generated here), `respondentEmail`, `currentVisibleIndex`, `visitedPath`, `expiresAt`.
-    // 4. Validation of answers (e.g., `validateAnswerDetailed`) might be optional for partial saves, or less strict.
 
     if (!mongoose.Types.ObjectId.isValid(surveyId) || (collectorId && !mongoose.Types.ObjectId.isValid(collectorId))) {
         return res.status(400).json({ success: false, message: 'Invalid Survey or Collector ID.' });
@@ -730,29 +689,26 @@ exports.savePartialResponse = async (req, res) => { // From your vNext28 - NEEDS
     if (respondentEmail && !/\S+@\S+\.\S+/.test(respondentEmail)) {
         return res.status(400).json({ success: false, message: 'If provided, the email address is invalid.' });
     }
-    if (!sessionId) { // clientSessionId is crucial for linking answers
+    if (!sessionId) { 
         return res.status(400).json({ success: false, message: 'Client Session ID (as sessionId) is required for saving progress.' });
     }
-
 
     const mongoSession = await mongoose.startSession();
     mongoSession.startTransaction();
     try {
         const survey = await Survey.findById(surveyId).select('title settings.behaviorNavigation').session(mongoSession);
-        if (!survey) { /* ... abort ... */ await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Survey not found.' }); }
+        if (!survey) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Survey not found.' }); }
         
         const behaviorNavSettings = survey.settings?.behaviorNavigation || {};
-        if (!behaviorNavSettings.saveAndContinueEnabled) { /* ... abort ... */ await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Save and Continue feature is not enabled for this survey.' }); }
+        if (!behaviorNavSettings.saveAndContinueEnabled) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Save and Continue feature is not enabled for this survey.' }); }
         const saveMethod = behaviorNavSettings.saveAndContinueMethod || 'email';
 
-        if ((saveMethod === 'email' || saveMethod === 'both') && !respondentEmail) { /* ... abort ... */ await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Email address is required for this save method.' }); }
+        if ((saveMethod === 'email' || saveMethod === 'both') && !respondentEmail) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Email address is required for this save method.' }); }
 
         const collector = await Collector.findById(collectorId).session(mongoSession);
-         if (!collector) { /* ... abort ... */ await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Collector not found.' }); }
+         if (!collector) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(404).json({ success: false, message: 'Collector not found.' }); }
          if (String(collector.survey) !== String(surveyId)) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(400).json({ success: false, message: 'Collector does not belong to this survey.' });}
 
-
-        // --- Save/Update individual Answer documents using bulkWrite (similar to submitSurveyAnswers) ---
         const answerOpsForPartial = [];
         if (typeof currentAnswers === 'object' && currentAnswers !== null) {
             for (const questionIdStr in currentAnswers) {
@@ -763,7 +719,7 @@ exports.savePartialResponse = async (req, res) => { // From your vNext28 - NEEDS
 
                     answerOpsForPartial.push({
                         updateOne: {
-                            filter: { survey: surveyId, questionId: questionObjectId, sessionId: sessionId, collector: collectorId }, // Use `sessionId` from req.body
+                            filter: { survey: surveyId, questionId: questionObjectId, sessionId: sessionId, collector: collectorId }, 
                             update: { $set: { answerValue: answerValue, otherText: otherText, updatedAt: new Date() }, $setOnInsert: { survey: surveyId, questionId: questionObjectId, sessionId: sessionId, collector: collectorId, createdAt: new Date() }},
                             upsert: true
                         }
@@ -775,8 +731,6 @@ exports.savePartialResponse = async (req, res) => { // From your vNext28 - NEEDS
             await Answer.bulkWrite(answerOpsForPartial, { session: mongoSession });
             console.log(`[savePartialResponse] Bulk upserted ${answerOpsForPartial.length} Answer documents for session ${sessionId}.`);
         }
-        // --- End Answer saving ---
-
 
         let partialResponseDoc;
         let newResumeTokenGenerated = false;
@@ -785,41 +739,33 @@ exports.savePartialResponse = async (req, res) => { // From your vNext28 - NEEDS
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + expiryDays);
 
-        if (existingResumeToken) { // If frontend is trying to update an existing partial save session
+        if (existingResumeToken) { 
             partialResponseDoc = await PartialResponse.findOne({ resumeToken: existingResumeToken, survey: surveyId }).session(mongoSession);
             if (partialResponseDoc) {
-                if (partialResponseDoc.completedAt) { /* ... abort ... */ await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(409).json({ success: false, message: 'This survey session has already been completed.' }); }
+                if (partialResponseDoc.completedAt) { await mongoSession.abortTransaction(); mongoSession.endSession(); return res.status(409).json({ success: false, message: 'This survey session has already been completed.' }); }
                 console.log(`[savePartialResponse] Updating existing PartialResponse ${partialResponseDoc._id} with token ${existingResumeToken}`);
                 finalResumeTokenToUse = existingResumeToken;
-                // Update fields
-                partialResponseDoc.respondentEmail = respondentEmail || partialResponseDoc.respondentEmail; // Update email if new one provided
-                // DO NOT save answers/otherInputValues here directly anymore. They are in Answer collection.
-                // partialResponseDoc.answers = currentAnswers || {}; // REMOVE/COMMENT OUT
-                // partialResponseDoc.otherInputValues = otherInputValues || {}; // REMOVE/COMMENT OUT
+                partialResponseDoc.respondentEmail = respondentEmail || partialResponseDoc.respondentEmail; 
                 partialResponseDoc.currentVisibleIndex = currentVisibleIndex === undefined ? partialResponseDoc.currentVisibleIndex : currentVisibleIndex;
                 partialResponseDoc.visitedPath = visitedPath || partialResponseDoc.visitedPath;
-                partialResponseDoc.expiresAt = expiresAt; // Refresh expiry
-                partialResponseDoc.sessionId = sessionId; // Update sessionId if it changed (though usually it's fixed for a save session)
+                partialResponseDoc.expiresAt = expiresAt; 
+                partialResponseDoc.sessionId = sessionId; 
                 partialResponseDoc.updatedAt = new Date();
             } else {
                 console.warn(`[savePartialResponse] existingResumeToken ${existingResumeToken} provided but not found. Creating new partial save.`);
-                // Fall through to create new
             }
         }
         
-        if (!partialResponseDoc) { // Create new partial response
+        if (!partialResponseDoc) { 
             finalResumeTokenToUse = crypto.randomBytes(20).toString('hex');
             newResumeTokenGenerated = true;
             console.log(`[savePartialResponse] Creating new PartialResponse with token ${finalResumeTokenToUse} for session ${sessionId}`);
             partialResponseDoc = new PartialResponse({
                 survey: surveyId,
                 collector: collectorId,
-                sessionId: sessionId, // This is the clientSessionId
+                sessionId: sessionId, 
                 resumeToken: finalResumeTokenToUse,
                 respondentEmail: respondentEmail || undefined,
-                // DO NOT save answers/otherInputValues here directly anymore
-                // answers: currentAnswers || {}, // REMOVE/COMMENT OUT
-                // otherInputValues: otherInputValues || {}, // REMOVE/COMMENT OUT
                 currentVisibleIndex: currentVisibleIndex === undefined ? 0 : currentVisibleIndex,
                 visitedPath: visitedPath || [],
                 expiresAt,
@@ -830,14 +776,11 @@ exports.savePartialResponse = async (req, res) => { // From your vNext28 - NEEDS
 
         let emailSentSuccessfully = null;
         const shouldSendEmail = respondentEmail && (saveMethod === 'email' || saveMethod === 'both');
-        // Send email only if a new token was generated OR if the email was updated for an existing partial response
         const emailChangedForExisting = !newResumeTokenGenerated && respondentEmail && partialResponseDoc.respondentEmail !== respondentEmail;
-
 
         if (shouldSendEmail && (newResumeTokenGenerated || emailChangedForExisting)) {
             try {
-                // Construct resume link carefully. It should point to a route that uses getSurveyById with the resumeToken.
-                const resumeLink = `${process.env.FRONTEND_URL}/surveys/${surveyId}/c/${collectorId}/${finalResumeTokenToUse}`; // Example link structure
+                const resumeLink = `${process.env.FRONTEND_URL}/surveys/${surveyId}/c/${collectorId}/${finalResumeTokenToUse}`; 
                 await emailService.sendResumeEmail(respondentEmail, survey.title, resumeLink, expiryDays);
                 emailSentSuccessfully = true;
             } catch (emailError) {
@@ -853,13 +796,11 @@ exports.savePartialResponse = async (req, res) => { // From your vNext28 - NEEDS
 
         let message = 'Progress saved!';
         const provideCode = saveMethod === 'code' || saveMethod === 'both';
-        // ... (rest of your message construction logic from vNext28) ...
         if (shouldSendEmail) {
             if (emailSentSuccessfully === true) { message = `Progress saved! A link to resume this survey has been sent to ${respondentEmail}.`; if (provideCode) message += ` Your resume code is also provided below.`;}
             else if (emailSentSuccessfully === false) { message = `Progress saved! We could not send an email.`; if (provideCode) message += ` Please use the resume code below to continue later.`; else message += ` Please contact support or try saving again. If the issue persists, you can use this resume code: ${finalResumeTokenToUse}.`;}
             else { if (provideCode) message = `Progress saved! Use the resume code below to continue later.`; else message = `Progress saved!`;}
         } else if (provideCode) { message = `Progress saved! Use the resume code below to continue later.`; }
-
 
         res.status(200).json({
             success: true, message: message,
@@ -879,17 +820,9 @@ exports.savePartialResponse = async (req, res) => { // From your vNext28 - NEEDS
 };
 
 
-exports.getSurveyResults = async (req, res) => { // From your vNext28 - NEEDS HEAVY MODIFICATION
+exports.getSurveyResults = async (req, res) => { 
     const { surveyId } = req.params;
     console.log(`[getSurveyResults] User: ${req.user?.id}. Attempting for survey: ${surveyId}`);
-
-    // TODO: CRITICAL - This function needs to be rewritten.
-    // 1. Fetch all `Response` documents for the survey (these are the headers, with status 'completed').
-    // 2. For each `Response` document (i.e., for each `sessionId`):
-    //    a. Fetch all `Answer` documents matching the `surveyId` and `sessionId`.
-    //    b. Reconstruct the full set of answers for that response session.
-    // 3. Collate these reconstructed responses.
-    // 4. Populate question details for context.
 
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
         return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
@@ -901,17 +834,15 @@ exports.getSurveyResults = async (req, res) => { // From your vNext28 - NEEDS HE
 
     try {
         const survey = await Survey.findById(surveyId)
-            .select('title questions createdBy') // Questions needed for context
+            .select('title questions createdBy') 
             .populate({ path: 'questions', model: 'Question', select: 'text type options subQuestions originalIndex _id' });
 
         if (!survey) return res.status(404).json({ success: false, message: 'Survey not found.' });
-        // Authorization already handled by authorizeSurveyAccess middleware
-
-        // Step 1: Fetch Response Headers
+        
         const responseHeaders = await Response.find({ survey: surveyId, status: 'completed' })
             .populate({ path: 'collector', select: 'name type' })
             .sort({ submittedAt: -1 })
-            .lean(); // Use lean for performance
+            .lean(); 
 
         if (responseHeaders.length === 0) {
             return res.status(200).json({
@@ -920,7 +851,6 @@ exports.getSurveyResults = async (req, res) => { // From your vNext28 - NEEDS HE
             });
         }
 
-        // Step 2 & 3: Fetch all answers for all completed sessions of this survey and reconstruct
         const sessionIds = responseHeaders.map(rh => rh.sessionId);
         const allAnswersForSurvey = await Answer.find({ survey: surveyId, sessionId: { $in: sessionIds } }).lean();
 
@@ -944,9 +874,9 @@ exports.getSurveyResults = async (req, res) => { // From your vNext28 - NEEDS HE
                 }
             }
             return {
-                ...header, // Spread the metadata from the Response document
-                answers: formattedAnswers, // The reconstructed answers
-                otherInputValues: formattedOtherValues // The reconstructed other texts
+                ...header, 
+                answers: formattedAnswers, 
+                otherInputValues: formattedOtherValues 
             };
         });
         
@@ -954,7 +884,7 @@ exports.getSurveyResults = async (req, res) => { // From your vNext28 - NEEDS HE
         
         res.status(200).json({
             success: true, surveyTitle: survey.title,
-            questions: survey.questions, // Send question details for context
+            questions: survey.questions, 
             summary, data: reconstructedResponses
         });
 
@@ -964,22 +894,15 @@ exports.getSurveyResults = async (req, res) => { // From your vNext28 - NEEDS HE
     }
 };
 
-exports.exportSurveyResults = async (req, res) => { // From your vNext28 - NEEDS HEAVY MODIFICATION
+exports.exportSurveyResults = async (req, res) => { 
     const { surveyId } = req.params;
     const { format = 'json' } = req.query;
     console.log(`[exportSurveyResults] User: ${req.user?.id}. Attempting for survey: ${surveyId}, format: ${format}`);
 
-    // TODO: CRITICAL - This function needs a similar rewrite to getSurveyResults.
-    // 1. Fetch Response headers.
-    // 2. Fetch all relevant Answer documents.
-    // 3. Reconstruct each full response.
-    // 4. Then, format for CSV or JSON. The CSV part will need careful construction of headers
-    //    and mapping the reconstructed answers to the correct columns.
-
     if (!mongoose.Types.ObjectId.isValid(surveyId)) {
         return res.status(400).json({ success: false, message: 'Invalid Survey ID.' });
     }
-    if (!req.user || !req.user.id) { /* ... auth error ... */ return res.status(401).json({ success: false, message: 'User authentication failed.' });}
+    if (!req.user || !req.user.id) { return res.status(401).json({ success: false, message: 'User authentication failed.' });}
 
     try {
         const survey = await Survey.findById(surveyId)
@@ -988,9 +911,8 @@ exports.exportSurveyResults = async (req, res) => { // From your vNext28 - NEEDS
 
         if (!survey) return res.status(404).json({ success: false, message: 'Survey not found.' });
 
-        // Fetch reconstructed responses (similar to getSurveyResults)
         const responseHeaders = await Response.find({ survey: surveyId, status: 'completed' })
-            .populate({path: 'collector', select: 'name'}) // For collector name in export
+            .populate({path: 'collector', select: 'name'}) 
             .sort({ submittedAt: -1 })
             .lean();
 
@@ -1024,28 +946,22 @@ exports.exportSurveyResults = async (req, res) => { // From your vNext28 - NEEDS
         if (format.toLowerCase() === 'csv') {
             const questionsMap = new Map(survey.questions.map(q => [q._id.toString(), q]));
             const csvFields = [
-                { label: 'Response ID (Session)', value: '_id' }, // This is Response doc _id
+                { label: 'Response ID (Session)', value: '_id' }, 
                 { label: 'Session ID', value: 'sessionId'},
                 { label: 'Collector Name', value: (row) => row.collector?.name || 'N/A' },
                 { label: 'Status', value: 'status'},
                 { label: 'Started At', value: (row) => row.startedAt ? new Date(row.startedAt).toISOString() : ''},
                 { label: 'Submitted At', value: (row) => row.submittedAt ? new Date(row.submittedAt).toISOString() : '' },
                 { label: 'Duration (seconds)', value: 'durationSeconds'},
-                // Conditionally add IP/UserAgent if needed and not anonymous
-                // { label: 'IP Address', value: 'ipAddress', default: '' },
-                // { label: 'User Agent', value: 'userAgent', default: '' },
             ];
-            // Add custom variable columns from Response.customVariables if any
-            // This requires knowing the keys, or dynamically finding all unique keys across responses.
-            // For simplicity, assuming fixed custom variable keys if you have them.
-
+            
             survey.questions.sort((a,b) => a.originalIndex - b.originalIndex).forEach(q => {
                 csvFields.push({
                     label: q.text || `Question ${q.originalIndex + 1}`,
                     value: (row) => {
-                        const answerObj = row.answers?.[q._id.toString()]; // answerValue is here
+                        const answerObj = row.answers?.[q._id.toString()]; 
                         const otherText = row.otherInputValues?.[`${q._id.toString()}_other`];
-                        return formatValueForCsv(answerObj, q.type, otherText); // formatValueForCsv expects the direct answer value
+                        return formatValueForCsv(answerObj, q.type, otherText); 
                     }
                 });
             });
@@ -1055,7 +971,7 @@ exports.exportSurveyResults = async (req, res) => { // From your vNext28 - NEEDS
             res.setHeader('Content-Type', 'text/csv');
             res.setHeader('Content-Disposition', `attachment; filename="survey_${surveyId}_results.csv"`);
             res.status(200).send(csv);
-        } else { // JSON format
+        } else { 
             res.status(200).json({
                 success: true, surveyTitle: survey.title,
                 totalResponses: reconstructedResponses.length,
@@ -1069,4 +985,4 @@ exports.exportSurveyResults = async (req, res) => { // From your vNext28 - NEEDS
 };
 
 module.exports = exports;
-// ----- END OF COMPLETE COMBINED AND UPDATED FILE -----
+// ----- END OF COMPLETE COMBINED AND UPDATED FILE (WITH DEBUG LOGS) -----
