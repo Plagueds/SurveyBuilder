@@ -1,12 +1,10 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (Focus on preventing unintended actions) -----
+// ----- START OF UPDATED FILE (Corrected syntax error, uncommented API call with Minimal Payload) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-// import { toast } from 'react-toastify';
 import surveyApi from '../api/surveyApi'; 
 import styles from './SurveyTakingPage.module.css';
 
-// ... (all your question component imports remain the same) ...
 import CardSortQuestion from '../components/survey_question_renders/CardSortQuestion';
 import CheckboxQuestion from '../components/survey_question_renders/CheckboxQuestion';
 import ConjointQuestion from '../components/survey_question_renders/ConjointQuestion';
@@ -35,15 +33,15 @@ function SurveyTakingPage() {
 
     const [survey, setSurvey] = useState(null);
     const [originalQuestions, setOriginalQuestions] = useState([]);
-    const [currentAnswers, setCurrentAnswers] = useState({});
-    const [otherInputValues, setOtherInputValues] = useState({});
+    const [currentAnswers, setCurrentAnswers] = useState({}); // Will be used if minimal payload test fails
+    const [otherInputValues, setOtherInputValues] = useState({}); // Will be used if minimal payload test fails
     
     const [isLoadingSurvey, setIsLoadingSurvey] = useState(true);
     const [surveyError, setSurveyError] = useState(null);
     
     const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0);
     const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]);
-    const [isSubmitting, setIsSubmitting] = useState(false); // Critical state
+    const [isSubmitting, setIsSubmitting] = useState(false);
     
     const [currentResumeToken, setCurrentResumeToken] = useState(routeResumeToken);
     const [isSavingAndContinueLater, setIsSavingAndContinueLater] = useState(false);
@@ -53,7 +51,6 @@ function SurveyTakingPage() {
     const [promptForEmailOnSave, setPromptForEmailOnSave] = useState(false);
 
     const autoAdvanceTimeoutRef = useRef(null);
-
     const OTHER_VALUE_INTERNAL = '__OTHER__';
 
     const questionsById = useMemo(() => { 
@@ -110,21 +107,13 @@ function SurveyTakingPage() {
                 if (response.success && response.data) {
                     setSurvey(response.data);
                     const fetchedQuestions = response.data.questions || [];
-                    const questionsWithIndex = fetchedQuestions.map((q, idx) => ({
-                        ...q,
-                        originalIndex: typeof q.originalIndex === 'number' ? q.originalIndex : idx 
-                    }));
+                    const questionsWithIndex = fetchedQuestions.map((q, idx) => ({ ...q, originalIndex: typeof q.originalIndex === 'number' ? q.originalIndex : idx }));
                     setOriginalQuestions(questionsWithIndex);
-                    
-                    const indices = questionsWithIndex
-                        .map(q => q.originalIndex)
-                        .sort((a, b) => a - b);
-                    
+                    const indices = questionsWithIndex.map(q => q.originalIndex).sort((a, b) => a - b);
                     if (indices.length === 0 && fetchedQuestions.length > 0) {
-                        console.warn("[STM Debug] No valid originalIndex found on fetched questions, though questions were fetched. This will prevent navigation.", "Fetched Questions:", fetchedQuestions);
+                        console.warn("[STM Debug] No valid originalIndex found on fetched questions.", "Fetched Questions:", fetchedQuestions);
                     }
                     setVisibleQuestionIndices(indices);
-                    
                     if (response.data.partialResponse) {
                         setCurrentAnswers(response.data.partialResponse.answers || {});
                         setOtherInputValues(response.data.partialResponse.otherInputValues || {});
@@ -137,126 +126,84 @@ function SurveyTakingPage() {
                     } else if (effectiveTokenToUse && !response.data.partialResponse) {
                         setCurrentResumeToken(null); 
                     }
-
-                    if (!initialSurveyTitle && response.data.title) {
-                        setInitialSurveyTitle(response.data.title);
-                    }
-                    if (!collectorSettings && response.data.collectorSettings) {
-                        setCollectorSettings(response.data.collectorSettings);
-                    } else if (collectorSettings && response.data.collectorSettings && JSON.stringify(collectorSettings) !== JSON.stringify(response.data.collectorSettings)) {
+                    if (!initialSurveyTitle && response.data.title) setInitialSurveyTitle(response.data.title);
+                    if (!collectorSettings && response.data.collectorSettings) setCollectorSettings(response.data.collectorSettings);
+                    else if (collectorSettings && response.data.collectorSettings && JSON.stringify(collectorSettings) !== JSON.stringify(response.data.collectorSettings)) {
                         setCollectorSettings(response.data.collectorSettings);
                     }
-
                 } else { setSurveyError(response.message || "Failed to load survey details."); setSurvey(null); }
             })
             .catch(err => { console.error("[STM Debug] Error fetching survey details:", err); setSurveyError(err.message || "Error loading survey details."); setSurvey(null); })
             .finally(() => { setIsLoadingSurvey(false); });
-    }, [surveyId, collectorId, routeResumeToken, location.state]);
+    }, [surveyId, collectorId, routeResumeToken, location.state, collectorSettings, initialSurveyTitle]); // Added collectorSettings and initialSurveyTitle to dependencies
 
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
     
     const handleSubmit = useCallback(async () => {
-        // Safeguard: if already submitting, do nothing.
         if (isSubmitting) {
             console.warn('[SurveyTakingPage - handleSubmit] Already submitting, call ignored.');
             return;
         }
-
         console.log('[SurveyTakingPage - handleSubmit] Attempting submission...');
         console.log('[SurveyTakingPage - handleSubmit] surveyId:', surveyId);
         console.log('[SurveyTakingPage - handleSubmit] collectorId:', collectorId);
         console.log('[SurveyTakingPage - handleSubmit] Expected API endpoint path (relative to base API URL):', `/surveys/${surveyId}/submit`);
 
-        if (!surveyId || !collectorId) { 
-            console.error("[SurveyTakingPage - handleSubmit] Cannot submit, survey/collector ID missing."); 
-            return; // Exit early
-        }
-        // It's okay to not have a currentQuestionToRender if we are on a "thank you" or final submission step
-        // if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { 
-        //     return; 
-        // }
+        if (!surveyId || !collectorId) { console.error("[SurveyTakingPage - handleSubmit] Cannot submit, survey/collector ID missing."); return; }
         
-        setIsSubmitting(true); // Set submitting flag
-
-        // TEST GET REQUEST (keeping this for now)
-        try {
-            console.log('[SurveyTakingPage - handleSubmit] TESTING apiClient with GET /auth/me...');
-            const meResult = await surveyApi.getMe();
-            console.log('[SurveyTakingPage - handleSubmit] Test GET /auth/me result:', meResult);
-        } catch (testErr) {
-            console.error('[SurveyTakingPage - handleSubmit] Test GET /auth/me FAILED:', testErr);
-        }
+        setIsSubmitting(true);
 
         try {
-            const submissionPayload = { 
+            // --- MINIMAL PAYLOAD TEST ---
+            // Using currentAnswers and otherInputValues which might be empty or populated from previous interactions for this test.
+            // If this fails, the next step would be to force them to {} here.
+            const payloadToSubmit = { 
                 collectorId, 
                 answers: currentAnswers, 
                 otherInputValues, 
                 resumeToken: currentResumeToken 
             };
-            console.log('[SurveyTakingPage - handleSubmit] Submission payload:', submissionPayload);
+            console.log('[SurveyTakingPage - handleSubmit] SUBMITTING WITH CURRENT PAYLOAD (could be minimal or full):', payloadToSubmit);
             
-            // --- ACTUAL SUBMISSION CALL IS STILL COMMENTED OUT FOR THIS TEST ---
-            console.warn('[SurveyTakingPage - handleSubmit] The ACTUAL surveyApi.submitSurveyAnswers call is COMMENTED OUT for this test run.');
-            // const result = await surveyApi.submitSurveyAnswers(surveyId, submissionPayload);
-            // console.log('[SurveyTakingPage - handleSubmit] API call result for submitSurveyAnswers:', result); 
+            // --- UNCOMMENTED THE ACTUAL SUBMISSION CALL ---
+            const result = await surveyApi.submitSurveyAnswers(surveyId, payloadToSubmit); 
+            console.log('[SurveyTakingPage - handleSubmit] API call result for submitSurveyAnswers:', result); 
             
-            // if (result && result.success) {
-            //     console.log("Survey submitted successfully via frontend!", result);
-            //     navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
-            // } else {
-            //     console.error("Submission failed on frontend (submitSurveyAnswers), API result indicates failure or is undefined:", result);
-            // }
-
-            // Simulate a delay as if an API call was made, then reset isSubmitting
-            // This helps see if the UI behaves correctly if the actual call was there.
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate 1 second delay
-
+            if (result && result.success) {
+                console.log("Survey submitted successfully via frontend!", result);
+                navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
+            } else {
+                console.error("Submission failed on frontend, API result indicates failure or is undefined:", result);
+            }
         } catch (err) {
-            console.error("Error caught by try-catch in handleSubmit (potentially from test GET or future submit):", err);
+            console.error("Submission error caught by try-catch in handleSubmit:", err);
         } finally {
             console.log('[SurveyTakingPage - handleSubmit] Reached finally block, setting isSubmitting to false.');
-            setIsSubmitting(false); // Reset submitting flag
+            setIsSubmitting(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting]); // Added isSubmitting to dependency array for the safeguard
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting]);
 
     const handleNext = useCallback(() => {
-        if (autoAdvanceTimeoutRef.current) {
-            clearTimeout(autoAdvanceTimeoutRef.current);
-            autoAdvanceTimeoutRef.current = null;
-        }
-
-        if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
-        if (!isSubmitState) {
-            setCurrentVisibleIndex(prev => prev + 1);
-        } else {
-            handleSubmit(); 
-        }
+        if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
+        if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) return;
+        if (!isSubmitState) setCurrentVisibleIndex(prev => prev + 1);
+        else handleSubmit(); 
     }, [isSubmitState, currentVisibleIndex, validateQuestion, currentQuestionToRender, currentAnswers, handleSubmit]);
-
 
     const handleInputChange = useCallback((questionId, value) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
-
         const autoAdvanceEnabled = collectorSettings?.autoAdvance ?? survey?.settings?.behaviorNavigation?.autoAdvance ?? false;
         const question = questionsById[questionId]; 
         const autoAdvanceTypes = ['multiple-choice', 'nps', 'rating'];
         const isOtherSelectedForOtherQuestion = question && question.addOtherOption && value === OTHER_VALUE_INTERNAL;
-
         if (autoAdvanceEnabled && question && autoAdvanceTypes.includes(question.type) && !isSubmitState && !isOtherSelectedForOtherQuestion) {
-            if (autoAdvanceTimeoutRef.current) { 
-                clearTimeout(autoAdvanceTimeoutRef.current);
-            }
-            autoAdvanceTimeoutRef.current = setTimeout(() => {
-                handleNext(); 
-                autoAdvanceTimeoutRef.current = null; 
-            }, 500); 
+            if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
+            autoAdvanceTimeoutRef.current = setTimeout(() => { handleNext(); autoAdvanceTimeoutRef.current = null; }, 500); 
         } else if (autoAdvanceTimeoutRef.current && isOtherSelectedForOtherQuestion) {
             clearTimeout(autoAdvanceTimeoutRef.current);
             autoAdvanceTimeoutRef.current = null;
         }
     }, [collectorSettings, survey, questionsById, isSubmitState, handleNext]);
-
 
     const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => {
         setCurrentAnswers(prevAnswers => {
@@ -285,30 +232,16 @@ function SurveyTakingPage() {
     }, []);
     
     const handlePrevious = useCallback(() => {
-        if (autoAdvanceTimeoutRef.current) { 
-            clearTimeout(autoAdvanceTimeoutRef.current);
-            autoAdvanceTimeoutRef.current = null;
-        }
-        if (currentVisibleIndex > 0) {
-            setCurrentVisibleIndex(prev => prev - 1);
-        }
+        if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
+        if (currentVisibleIndex > 0) setCurrentVisibleIndex(prev => prev - 1);
     }, [currentVisibleIndex]);
 
     const performSaveAndContinue = async (emailForSave = null) => {
         if (!surveyId || !collectorId) { console.error("Cannot save, survey/collector ID missing."); return; }
         setIsSavingAndContinueLater(true);
         try {
-            const payload = {
-                collectorId,
-                answers: currentAnswers,
-                otherInputValues,
-                currentVisibleIndex: currentVisibleIndex,
-                resumeToken: currentResumeToken
-            };
-            if (emailForSave) {
-                payload.respondentEmail = emailForSave;
-            }
-
+            const payload = { collectorId, answers: currentAnswers, otherInputValues, currentVisibleIndex: currentVisibleIndex, resumeToken: currentResumeToken };
+            if (emailForSave) payload.respondentEmail = emailForSave;
             const result = await surveyApi.savePartialResponse(surveyId, payload);
             if (result.success && result.resumeToken) {
                 setCurrentResumeToken(result.resumeToken);
@@ -329,7 +262,6 @@ function SurveyTakingPage() {
     const handleSaveAndContinueLater = useCallback(async () => {
         const saveMethod = survey?.settings?.behaviorNavigation?.saveAndContinueMethod || collectorSettings?.saveAndContinueMethod || 'email';
         const needsEmailPrompt = (saveMethod === 'email' || saveMethod === 'both') && !emailForReminder;
-
         if (needsEmailPrompt) {
             setPromptForEmailOnSave(true); 
             setShowResumeCodeModal(true); 
@@ -337,7 +269,6 @@ function SurveyTakingPage() {
         }
         performSaveAndContinue(emailForReminder || null);
     }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, currentVisibleIndex, survey, collectorSettings, emailForReminder]);
-
 
     const handleModalEmailSubmitAndSave = () => {
         const saveMethod = survey?.settings?.behaviorNavigation?.saveAndContinueMethod || collectorSettings?.saveAndContinueMethod || 'email';
@@ -354,33 +285,16 @@ function SurveyTakingPage() {
         const safeIdx = Math.min(currentVisibleIndex, visibleQuestionIndices.length - 1);
         const progress = visibleQuestionIndices.length > 0 ? ((safeIdx + 1) / visibleQuestionIndices.length) * 100 : 0;
         return (
-            <div className={styles.progressBarContainer}>
-                <div className={styles.progressBarTrack}>
-                    <div className={styles.progressBarFill} style={{ width: `${progress.toFixed(2)}%` }}></div>
-                </div>
-                <span>{Math.round(progress)}% Complete</span>
-            </div>
+            <div className={styles.progressBarContainer}><div className={styles.progressBarTrack}><div className={styles.progressBarFill} style={{ width: `${progress.toFixed(2)}%` }}></div></div><span>{Math.round(progress)}% Complete</span></div>
         );
     }, [survey, visibleQuestionIndices, currentVisibleIndex, collectorSettings]);
 
     const renderQuestionInputs = (question) => {
         if (!question) return <p>Error: Question data is missing.</p>;
-
         const showQuestionNumber = survey?.settings?.behaviorNavigation?.questionNumberingEnabled ?? collectorSettings?.questionNumberingEnabled ?? false;
         const questionNumberDisplay = showQuestionNumber ? `${currentVisibleIndex + 1}. ` : "";
-
-        const commonProps = {
-            question,
-            currentAnswer: currentAnswers[question._id],
-            disabled: isSubmitting || isSavingAndContinueLater,
-            isPreviewMode: false,
-        };
-        const choiceProps = {
-            ...commonProps,
-            otherValue: otherInputValues[`${question._id}_other`],
-            onOtherTextChange: handleOtherInputChange,
-        };
-
+        const commonProps = { question, currentAnswer: currentAnswers[question._id], disabled: isSubmitting || isSavingAndContinueLater, isPreviewMode: false };
+        const choiceProps = { ...commonProps, otherValue: otherInputValues[`${question._id}_other`], onOtherTextChange: handleOtherInputChange };
         let questionComponent;
         switch (question.type) {
             case 'text': questionComponent = <ShortTextQuestion {...commonProps} onAnswerChange={handleInputChange} />; break;
@@ -397,13 +311,14 @@ function SurveyTakingPage() {
             case 'cardsort': questionComponent = <CardSortQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
             case 'conjoint': questionComponent = <ConjointQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
             case 'maxdiff': questionComponent = <MaxDiffQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
-            default:
-                console.warn("Unsupported question type in SurveyTakingPage:", question.type, question);
-                questionComponent = <p>Unsupported question type: {question.type}</p>;
+            default: console.warn("Unsupported question type:", question.type); questionComponent = <p>Unsupported: {question.type}</p>;
         }
+        // Corrected syntax for conditional rendering of question number
         return (
             <>
-                {showQuestionNumber && question.text && <span className={styles.questionNumber}>{questionNumberDisplay}</span>}
+                {showQuestionNumber && question.text && (
+                    <span className={styles.questionNumber}>{questionNumberDisplay}</span>
+                )}
                 {questionComponent}
             </>
         );
@@ -416,111 +331,40 @@ function SurveyTakingPage() {
     const progressBarElement = renderProgressBar();
     const displayTitle = survey?.title || initialSurveyTitle || "Survey";
     const saveAndContinueEnabled = collectorSettings?.allowResume ?? survey?.settings?.behaviorNavigation?.saveAndContinueEnabled ?? false;
-
-    // The actual button that triggers handleSubmit
     const submitButton = isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && 
-        (<button 
-            type="button" // Explicitly type="button"
-            onClick={(event) => {
-                // console.log('[SurveyTakingPage - Submit Button onClick] Event defaultPrevented before handleSubmit:', event.defaultPrevented);
-                // event.preventDefault(); // You can try adding this if you suspect bubbling, though type="button" should suffice
-                // console.log('[SurveyTakingPage - Submit Button onClick] Event defaultPrevented after manual preventDefault:', event.defaultPrevented);
-                handleSubmit();
-            }} 
-            disabled={isSubmitting || isSavingAndContinueLater} 
-            className={styles.navButtonPrimary}
-        >
-            {isSubmitting ? 'Submitting...' : 'Submit'}
-        </button>);
-
+        (<button type="button" onClick={handleSubmit} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>{isSubmitting ? 'Submitting...' : 'Submit'}</button>);
 
     return (
         <div className={styles.surveyContainer}>
-            <header className={styles.surveyHeader}>
-                <h1>{displayTitle}</h1>
-                {survey.description && <p className={styles.description}>{survey.description}</p>}
-                {progressBarElement}
-            </header>
-
-            {currentQuestionToRender ? (
-                <div className={styles.questionArea}>
-                    {renderQuestionInputs(currentQuestionToRender)}
-                </div>
-            ) : (
-                !isSubmitting && currentVisibleIndex >= visibleQuestionIndices.length &&
-                <div className={styles.surveyMessageContainer}>
-                    <p className={styles.surveyMessage}>Thank you for your responses!</p>
-                    {(visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) &&
-                        <p className={styles.surveyMessage}>Click "Submit" to finalize your survey.</p>
-                    }
-                     {visibleQuestionIndices.length === 0 && Object.keys(currentAnswers).length === 0 &&
-                        <p className={styles.surveyMessage}>Survey completed.</p>
-                    }
-                </div>
-            )}
-            
+            <header className={styles.surveyHeader}><h1>{displayTitle}</h1>{survey.description && <p className={styles.description}>{survey.description}</p>}{progressBarElement}</header>
+            {currentQuestionToRender ? (<div className={styles.questionArea}>{renderQuestionInputs(currentQuestionToRender)}</div>) : 
+                (!isSubmitting && currentVisibleIndex >= visibleQuestionIndices.length &&
+                <div className={styles.surveyMessageContainer}><p className={styles.surveyMessage}>Thank you for your responses!</p>
+                    {(visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && <p className={styles.surveyMessage}>Click "Submit" to finalize your survey.</p>}
+                    {visibleQuestionIndices.length === 0 && Object.keys(currentAnswers).length === 0 && <p className={styles.surveyMessage}>Survey completed.</p>}
+                </div>)}
             <footer className={styles.surveyNavigation}>
                 {(collectorSettings?.allowBackButton ?? true) && currentVisibleIndex > 0 && (<button type="button" onClick={handlePrevious} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButton}>Previous</button>)}
-                
                 {!( (collectorSettings?.allowBackButton ?? true) && currentVisibleIndex > 0) && <div style={{flexGrow: 1}}></div>}
-
                 {saveAndContinueEnabled && (<button type="button" onClick={handleSaveAndContinueLater} disabled={isSavingAndContinueLater || isSubmitting} className={styles.navButtonSecondary}>Save and Continue Later</button>)}
-                
                 {!isSubmitState && (<button type="button" onClick={handleNext} disabled={!currentQuestionToRender || isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>Next</button>)}
-                
-                {/* Render the submit button using the variable */}
                 {submitButton}
             </footer>
-
             {showResumeCodeModal && (
                  <div className={styles.modalBackdrop} onClick={() => { setShowResumeCodeModal(false); setPromptForEmailOnSave(false); setEmailForReminder(''); }}>
                     <div className={styles.modalContentWrapper} onClick={e => e.stopPropagation()}>
                         <h3>{promptForEmailOnSave ? "Save & Continue: Enter Email" : "Resume Later"}</h3>
-                        
                         {(promptForEmailOnSave || (generatedResumeCode && (survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'email' || survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'both'))) && (
-                             <>
-                                <p>
-                                    {promptForEmailOnSave 
-                                        ? "Please enter your email address to receive a link to resume this survey later." 
-                                        : "Optionally, enter your email to also receive the resume code and link:"}
-                                </p>
-                                <input 
-                                    type="email" 
-                                    value={emailForReminder} 
-                                    onChange={(e) => setEmailForReminder(e.target.value)} 
-                                    placeholder="your.email@example.com" 
-                                    className={styles.emailInputForReminder} 
-                                />
-                             </>
-                        )}
+                             <><p>{promptForEmailOnSave ? "Please enter your email address to receive a link to resume this survey later." : "Optionally, enter your email to also receive the resume code and link:"}</p><input type="email" value={emailForReminder} onChange={(e) => setEmailForReminder(e.target.value)} placeholder="your.email@example.com" className={styles.emailInputForReminder} /></>)}
                         {generatedResumeCode && (survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'code' || survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'both') && (
-                            <>
-                                <p>Your progress has been saved. Use the following code to resume your survey later:</p>
-                                <strong className={styles.resumeCodeDisplay}>{generatedResumeCode}</strong>
-                                <hr style={{margin: '15px 0'}} />
-                            </>
-                        )}
+                            <><p>Your progress has been saved. Use the following code to resume your survey later:</p><strong className={styles.resumeCodeDisplay}>{generatedResumeCode}</strong><hr style={{margin: '15px 0'}} /></>)}
                         {!generatedResumeCode && !promptForEmailOnSave && <p>Saving your progress...</p>}
-
-                        {promptForEmailOnSave ? (
-                             <button onClick={handleModalEmailSubmitAndSave} className={styles.button} disabled={isSavingAndContinueLater}>
-                                {isSavingAndContinueLater ? "Saving..." : "Save and Send Email"}
-                             </button>
-                        ) : null }
-
-                        <button 
-                            onClick={() => { setShowResumeCodeModal(false); setPromptForEmailOnSave(false); setEmailForReminder('');}} 
-                            className={styles.buttonSecondary} 
-                            style={{marginTop: '10px', marginLeft: promptForEmailOnSave ? '10px' : '0'}}
-                        >
-                            Close
-                        </button>
+                        {promptForEmailOnSave ? (<button onClick={handleModalEmailSubmitAndSave} className={styles.button} disabled={isSavingAndContinueLater}>{isSavingAndContinueLater ? "Saving..." : "Save and Send Email"}</button>) : null }
+                        <button onClick={() => { setShowResumeCodeModal(false); setPromptForEmailOnSave(false); setEmailForReminder('');}} className={styles.buttonSecondary} style={{marginTop: '10px', marginLeft: promptForEmailOnSave ? '10px' : '0'}}>Close</button>
                     </div>
-                </div>
-            )}
+                </div>)}
         </div>
     );
 }
-
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (Focus on preventing unintended actions) -----
+// ----- END OF UPDATED FILE (Corrected syntax error, uncommented API call with Minimal Payload) -----
