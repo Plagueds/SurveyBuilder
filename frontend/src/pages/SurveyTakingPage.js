@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (handleNext commented for debugging) -----
+// ----- START OF UPDATED FILE (Restoring original handleNext) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 // import { toast } from 'react-toastify';
@@ -54,7 +54,7 @@ function SurveyTakingPage() {
 
     const OTHER_VALUE_INTERNAL = '__OTHER__';
 
-    const questionsById = useMemo(() => {
+    const questionsById = useMemo(() => { 
         if (!originalQuestions || originalQuestions.length === 0) return {};
         return originalQuestions.reduce((acc, q) => { acc[q._id] = q; return acc; }, {});
     }, [originalQuestions]);
@@ -64,7 +64,11 @@ function SurveyTakingPage() {
             return null;
         }
         const originalIndexToFind = visibleQuestionIndices[currentVisibleIndex];
-        return originalQuestions.find(q => q.originalIndex === originalIndexToFind);
+        const question = originalQuestions.find(q => q.originalIndex === originalIndexToFind);
+        if (!question && visibleQuestionIndices.length > 0) { // Only log error if we expected questions
+             console.error(`[STM Debug] Could not find question for originalIndex ${originalIndexToFind} at currentVisibleIndex ${currentVisibleIndex}. VisibleIndices:`, visibleQuestionIndices, "OriginalQuestions:", originalQuestions);
+        }
+        return question;
     }, [isLoadingSurvey, survey, originalQuestions, visibleQuestionIndices, currentVisibleIndex]);
 
     const isSubmitState = useMemo(() => {
@@ -104,15 +108,22 @@ function SurveyTakingPage() {
                 if (response.success && response.data) {
                     setSurvey(response.data);
                     const fetchedQuestions = response.data.questions || [];
-                    setOriginalQuestions(fetchedQuestions);
                     
-                    const indices = fetchedQuestions
-                        .map(q => typeof q.originalIndex === 'number' ? q.originalIndex : null)
-                        .filter(idx => idx !== null) 
+                    // Assuming originalIndex is now correctly provided by the backend
+                    // or you've added it to the Question schema and are populating it.
+                    const questionsWithIndex = fetchedQuestions.map((q, idx) => ({
+                        ...q,
+                        // Ensure originalIndex is present, fallback to array index if absolutely necessary (but backend should provide it)
+                        originalIndex: typeof q.originalIndex === 'number' ? q.originalIndex : idx 
+                    }));
+                    setOriginalQuestions(questionsWithIndex);
+                    
+                    const indices = questionsWithIndex
+                        .map(q => q.originalIndex) // Now directly map, assuming it's a number
                         .sort((a, b) => a - b);
                     
-                    if (indices.length !== fetchedQuestions.length && fetchedQuestions.length > 0) {
-                        console.warn("[STM Debug] Some questions were missing a valid 'originalIndex'.", "Fetched:", fetchedQuestions.length, "Valid indices:", indices.length);
+                    if (indices.length === 0 && fetchedQuestions.length > 0) {
+                        console.warn("[STM Debug] No valid originalIndex found on fetched questions, though questions were fetched. This will prevent navigation.", "Fetched Questions:", fetchedQuestions);
                     }
                     setVisibleQuestionIndices(indices);
                     
@@ -146,28 +157,10 @@ function SurveyTakingPage() {
 
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
     
-    // --- ORIGINAL handleNext COMMENTED OUT FOR DEBUGGING ---
-    /*
-    const handleNext = useCallback(() => {
-        if (autoAdvanceTimeoutRef.current) {
-            clearTimeout(autoAdvanceTimeoutRef.current);
-            autoAdvanceTimeoutRef.current = null;
-        }
-
-        if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
-        if (!isSubmitState) {
-            setCurrentVisibleIndex(prev => prev + 1);
-        } else {
-            handleSubmit(); 
-        }
-    }, [isSubmitState, currentVisibleIndex, validateQuestion, currentQuestionToRender, currentAnswers, handleSubmit]);
-    */
-
-    // --- DUMMY handleNext FOR DEBUGGING ---
-    const handleSubmit = useCallback(async () => { // Defined handleSubmit first as dummy handleNext might use it
+    // --- RESTORING ORIGINAL handleSubmit ---
+    const handleSubmit = useCallback(async () => {
         if (!surveyId || !collectorId) { console.error("Cannot submit, survey/collector ID missing."); return; }
-        // Removed validation for dummy to simplify
-        // if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
+        if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
         setIsSubmitting(true);
         try {
             const result = await surveyApi.submitSurveyAnswers(surveyId, { collectorId, answers: currentAnswers, otherInputValues, resumeToken: currentResumeToken });
@@ -182,23 +175,29 @@ function SurveyTakingPage() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, /*validateQuestion, currentQuestionToRender,*/ navigate, survey?.title, initialSurveyTitle]); // Removed some dependencies for dummy context
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, validateQuestion, currentQuestionToRender, navigate, survey?.title, initialSurveyTitle]);
 
+    // --- RESTORING ORIGINAL handleNext ---
     const handleNext = useCallback(() => {
-        console.log("Dummy handleNext called");
-        // Optionally, to keep some functionality for testing other parts:
+        if (autoAdvanceTimeoutRef.current) {
+            clearTimeout(autoAdvanceTimeoutRef.current);
+            autoAdvanceTimeoutRef.current = null;
+        }
+
+        if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
         if (!isSubmitState) {
             setCurrentVisibleIndex(prev => prev + 1);
         } else {
-             handleSubmit(); // Call the actual handleSubmit
+            handleSubmit(); 
         }
-    }, [isSubmitState, currentVisibleIndex, handleSubmit]); // Minimal dependencies for the dummy
+    }, [isSubmitState, currentVisibleIndex, validateQuestion, currentQuestionToRender, currentAnswers, handleSubmit]);
+
 
     const handleInputChange = useCallback((questionId, value) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
 
         const autoAdvanceEnabled = collectorSettings?.autoAdvance ?? survey?.settings?.behaviorNavigation?.autoAdvance ?? false;
-        const question = questionsById[questionId];
+        const question = questionsById[questionId]; 
         const autoAdvanceTypes = ['multiple-choice', 'nps', 'rating'];
         const isOtherSelectedForOtherQuestion = question && question.addOtherOption && value === OTHER_VALUE_INTERNAL;
 
@@ -207,7 +206,7 @@ function SurveyTakingPage() {
                 clearTimeout(autoAdvanceTimeoutRef.current);
             }
             autoAdvanceTimeoutRef.current = setTimeout(() => {
-                handleNext(); // This will call the DUMMY handleNext
+                handleNext(); 
                 autoAdvanceTimeoutRef.current = null; 
             }, 500); 
         } else if (autoAdvanceTimeoutRef.current && isOtherSelectedForOtherQuestion) {
@@ -370,7 +369,7 @@ function SurveyTakingPage() {
 
     if (isLoadingSurvey) return <div className={styles.loadingContainer}>Loading survey questions...</div>;
     if (surveyError) return <div className={styles.errorContainer}>Error loading survey: {surveyError}</div>;
-    if (!survey) return <div className={styles.errorContainer}>Survey data could not be loaded.</div>;
+    if (!survey || !originalQuestions) return <div className={styles.errorContainer}>Survey data could not be loaded or no questions found.</div>; // Modified condition
 
     const progressBarElement = renderProgressBar();
     const displayTitle = survey?.title || initialSurveyTitle || "Survey";
@@ -392,10 +391,10 @@ function SurveyTakingPage() {
                 !isSubmitting && currentVisibleIndex >= visibleQuestionIndices.length &&
                 <div className={styles.surveyMessageContainer}>
                     <p className={styles.surveyMessage}>Thank you for your responses!</p>
-                    {visibleQuestionIndices.length > 0 &&
+                    {(visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && // Show submit if there were questions OR answers
                         <p className={styles.surveyMessage}>Click "Submit" to finalize your survey.</p>
                     }
-                     {visibleQuestionIndices.length === 0 &&
+                     {visibleQuestionIndices.length === 0 && Object.keys(currentAnswers).length === 0 && // Only show "completed" if no questions AND no answers
                         <p className={styles.surveyMessage}>Survey completed.</p>
                     }
                 </div>
@@ -408,7 +407,6 @@ function SurveyTakingPage() {
 
                 {saveAndContinueEnabled && (<button type="button" onClick={handleSaveAndContinueLater} disabled={isSavingAndContinueLater || isSubmitting} className={styles.navButtonSecondary}>Save and Continue Later</button>)}
                 
-                {/* Ensure handleNext (dummy or original) is used here */}
                 {!isSubmitState && (<button type="button" onClick={handleNext} disabled={!currentQuestionToRender || isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>Next</button>)}
                 
                 {isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && 
@@ -467,4 +465,4 @@ function SurveyTakingPage() {
 }
 
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (handleNext commented for debugging) -----
+// ----- END OF UPDATED FILE (Restoring original handleNext) -----

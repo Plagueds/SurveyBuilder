@@ -1,5 +1,5 @@
 // backend/models/Question.js
-// ----- START OF COMPLETE UPDATED FILE (v8.8 - Added Conjoint CBC Fields) -----
+// ----- START OF COMPLETE UPDATED FILE (v8.9 - Added originalIndex) -----
 const mongoose = require('mongoose');
 
 // --- Sub-schemas ---
@@ -13,21 +13,7 @@ const definedHeatmapAreaSchema = new mongoose.Schema({
     height: { type: Number, required: true, min: 0, max: 1 },
 }, {
     validateBeforeSave: true,
-    // Removed the 'validators' field here as Mongoose doesn't support it directly in this way.
-    // Custom validation for coordinates sum should be done in a pre-save hook or a custom validator on the fields themselves if needed.
-    // For simplicity, we'll rely on frontend validation for this specific sum check for now,
-    // or you can add a custom validator to the schema path if strict server-side enforcement is critical.
 });
-
-// Custom validator for coordinate sums (example if you want to add it at schema level)
-// definedHeatmapAreaSchema.path('x').validate(function(value) {
-//   // `this` is the document being validated.
-//   return (value + this.width <= 1.00001);
-// }, 'Area x + width exceeds 1.');
-// definedHeatmapAreaSchema.path('y').validate(function(value) {
-//   return (value + this.height <= 1.00001);
-// }, 'Area y + height exceeds 1.');
-
 
 // --- Main Question Schema ---
 const questionSchema = new mongoose.Schema({
@@ -42,6 +28,14 @@ const questionSchema = new mongoose.Schema({
             'maxdiff', 'conjoint', 'cardsort',
         ],
         default: 'text'
+    },
+    originalIndex: { // +++ ADDED THIS FIELD +++
+        type: Number,
+        required: [true, 'Original index is required for question ordering.'], // Make it required
+        min: 0, // Should be 0-based
+        // You might add a unique index in combination with `survey` if needed,
+        // but managing that during reordering can be complex.
+        // For now, just ensuring it's present and a number is key.
     },
 
     // --- Type Specific Fields ---
@@ -87,14 +81,12 @@ const questionSchema = new mongoose.Schema({
         }],
         default: undefined
     },
-    conjointProfilesPerTask: { type: Number, default: 3, min: 2 }, // Min 2 profiles
-    // +++ NEW FIELDS FOR CONJOINT CBC +++
-    conjointNumTasks: { type: Number, default: 5, min: 1 },         // Number of tasks to generate
-    conjointIncludeNoneOption: { type: Boolean, default: true },  // Whether to include a "None of these" option
-    // +++ END NEW FIELDS FOR CONJOINT CBC +++
+    conjointProfilesPerTask: { type: Number, default: 3, min: 2 },
+    conjointNumTasks: { type: Number, default: 5, min: 1 },
+    conjointIncludeNoneOption: { type: Boolean, default: true },
     cardSortCategories: { type: [String], default: undefined },
     cardSortAllowUserCategories: { type: Boolean, default: true },
-    rows: { type: Number, min: 1, default: 4 }, // For textarea
+    rows: { type: Number, min: 1, default: 4 },
 
     // --- General Logic & Validation Fields ---
     hideByDefault: { type: Boolean, default: false },
@@ -107,11 +99,11 @@ const questionSchema = new mongoose.Schema({
     pipeOptionsFromQuestionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question', default: null },
     repeatForEachOptionFromQuestionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question', default: null },
     requiredSetting: { type: String, enum: ['not_required', 'required', 'soft_required', 'conditional'], default: 'not_required' },
-    conditionalRequireLogic: { type: [mongoose.Schema.Types.Mixed], default: [] }, // Placeholder for more complex logic structure
+    conditionalRequireLogic: { type: [mongoose.Schema.Types.Mixed], default: [] },
     answerFormatCapitalization: { type: Boolean, default: false },
-    limitAnswers: { type: Boolean, default: false }, // For checkbox: enforce max limit
-    limitAnswersMax: { type: Number, min: 1, default: null }, // For checkbox: max number of selections
-    minAnswersRequired: { type: Number, min: 0, default: null }, // For checkbox: min number of selections (0 means no min)
+    limitAnswers: { type: Boolean, default: false },
+    limitAnswersMax: { type: Number, min: 1, default: null },
+    minAnswersRequired: { type: Number, min: 0, default: null },
     textValidation: { type: String, enum: ['none', 'email', 'numeric'], default: 'none' },
 
 }, { timestamps: true });
@@ -119,21 +111,22 @@ const questionSchema = new mongoose.Schema({
 // Indexes
 questionSchema.index({ survey: 1 });
 questionSchema.index({ type: 1 });
+questionSchema.index({ survey: 1, originalIndex: 1 }); // Index for sorting/querying by order
 
 // Pre-save hook for validation and cleanup
 questionSchema.pre('save', function(next) {
     const doc = this;
     let error = null;
-    let errorPath = 'typeSpecific'; // Default error path
+    let errorPath = 'typeSpecific'; 
 
-    // Type Specific Validation Logic
+    // --- Type Specific Validation Logic (No changes here from your v8.8) ---
     switch (doc.type) {
         case 'checkbox':
             errorPath = 'options';
             if (!doc.options || doc.options.filter(opt => opt?.trim() !== '').length < 1) {
                 error = new Error(`At least 1 non-empty option is required for type '${doc.type}'.`);
             }
-            if (!error && doc.limitAnswers === true) { // Only validate max/min if limitAnswers is true
+            if (!error && doc.limitAnswers === true) { 
                 errorPath = 'limitAnswersMax';
                 if (doc.limitAnswersMax == null || doc.limitAnswersMax < 1) {
                     error = new Error('Max answers limit must be at least 1 when enforced.');
@@ -146,7 +139,7 @@ questionSchema.pre('save', function(next) {
                 }
             }
             if (!error && doc.minAnswersRequired != null) {
-                if (doc.minAnswersRequired < 0) { // Changed from 1 to 0 to allow no minimum
+                if (doc.minAnswersRequired < 0) { 
                      errorPath = 'minAnswersRequired';
                      error = new Error('Min answers required cannot be negative.');
                 } else if (doc.options && doc.minAnswersRequired > doc.options.filter(opt => opt?.trim() !== '').length) {
@@ -214,7 +207,6 @@ questionSchema.pre('save', function(next) {
                 }
             }
             if (!error && (doc.conjointProfilesPerTask == null || doc.conjointProfilesPerTask < 2)) { errorPath = 'conjointProfilesPerTask'; error = new Error('Conjoint profiles per task must be at least 2.'); }
-            // +++ VALIDATION FOR NEW CONJOINT FIELDS +++
             if (!error && (doc.conjointNumTasks == null || doc.conjointNumTasks < 1)) { errorPath = 'conjointNumTasks'; error = new Error('Conjoint number of tasks must be at least 1.'); }
             break;
         case 'text': case 'textarea':
@@ -222,7 +214,7 @@ questionSchema.pre('save', function(next) {
             break;
     }
 
-    // Cleanup properties not relevant to the current type
+    // --- Cleanup properties (No changes here from your v8.8) ---
     const isOptionBased = ['multiple-choice', 'checkbox', 'dropdown', 'ranking', 'maxdiff', 'cardsort'].includes(doc.type);
     if (!isOptionBased) {
         doc.options = undefined;
@@ -235,14 +227,14 @@ questionSchema.pre('save', function(next) {
         doc.limitAnswers = false;
         doc.limitAnswersMax = null;
         doc.minAnswersRequired = null;
-    } else { // For checkbox, ensure minAnswersRequired is null if 0, or a number
+    } else { 
         doc.minAnswersRequired = doc.minAnswersRequired === '' || doc.minAnswersRequired === null || isNaN(parseInt(doc.minAnswersRequired)) ? null : parseInt(doc.minAnswersRequired);
         if (doc.minAnswersRequired !== null && doc.minAnswersRequired < 0) doc.minAnswersRequired = 0;
 
         doc.limitAnswersMax = doc.limitAnswersMax === '' || doc.limitAnswersMax === null || isNaN(parseInt(doc.limitAnswersMax)) ? null : parseInt(doc.limitAnswersMax);
         if (doc.limitAnswersMax !== null && doc.limitAnswersMax < 1) doc.limitAnswersMax = null;
 
-        if (doc.limitAnswersMax === null) doc.limitAnswers = false; // If no max value, cannot enforce
+        if (doc.limitAnswersMax === null) doc.limitAnswers = false; 
     }
 
     if (doc.type !== 'matrix') { doc.matrixRows = undefined; doc.matrixColumns = undefined; doc.matrixType = 'radio'; }
@@ -252,17 +244,15 @@ questionSchema.pre('save', function(next) {
     if (doc.type !== 'conjoint') {
         doc.conjointAttributes = undefined;
         doc.conjointProfilesPerTask = 3;
-        // +++ CLEAR NEW CONJOINT FIELDS IF NOT CONJOINT +++
         doc.conjointNumTasks = 5;
         doc.conjointIncludeNoneOption = true;
     }
     if (doc.type !== 'cardsort') { doc.cardSortCategories = undefined; doc.cardSortAllowUserCategories = true; }
     if (!['text', 'textarea'].includes(doc.type)) { doc.textValidation = 'none'; }
-    if (doc.type !== 'textarea') { doc.rows = 4; } // Default for non-textarea
+    if (doc.type !== 'textarea') { doc.rows = 4; } 
 
     if (doc.requireOtherIfSelected && !doc.addOtherOption) { doc.requireOtherIfSelected = false; }
 
-    // Piping validation
     if (!error && doc.pipeOptionsFromQuestionId && doc._id && doc.pipeOptionsFromQuestionId.toString() === doc._id.toString()) { errorPath = 'pipeOptionsFromQuestionId'; error = new Error('Cannot pipe options from the same question.'); }
     if (!error && doc.repeatForEachOptionFromQuestionId && doc._id && doc.repeatForEachOptionFromQuestionId.toString() === doc._id.toString()) { errorPath = 'repeatForEachOptionFromQuestionId'; error = new Error('Cannot repeat question based on its own options.'); }
 
@@ -277,4 +267,4 @@ questionSchema.pre('save', function(next) {
 
 const Question = mongoose.model('Question', questionSchema);
 module.exports = Question;
-// ----- END OF COMPLETE UPDATED FILE (v8.8) -----
+// ----- END OF COMPLETE UPDATED FILE (v8.9 - Added originalIndex) -----
