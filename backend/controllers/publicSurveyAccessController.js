@@ -1,8 +1,8 @@
 // backend/controllers/publicSurveyAccessController.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Pass all required collector settings) -----
+// ----- START OF UPDATED FILE -----
 const mongoose = require('mongoose');
 const Collector = require('../models/Collector');
-const Survey = require('../models/Survey');
+const Survey = require('../models/Survey'); // Ensure Survey model is imported
 
 // @desc    Access a survey via its public linkId or customSlug
 // @route   POST /s/:accessIdentifier
@@ -16,22 +16,19 @@ exports.accessSurvey = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Access identifier is missing.' });
         }
 
-        // Fetch the collector. We need various settings from web_link.
-        // Mongoose includes sub-documents by default unless deselected.
-        // We explicitly select password to ensure it's available for comparison.
         const collector = await Collector.findOne({
             $or: [
                 { linkId: accessIdentifier },
                 { 'settings.web_link.customSlug': accessIdentifier }
             ],
-            type: 'web_link' // Ensure it's a web_link collector
-        }).select('+settings.web_link.password'); // Ensure password is included for comparison
+            type: 'web_link'
+        }).select('+settings.web_link.password'); // Ensure all web_link settings are available
 
         if (!collector) {
             return res.status(404).json({ success: false, message: 'Survey link not found or invalid.' });
         }
 
-        // --- Collector Status and Date Checks ---
+        // --- Collector Status and Date Checks --- (No changes here from your v1.2)
         if (collector.status !== 'open') {
             let message = 'This survey is not currently open for responses.';
             if (collector.status === 'closed') message = 'This survey link has been closed.';
@@ -42,57 +39,60 @@ exports.accessSurvey = async (req, res) => {
         }
 
         const now = new Date();
-        const webLinkSettings = collector.settings?.web_link || {}; // Use empty object as fallback
+        const webLinkSettings = collector.settings?.web_link || {};
 
         if (webLinkSettings.openDate && new Date(webLinkSettings.openDate) > now) {
             return res.status(403).json({ success: false, message: `This survey link is scheduled to open on ${new Date(webLinkSettings.openDate).toLocaleString()}.`, collectorStatus: 'scheduled' });
         }
         if (webLinkSettings.closeDate && new Date(webLinkSettings.closeDate) < now) {
-            // Update status if it hasn't been already
             if (collector.status === 'open') {
                 collector.status = 'closed';
-                await collector.save(); // Save the status change
+                await collector.save();
             }
             return res.status(403).json({ success: false, message: `This survey link closed on ${new Date(webLinkSettings.closeDate).toLocaleString()}.`, collectorStatus: 'closed' });
         }
-        if (webLinkSettings.maxResponses !== null &&
+        if (webLinkSettings.maxResponses !== null && webLinkSettings.maxResponses > 0 && // Ensure maxResponses is a positive number
             collector.responseCount >= webLinkSettings.maxResponses) {
             if (collector.status !== 'completed_quota') {
                 collector.status = 'completed_quota';
-                await collector.save(); // Save the status change
+                await collector.save();
             }
             return res.status(403).json({ success: false, message: 'This survey link has reached its maximum response limit.', collectorStatus: 'completed_quota' });
         }
 
+        // --- Fetch Survey for its settings (title and behavior/display settings) ---
+        // Select only necessary fields from Survey model
+        const survey = await Survey.findById(collector.survey)
+            .select('status title settings.behaviorNavigation settings.display') // Assuming settings.display might exist or you add it
+            .lean();
+
+        if (!survey) {
+             return res.status(404).json({ success: false, message: 'Associated survey data not found.' });
+        }
+
         // --- Password Check ---
-        if (webLinkSettings.password) { // Check if a password is set
-            const surveyForTitle = await Survey.findById(collector.survey).select('title').lean(); // Get title for password prompt
+        if (webLinkSettings.passwordProtectionEnabled || webLinkSettings.password) { // Check if password protection is explicitly enabled or if a password exists
             if (!enteredPassword) {
                 return res.status(401).json({
                     success: false,
                     message: 'This survey is password protected. Please provide a password.',
                     requiresPassword: true,
-                    surveyTitle: surveyForTitle?.title || 'this survey'
+                    surveyTitle: survey.title || 'this survey'
                 });
             }
-            const isMatch = await collector.comparePassword(enteredPassword);
+            const isMatch = await collector.comparePassword(enteredPassword); // comparePassword should handle if webLinkSettings.password is empty
             if (!isMatch) {
                 return res.status(401).json({
                     success: false,
                     message: 'Incorrect password.',
                     requiresPassword: true,
-                    surveyTitle: surveyForTitle?.title || 'this survey'
+                    surveyTitle: survey.title || 'this survey'
                 });
             }
         }
 
         // --- Survey Status Check ---
-        // Populate survey details after password and initial checks pass
-        const survey = await Survey.findById(collector.survey).select('status title').lean();
-        if (!survey) {
-             return res.status(404).json({ success: false, message: 'Associated survey data not found.' });
-        }
-        if (survey.status !== 'active' && survey.status !== 'draft') { // Allow 'draft' for preview/testing
+        if (survey.status !== 'active' && survey.status !== 'draft') {
             let surveyMessage = 'The underlying survey is not currently available.';
             if (survey.status === 'closed') surveyMessage = 'The underlying survey has been closed.';
             else if (survey.status === 'archived') surveyMessage = 'The underlying survey has been archived.';
@@ -100,38 +100,54 @@ exports.accessSurvey = async (req, res) => {
         }
 
         // --- Prepare Collector Settings for Frontend ---
+        const surveyBehaviorNavSettings = survey.settings?.behaviorNavigation || {};
+        // Assuming survey.settings.display might exist for progressBar defaults. If not, adjust paths or rely on collector only.
+        // For now, let's assume progressBarEnabled is primarily a collector setting,
+        // and saveAndContinueEnabled is primarily a survey setting that can be influenced by collector.
+
         const collectorSettingsForFrontend = {
-            allowMultipleResponses: webLinkSettings.allowMultipleResponses || false, // <<< ADDED
-            anonymousResponses: webLinkSettings.anonymousResponses || false,       // <<< ADDED
+            allowMultipleResponses: webLinkSettings.allowMultipleResponses || false,
+            anonymousResponses: webLinkSettings.anonymousResponses || false,
             enableRecaptcha: webLinkSettings.enableRecaptcha || false,
+            
+            // Collector can explicitly enable/disable resume. If not set by collector, use survey's setting.
+            allowResume: typeof webLinkSettings.saveAndContinueEnabled === 'boolean' 
+                         ? webLinkSettings.saveAndContinueEnabled 
+                         : (surveyBehaviorNavSettings.saveAndContinueEnabled || false),
+
+            // Collector can explicitly enable/disable progress bar.
+            // If not set by collector, default to false (or survey's setting if you add one there).
+            progressBarEnabled: typeof webLinkSettings.progressBarEnabled === 'boolean' 
+                                ? webLinkSettings.progressBarEnabled 
+                                : false, // Default to false if collector doesn't specify
+
+            progressBarStyle: webLinkSettings.progressBarStyle || 'percentage', // Default from CollectorFormModal
+            progressBarPosition: webLinkSettings.progressBarPosition || 'top',   // Default from CollectorFormModal
+            allowBackButton: typeof webLinkSettings.allowBackButton === 'boolean'
+                             ? webLinkSettings.allowBackButton
+                             : true, // Default to true if not specified
             // Add other settings from webLinkSettings if SurveyTakingPage needs them
         };
 
         if (collectorSettingsForFrontend.enableRecaptcha) {
-            // IMPORTANT: Use the backend environment variable name here.
-            // The frontend uses REACT_APP_RECAPTCHA_SITE_KEY, but the backend should use its own.
-            if (!process.env.RECAPTCHA_V2_SITE_KEY) { // Ensure this matches your .env for backend
-                console.warn("[publicSurveyAccessController] Warning: RECAPTCHA_V2_SITE_KEY is not set in the backend .env, but reCAPTCHA is enabled for this collector. Frontend reCAPTCHA may not render if it relies on this key being passed.");
-                // Depending on your setup, you might want to explicitly set enableRecaptcha to false here
-                // if the key is missing, to prevent frontend issues.
-                // collectorSettingsForFrontend.enableRecaptcha = false; 
+            if (!process.env.RECAPTCHA_V2_SITE_KEY) {
+                console.warn("[publicSurveyAccessController] Warning: RECAPTCHA_V2_SITE_KEY is not set in the backend .env...");
             } else {
                 collectorSettingsForFrontend.recaptchaSiteKey = process.env.RECAPTCHA_V2_SITE_KEY;
             }
         }
-        // --- End Prepare Collector Settings ---
+        
+        console.log("[PublicSurveyAccessController] Sending collectorSettings to frontend:", collectorSettingsForFrontend);
 
         res.status(200).json({
             success: true,
             data: {
-                surveyId: collector.survey.toString(), // Ensure it's a string
-                collectorId: collector._id.toString(),   // Ensure it's a string
+                surveyId: collector.survey.toString(),
+                collectorId: collector._id.toString(),
                 surveyTitle: survey.title,
-                // No need for requiresPassword: false here, success implies it's handled.
-                // PublicSurveyHandler primarily uses requiresPassword from error responses.
                 collectorSettings: collectorSettingsForFrontend 
             },
-            message: "Survey access granted." // Simplified message
+            message: "Survey access granted."
         });
 
     } catch (error) {
@@ -139,4 +155,4 @@ exports.accessSurvey = async (req, res) => {
         res.status(500).json({ success: false, message: 'Server error while trying to access the survey.' });
     }
 };
-// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Pass all required collector settings) -----
+// ----- END OF UPDATED FILE -----
