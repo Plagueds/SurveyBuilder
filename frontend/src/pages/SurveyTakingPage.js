@@ -158,7 +158,7 @@ function SurveyTakingPage() {
         } else {
             handleSubmit(); 
         }
-    }, [isSubmitState, currentVisibleIndex, validateQuestion, currentQuestionToRender, currentAnswers, handleSubmit]);
+    }, [isSubmitState, currentVisibleIndex, handleSubmit]);
 
     const handleInputChange = useCallback((questionId, value) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
