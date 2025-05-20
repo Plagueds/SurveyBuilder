@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE -----
+// ----- START OF UPDATED FILE (handleNext commented for debugging) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 // import { toast } from 'react-toastify';
@@ -54,7 +54,7 @@ function SurveyTakingPage() {
 
     const OTHER_VALUE_INTERNAL = '__OTHER__';
 
-    const questionsById = useMemo(() => { // Memoize questionsById based on originalQuestions
+    const questionsById = useMemo(() => {
         if (!originalQuestions || originalQuestions.length === 0) return {};
         return originalQuestions.reduce((acc, q) => { acc[q._id] = q; return acc; }, {});
     }, [originalQuestions]);
@@ -146,6 +146,8 @@ function SurveyTakingPage() {
 
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
     
+    // --- ORIGINAL handleNext COMMENTED OUT FOR DEBUGGING ---
+    /*
     const handleNext = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) {
             clearTimeout(autoAdvanceTimeoutRef.current);
@@ -158,17 +160,46 @@ function SurveyTakingPage() {
         } else {
             handleSubmit(); 
         }
-    }, [isSubmitState, currentVisibleIndex, handleSubmit]);
+    }, [isSubmitState, currentVisibleIndex, validateQuestion, currentQuestionToRender, currentAnswers, handleSubmit]);
+    */
+
+    // --- DUMMY handleNext FOR DEBUGGING ---
+    const handleSubmit = useCallback(async () => { // Defined handleSubmit first as dummy handleNext might use it
+        if (!surveyId || !collectorId) { console.error("Cannot submit, survey/collector ID missing."); return; }
+        // Removed validation for dummy to simplify
+        // if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
+        setIsSubmitting(true);
+        try {
+            const result = await surveyApi.submitSurveyAnswers(surveyId, { collectorId, answers: currentAnswers, otherInputValues, resumeToken: currentResumeToken });
+            if (result.success) {
+                console.log("Survey submitted!", result);
+                navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
+            } else {
+                console.error("Submission failed.", result);
+            }
+        } catch (err) {
+            console.error("Submission error.", err);
+        } finally {
+            setIsSubmitting(false);
+        }
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, /*validateQuestion, currentQuestionToRender,*/ navigate, survey?.title, initialSurveyTitle]); // Removed some dependencies for dummy context
+
+    const handleNext = useCallback(() => {
+        console.log("Dummy handleNext called");
+        // Optionally, to keep some functionality for testing other parts:
+        if (!isSubmitState) {
+            setCurrentVisibleIndex(prev => prev + 1);
+        } else {
+             handleSubmit(); // Call the actual handleSubmit
+        }
+    }, [isSubmitState, currentVisibleIndex, handleSubmit]); // Minimal dependencies for the dummy
 
     const handleInputChange = useCallback((questionId, value) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
 
         const autoAdvanceEnabled = collectorSettings?.autoAdvance ?? survey?.settings?.behaviorNavigation?.autoAdvance ?? false;
-        const question = questionsById[questionId]; // Use memoized questionsById
+        const question = questionsById[questionId];
         const autoAdvanceTypes = ['multiple-choice', 'nps', 'rating'];
-
-        // --- MODIFIED AUTO-ADVANCE LOGIC ---
-        // Do not auto-advance if "Other" is selected for a question that has an "Other" option.
         const isOtherSelectedForOtherQuestion = question && question.addOtherOption && value === OTHER_VALUE_INTERNAL;
 
         if (autoAdvanceEnabled && question && autoAdvanceTypes.includes(question.type) && !isSubmitState && !isOtherSelectedForOtherQuestion) {
@@ -176,11 +207,10 @@ function SurveyTakingPage() {
                 clearTimeout(autoAdvanceTimeoutRef.current);
             }
             autoAdvanceTimeoutRef.current = setTimeout(() => {
-                handleNext();
+                handleNext(); // This will call the DUMMY handleNext
                 autoAdvanceTimeoutRef.current = null; 
             }, 500); 
         } else if (autoAdvanceTimeoutRef.current && isOtherSelectedForOtherQuestion) {
-            // If "Other" was selected, and there was a pending auto-advance, cancel it.
             clearTimeout(autoAdvanceTimeoutRef.current);
             autoAdvanceTimeoutRef.current = null;
         }
@@ -212,25 +242,6 @@ function SurveyTakingPage() {
     const handleComplexAnswerChange = useCallback((questionId, structuredAnswer) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: structuredAnswer }));
     }, []);
-
-    const handleSubmit = useCallback(async () => {
-        if (!surveyId || !collectorId) { console.error("Cannot submit, survey/collector ID missing."); return; }
-        if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
-        setIsSubmitting(true);
-        try {
-            const result = await surveyApi.submitSurveyAnswers(surveyId, { collectorId, answers: currentAnswers, otherInputValues, resumeToken: currentResumeToken });
-            if (result.success) {
-                console.log("Survey submitted!", result);
-                navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
-            } else {
-                console.error("Submission failed.", result);
-            }
-        } catch (err) {
-            console.error("Submission error.", err);
-        } finally {
-            setIsSubmitting(false);
-        }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, validateQuestion, currentQuestionToRender, navigate, survey?.title, initialSurveyTitle]);
     
     const handlePrevious = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) { 
@@ -397,6 +408,7 @@ function SurveyTakingPage() {
 
                 {saveAndContinueEnabled && (<button type="button" onClick={handleSaveAndContinueLater} disabled={isSavingAndContinueLater || isSubmitting} className={styles.navButtonSecondary}>Save and Continue Later</button>)}
                 
+                {/* Ensure handleNext (dummy or original) is used here */}
                 {!isSubmitState && (<button type="button" onClick={handleNext} disabled={!currentQuestionToRender || isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>Next</button>)}
                 
                 {isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && 
@@ -455,4 +467,4 @@ function SurveyTakingPage() {
 }
 
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE -----
+// ----- END OF UPDATED FILE (handleNext commented for debugging) -----
