@@ -1,8 +1,8 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (Corrected useEffect dependencies to stop fetch loop) -----
+// ----- START OF UPDATED FILE (Correct handleSubmit to use relative path for fetch) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import surveyApi from '../api/surveyApi'; // Still needed for savePartialResponse
+import surveyApi from '../api/surveyApi'; 
 import styles from './SurveyTakingPage.module.css';
 
 // ... (all your question component imports remain the same) ...
@@ -44,7 +44,7 @@ function SurveyTakingPage() {
     const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     
-    const [currentResumeToken, setCurrentResumeToken] = useState(routeResumeToken); // Initialized from URL param
+    const [currentResumeToken, setCurrentResumeToken] = useState(routeResumeToken);
     const [isSavingAndContinueLater, setIsSavingAndContinueLater] = useState(false);
     const [showResumeCodeModal, setShowResumeCodeModal] = useState(false);
     const [generatedResumeCode, setGeneratedResumeCode] = useState('');
@@ -54,24 +54,20 @@ function SurveyTakingPage() {
     const autoAdvanceTimeoutRef = useRef(null);
     const OTHER_VALUE_INTERNAL = '__OTHER__';
 
-    // Effect to initialize/update from location.state
     useEffect(() => {
         const stateFromLocation = location.state;
         if (stateFromLocation) {
             if (stateFromLocation.surveyTitle && stateFromLocation.surveyTitle !== initialSurveyTitle) {
-                console.log("[SurveyTakingPage - location.state effect] Updating initialSurveyTitle from location.state:", stateFromLocation.surveyTitle);
                 setInitialSurveyTitle(stateFromLocation.surveyTitle);
             }
-            // Use stringify for object comparison to avoid issues with object identity changes
             const newSettingsString = JSON.stringify(stateFromLocation.collectorSettings);
             const currentSettingsString = JSON.stringify(collectorSettings);
             if (stateFromLocation.collectorSettings && newSettingsString !== currentSettingsString) {
-                console.log("[SurveyTakingPage - location.state effect] Updating collectorSettings from location.state:", stateFromLocation.collectorSettings);
                 setCollectorSettings(stateFromLocation.collectorSettings);
             }
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
-    }, [location.state]); // Only depend on location.state itself. Internal checks prevent re-setting identical values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.state]); 
 
     const questionsById = useMemo(() => { 
         if (!originalQuestions || originalQuestions.length === 0) return {};
@@ -79,7 +75,6 @@ function SurveyTakingPage() {
     }, [originalQuestions]);
 
     const currentQuestionToRender = useMemo(() => {
-        // ... (same as before)
         if (isLoadingSurvey || !survey || !originalQuestions.length || !visibleQuestionIndices.length || currentVisibleIndex < 0 || currentVisibleIndex >= visibleQuestionIndices.length) {
             return null;
         }
@@ -92,12 +87,11 @@ function SurveyTakingPage() {
     }, [isLoadingSurvey, survey, originalQuestions, visibleQuestionIndices, currentVisibleIndex]);
 
     const isSubmitState = useMemo(() => {
-        // ... (same as before)
         if (isLoadingSurvey || !survey || !visibleQuestionIndices.length) return false;
         return currentVisibleIndex >= visibleQuestionIndices.length - 1;
     }, [isLoadingSurvey, survey, visibleQuestionIndices, currentVisibleIndex]);
 
-    useEffect(() => { // For autoAdvanceTimeoutRef cleanup
+    useEffect(() => { 
         return () => {
             if (autoAdvanceTimeoutRef.current) {
                 clearTimeout(autoAdvanceTimeoutRef.current);
@@ -105,32 +99,25 @@ function SurveyTakingPage() {
         };
     }, []); 
 
-    // Main data fetching useEffect for getSurveyById
     useEffect(() => {
-        if (!surveyId) { 
-            setSurveyError("Survey ID missing."); 
-            setIsLoadingSurvey(false); 
-            return; 
-        }
-        if (!collectorId) { 
-            setSurveyError("Collector ID missing."); 
-            setIsLoadingSurvey(false); 
-            return; 
-        }
+        if (!surveyId) { setSurveyError("Survey ID missing."); setIsLoadingSurvey(false); return; }
+        if (!collectorId) { setSurveyError("Collector ID missing."); setIsLoadingSurvey(false); return; }
         
-        console.log(`[SurveyTakingPage - fetch effect] Firing for surveyId: ${surveyId}, collectorId: ${collectorId}, resumeToken: ${currentResumeToken}`);
         setIsLoadingSurvey(true); 
         setSurveyError(null);
         
+        // surveyApi.getSurveyById should already be using relative paths if apiClient is configured correctly
+        // (e.g., baseURL = '' or '/api' if all calls go through Netlify proxy)
+        // For this test, we are focusing on handleSubmit's fetch call.
+        // The getSurveyById call in surveyApi.js should be to `/api/surveys/:id`
         const fetchOptions = { forTaking: 'true', collectorId };
-        if (currentResumeToken) { // currentResumeToken is the state variable
+        if (currentResumeToken) {
             fetchOptions.resumeToken = currentResumeToken;
         }
 
         const abortController = new AbortController();
-        fetchOptions.signal = abortController.signal;
-
-        surveyApi.getSurveyById(surveyId, fetchOptions)
+        // Assuming surveyApi.getSurveyById is already correctly using relative paths for Netlify proxy
+        surveyApi.getSurveyById(surveyId, { ...fetchOptions, signal: abortController.signal })
             .then(response => {
                 if (response.success && response.data) {
                     setSurvey(response.data);
@@ -146,15 +133,13 @@ function SurveyTakingPage() {
                         if (typeof response.data.partialResponse.currentVisibleIndex === 'number') {
                             setCurrentVisibleIndex(response.data.partialResponse.currentVisibleIndex);
                         }
-                        // Update currentResumeToken state only if it's different from what API returned
                         if(response.data.partialResponse.resumeToken && response.data.partialResponse.resumeToken !== currentResumeToken) {
                            setCurrentResumeToken(response.data.partialResponse.resumeToken);
                         }
-                    } else if (currentResumeToken && !response.data.partialResponse) { // A token was used, but no partial data came
-                        setCurrentResumeToken(null); // Clear the token from state
+                    } else if (currentResumeToken && !response.data.partialResponse) {
+                        setCurrentResumeToken(null); 
                     }
 
-                    // Set title and collector settings from API only if they aren't already set or are different
                     if (response.data.title && response.data.title !== initialSurveyTitle) {
                         setInitialSurveyTitle(response.data.title);
                     }
@@ -163,17 +148,16 @@ function SurveyTakingPage() {
                     if (response.data.collectorSettings && newApiSettingsString !== currentSettingsString) {
                         setCollectorSettings(response.data.collectorSettings);
                     }
-
                 } else { 
                     setSurveyError(response.message || "Failed to load survey details."); 
                     setSurvey(null); 
                 }
             })
             .catch(err => { 
-                if (err.name === 'AbortError' || err.message === 'canceled') { // Axios might use 'canceled'
-                    console.log('[SurveyTakingPage - fetch effect] Fetch aborted/canceled.');
+                if (err.name === 'AbortError' || err.message === 'canceled') {
+                    console.log('[SurveyTakingPage - fetch effect] Fetch for getSurveyById aborted/canceled.');
                 } else {
-                    console.error("[STM Debug] Error fetching survey details:", err); 
+                    console.error("[STM Debug] Error fetching survey details (getSurveyById):", err); 
                     setSurveyError(err.message || "Error loading survey details."); 
                     setSurvey(null); 
                 }
@@ -182,25 +166,20 @@ function SurveyTakingPage() {
                 setIsLoadingSurvey(false); 
             });
         
-        return () => { // Cleanup function
-            console.log(`[SurveyTakingPage - fetch effect] Cleanup for surveyId: ${surveyId}, token: ${currentResumeToken}. Aborting.`);
+        return () => {
             abortController.abort();
         };
-    // This effect should ONLY run if the core identifiers for fetching the survey change.
-    // State variables set *inside* this effect (like survey, initialSurveyTitle, collectorSettings from API)
-    // should NOT be dependencies here.
-    }, [surveyId, collectorId, currentResumeToken]);
+    }, [surveyId, collectorId, currentResumeToken]); // Removed initialSurveyTitle, collectorSettings
 
 
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
     
-    // handleSubmit remains using DIRECT FETCH for testing
     const handleSubmit = useCallback(async () => {
         if (isSubmitting) {
             console.warn('[SurveyTakingPage - handleSubmit] Already submitting, call ignored.');
             return;
         }
-        console.log('[SurveyTakingPage - handleSubmit] Attempting submission using DIRECT FETCH...');
+        console.log('[SurveyTakingPage - handleSubmit] Attempting submission using DIRECT FETCH to RELATIVE PATH...');
         console.log('[SurveyTakingPage - handleSubmit] surveyId:', surveyId);
         console.log('[SurveyTakingPage - handleSubmit] collectorId:', collectorId);
 
@@ -208,52 +187,58 @@ function SurveyTakingPage() {
         
         setIsSubmitting(true);
 
-        const directFetchUrl = `https://surveybuilderapi.onrender.com/api/surveys/${surveyId}/submit`;
+        // CORRECTED: Use a relative path so Netlify can proxy it
+        const relativeFetchUrl = `/api/surveys/${surveyId}/submit`; 
+        
         const payloadToSubmit = { 
             collectorId, 
             answers: currentAnswers, 
             otherInputValues, 
-            resumeToken: currentResumeToken // Use the state variable
+            resumeToken: currentResumeToken
         };
         const token = localStorage.getItem('token');
 
-        console.log('[SurveyTakingPage - handleSubmit] Direct Fetch URL:', directFetchUrl);
-        console.log('[SurveyTakingPage - handleSubmit] Direct Fetch Payload:', payloadToSubmit);
-        console.log('[SurveyTakingPage - handleSubmit] Auth Token for Direct Fetch:', token ? "Present" : "Not Present");
+        console.log('[SurveyTakingPage - handleSubmit] Relative Fetch URL for Netlify Proxy:', relativeFetchUrl);
+        console.log('[SurveyTakingPage - handleSubmit] Fetch Payload:', payloadToSubmit);
+        console.log('[SurveyTakingPage - handleSubmit] Auth Token for Fetch:', token ? "Present" : "Not Present");
 
         try {
-            const response = await fetch(directFetchUrl, {
+            const response = await fetch(relativeFetchUrl, { // Use the relative URL
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...(token && { 'Authorization': `Bearer ${token}` }) },
                 body: JSON.stringify(payloadToSubmit)
             });    
-            console.log('[SurveyTakingPage - handleSubmit] Direct Fetch raw response status:', response.status, response.statusText);
+            console.log('[SurveyTakingPage - handleSubmit] Fetch raw response status:', response.status, response.statusText);
             const responseText = await response.text();
-            console.log('[SurveyTakingPage - handleSubmit] Direct Fetch raw response text:', responseText);
+            console.log('[SurveyTakingPage - handleSubmit] Fetch raw response text:', responseText);
             if (!response.ok) {
-                console.error('[SurveyTakingPage - handleSubmit] Direct Fetch failed. Status:', response.status, 'Body:', responseText);
+                console.error('[SurveyTakingPage - handleSubmit] Fetch failed. Status:', response.status, 'Body:', responseText);
+                // It's possible the responseText is HTML from Netlify if the proxy rule isn't hit or if SPA fallback occurs
+                if (response.headers.get("content-type")?.includes("text/html")) {
+                    console.warn("[SurveyTakingPage - handleSubmit] Received HTML response, check Netlify proxy rules and ensure the API path is correct and doesn't fall back to index.html.");
+                }
                 throw new Error(`HTTP error ${response.status}: ${responseText}`);
             }
             const result = JSON.parse(responseText);
-            console.log('[SurveyTakingPage - handleSubmit] Direct Fetch parsed result:', result);
+            console.log('[SurveyTakingPage - handleSubmit] Fetch parsed result:', result);
             if (result && result.success) {
-                console.log("Survey submitted successfully via DIRECT FETCH!", result);
+                console.log("Survey submitted successfully via FETCH (through Netlify proxy)!", result);
                 navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
             } else {
-                console.error("Submission failed on frontend (DIRECT FETCH), API result indicates failure or is undefined:", result);
+                console.error("Submission failed on frontend (FETCH through Netlify proxy), API result indicates failure or is undefined:", result);
             }
         } catch (err) {
-            console.error("Submission error caught by try-catch in handleSubmit (DIRECT FETCH):", err);
+            console.error("Submission error caught by try-catch in handleSubmit (FETCH through Netlify proxy):", err);
             if (err instanceof SyntaxError) {
-                 console.error("Error parsing JSON response from direct fetch. Raw text was in previous log.");
+                 console.error("Error parsing JSON response from fetch. Raw text was in previous log.");
             }
         } finally {
-            console.log('[SurveyTakingPage - handleSubmit] Reached finally block (DIRECT FETCH), setting isSubmitting to false.');
+            console.log('[SurveyTakingPage - handleSubmit] Reached finally block (FETCH through Netlify proxy), setting isSubmitting to false.');
             setIsSubmitting(false);
         }
     }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting]);
 
-    // ... (The rest of the functions: handleNext, handleInputChange, etc. should be IDENTICAL to the previous version)
+    // ... (The rest of the functions: handleNext, handleInputChange, etc. remain IDENTICAL)
     const handleNext = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
         if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) return;
@@ -307,13 +292,14 @@ function SurveyTakingPage() {
         if (currentVisibleIndex > 0) setCurrentVisibleIndex(prev => prev - 1);
     }, [currentVisibleIndex]);
 
-    const performSaveAndContinue = useCallback(async (emailForSave = null) => { // Added useCallback
+    const performSaveAndContinue = useCallback(async (emailForSave = null) => {
         if (!surveyId || !collectorId) { console.error("Cannot save, survey/collector ID missing."); return; }
         setIsSavingAndContinueLater(true);
         try {
+            // This should also use a relative path if surveyApi is correctly configured
             const payload = { collectorId, answers: currentAnswers, otherInputValues, currentVisibleIndex: currentVisibleIndex, resumeToken: currentResumeToken };
             if (emailForSave) payload.respondentEmail = emailForSave;
-            const result = await surveyApi.savePartialResponse(surveyId, payload);
+            const result = await surveyApi.savePartialResponse(surveyId, payload); // Assumes surveyApi uses relative paths
             if (result.success && result.resumeToken) {
                 setCurrentResumeToken(result.resumeToken); 
                 setGeneratedResumeCode(result.resumeToken);
@@ -327,7 +313,6 @@ function SurveyTakingPage() {
         } finally {
             setIsSavingAndContinueLater(false);
         }
-    // Dependencies for performSaveAndContinue
     }, [surveyId, collectorId, currentAnswers, otherInputValues, currentVisibleIndex, currentResumeToken, setCurrentResumeToken, setGeneratedResumeCode, setShowResumeCodeModal, setPromptForEmailOnSave, setIsSavingAndContinueLater]);
     
     const handleSaveAndContinueLater = useCallback(async () => {
@@ -341,7 +326,7 @@ function SurveyTakingPage() {
         performSaveAndContinue(emailForReminder || null);
     }, [survey, collectorSettings, emailForReminder, performSaveAndContinue]);
 
-    const handleModalEmailSubmitAndSave = useCallback(() => { // Added useCallback
+    const handleModalEmailSubmitAndSave = useCallback(() => {
         const saveMethod = survey?.settings?.behaviorNavigation?.saveAndContinueMethod || collectorSettings?.saveAndContinueMethod || 'email';
         if ((saveMethod === 'email' || saveMethod === 'both') && !emailForReminder.trim()) {
             alert("Please enter your email address to save and continue.");
@@ -351,7 +336,6 @@ function SurveyTakingPage() {
     }, [survey, collectorSettings, emailForReminder, performSaveAndContinue]);
     
     const renderProgressBar = useCallback(() => {
-        // ... (same as before)
         const showBar = collectorSettings?.progressBarEnabled ?? survey?.settings?.behaviorNavigation?.progressBarEnabled ?? false;
         if (!survey || !showBar || !visibleQuestionIndices || visibleQuestionIndices.length === 0) return null;
         const safeIdx = Math.min(currentVisibleIndex, visibleQuestionIndices.length - 1);
@@ -362,7 +346,6 @@ function SurveyTakingPage() {
     }, [survey, visibleQuestionIndices, currentVisibleIndex, collectorSettings]);
 
     const renderQuestionInputs = (question) => {
-        // ... (same as before, with corrected syntax)
         if (!question) return <p>Error: Question data is missing.</p>;
         const showQuestionNumber = survey?.settings?.behaviorNavigation?.questionNumberingEnabled ?? collectorSettings?.questionNumberingEnabled ?? false;
         const questionNumberDisplay = showQuestionNumber ? `${currentVisibleIndex + 1}. ` : "";
@@ -395,9 +378,6 @@ function SurveyTakingPage() {
             </>
         );
     };
-    // Ensure all functions passed as props (like handleInputChange) are stable (e.g. wrapped in useCallback)
-    // or their dependencies are correctly managed if they are redefined on each render.
-    // Most handlers here are already wrapped in useCallback.
 
     if (isLoadingSurvey) return <div className={styles.loadingContainer}>Loading survey questions...</div>;
     if (surveyError) return <div className={styles.errorContainer}>Error loading survey: {surveyError}</div>;
@@ -410,7 +390,6 @@ function SurveyTakingPage() {
         (<button type="button" onClick={handleSubmit} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>{isSubmitting ? 'Submitting...' : 'Submit'}</button>);
 
     return (
-        // ... (JSX remains the same)
         <div className={styles.surveyContainer}>
             <header className={styles.surveyHeader}><h1>{displayTitle}</h1>{survey.description && <p className={styles.description}>{survey.description}</p>}{progressBarElement}</header>
             {currentQuestionToRender ? (<div className={styles.questionArea}>{renderQuestionInputs(currentQuestionToRender)}</div>) : 
@@ -443,4 +422,4 @@ function SurveyTakingPage() {
     );
 }
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (Corrected useEffect dependencies to stop fetch loop) -----
+// ----- END OF UPDATED FILE (Correct handleSubmit to use relative path for fetch) -----
