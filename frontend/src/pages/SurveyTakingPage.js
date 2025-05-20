@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (Restoring original handleNext, Added handleSubmit logging) -----
+// ----- START OF UPDATED FILE (Added test GET request in handleSubmit) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 // import { toast } from 'react-toastify';
@@ -154,17 +154,26 @@ function SurveyTakingPage() {
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
     
     const handleSubmit = useCallback(async () => {
-        // +++ ADDED LOGGING +++
         console.log('[SurveyTakingPage - handleSubmit] Attempting submission...');
         console.log('[SurveyTakingPage - handleSubmit] surveyId:', surveyId);
         console.log('[SurveyTakingPage - handleSubmit] collectorId:', collectorId);
         console.log('[SurveyTakingPage - handleSubmit] Expected API endpoint path (relative to base API URL):', `/surveys/${surveyId}/submit`);
-        // +++ END ADDED LOGGING +++
 
         if (!surveyId || !collectorId) { console.error("Cannot submit, survey/collector ID missing."); return; }
         if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
         
         setIsSubmitting(true);
+
+        // +++ TEST GET REQUEST +++
+        try {
+            console.log('[SurveyTakingPage - handleSubmit] TESTING apiClient with GET /auth/me...');
+            const meResult = await surveyApi.getMe(); // Assuming surveyApi is the object of functions
+            console.log('[SurveyTakingPage - handleSubmit] Test GET /auth/me result:', meResult);
+        } catch (testErr) {
+            console.error('[SurveyTakingPage - handleSubmit] Test GET /auth/me FAILED:', testErr);
+        }
+        // +++ END TEST GET REQUEST +++
+
         try {
             const submissionPayload = { 
                 collectorId, 
@@ -172,25 +181,23 @@ function SurveyTakingPage() {
                 otherInputValues, 
                 resumeToken: currentResumeToken 
             };
-            // +++ ADDED LOGGING +++
             console.log('[SurveyTakingPage - handleSubmit] Submission payload:', submissionPayload);
-            // Ensure you are calling the function from your imported surveyApi (which should be an object of functions)
             const result = await surveyApi.submitSurveyAnswers(surveyId, submissionPayload);
-            console.log('[SurveyTakingPage - handleSubmit] API call result:', result); // +++ ADDED LOGGING +++
+            console.log('[SurveyTakingPage - handleSubmit] API call result for submitSurveyAnswers:', result); 
             
-            if (result && result.success) { // Check if result and result.success are defined
+            if (result && result.success) {
                 console.log("Survey submitted successfully via frontend!", result);
                 navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
             } else {
-                console.error("Submission failed on frontend, API result indicates failure or is undefined:", result); // +++ MODIFIED LOGGING +++
+                console.error("Submission failed on frontend (submitSurveyAnswers), API result indicates failure or is undefined:", result);
             }
         } catch (err) {
-            console.error("Submission error caught by try-catch in handleSubmit:", err); // +++ MODIFIED LOGGING +++
+            console.error("Submission error caught by try-catch in handleSubmit (submitSurveyAnswers):", err);
         } finally {
-            console.log('[SurveyTakingPage - handleSubmit] Reached finally block, setting isSubmitting to false.'); // +++ ADDED LOGGING +++
+            console.log('[SurveyTakingPage - handleSubmit] Reached finally block, setting isSubmitting to false.');
             setIsSubmitting(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, validateQuestion, currentQuestionToRender, navigate, survey?.title, initialSurveyTitle, isSubmitState]); // Added isSubmitState to dependencies as it's used indirectly by calling handleSubmit
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, validateQuestion, currentQuestionToRender, navigate, survey?.title, initialSurveyTitle, isSubmitState]);
 
     const handleNext = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) {
@@ -479,4 +486,4 @@ function SurveyTakingPage() {
 }
 
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (Restoring original handleNext, Added handleSubmit logging) -----
+// ----- END OF UPDATED FILE (Added test GET request in handleSubmit) -----
