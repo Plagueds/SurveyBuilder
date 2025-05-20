@@ -1,8 +1,9 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (Added clientSessionId handling) -----
+// ----- START OF UPDATED FILE (Added reCAPTCHA handling) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
+import { v4 as uuidv4 } from 'uuid';
+import ReCAPTCHA from "react-google-recaptcha"; // Import reCAPTCHA
 import surveyApi from '../api/surveyApi'; 
 import styles from './SurveyTakingPage.module.css';
 
@@ -44,6 +45,7 @@ function SurveyTakingPage() {
     const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0);
     const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submissionError, setSubmissionError] = useState(null); // For displaying submission errors
     
     const [currentResumeToken, setCurrentResumeToken] = useState(routeResumeToken);
     const [isSavingAndContinueLater, setIsSavingAndContinueLater] = useState(false);
@@ -52,12 +54,13 @@ function SurveyTakingPage() {
     const [emailForReminder, setEmailForReminder] = useState('');
     const [promptForEmailOnSave, setPromptForEmailOnSave] = useState(false);
 
-    const [clientSessionId, setClientSessionId] = useState(null); // <<--- NEW STATE for clientSessionId
+    const [clientSessionId, setClientSessionId] = useState(null);
+    const [recaptchaToken, setRecaptchaToken] = useState(null); // <<--- NEW STATE for reCAPTCHA token
+    const recaptchaRef = useRef(null); // <<--- NEW REF for reCAPTCHA component
 
     const autoAdvanceTimeoutRef = useRef(null);
     const OTHER_VALUE_INTERNAL = '__OTHER__';
 
-    // Effect to initialize clientSessionId
     useEffect(() => {
         let currentSessionId = sessionStorage.getItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
         if (!currentSessionId) {
@@ -68,7 +71,7 @@ function SurveyTakingPage() {
             console.log('[SurveyTakingPage] Using existing clientSessionId from sessionStorage:', currentSessionId);
         }
         setClientSessionId(currentSessionId);
-    }, [surveyId, collectorId]); // Re-run if surveyId or collectorId changes (though usually they don't for a single session)
+    }, [surveyId, collectorId]); 
 
 
     useEffect(() => {
@@ -81,6 +84,11 @@ function SurveyTakingPage() {
             const currentSettingsString = JSON.stringify(collectorSettings);
             if (stateFromLocation.collectorSettings && newSettingsString !== currentSettingsString) {
                 setCollectorSettings(stateFromLocation.collectorSettings);
+                 // Reset reCAPTCHA token if collector settings change (e.g., reCAPTCHA enabled/disabled)
+                setRecaptchaToken(null);
+                if (recaptchaRef.current) {
+                    recaptchaRef.current.reset();
+                }
             }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,6 +130,7 @@ function SurveyTakingPage() {
         
         setIsLoadingSurvey(true); 
         setSurveyError(null);
+        setSubmissionError(null); // Clear previous submission errors
         
         const fetchOptions = { forTaking: 'true', collectorId };
         if (currentResumeToken) {
@@ -148,7 +157,6 @@ function SurveyTakingPage() {
                         if(response.data.partialResponse.resumeToken && response.data.partialResponse.resumeToken !== currentResumeToken) {
                            setCurrentResumeToken(response.data.partialResponse.resumeToken);
                         }
-                        // If resuming, ensure clientSessionId from partial response is used if available
                         if (response.data.partialResponse.sessionId && response.data.partialResponse.sessionId !== clientSessionId) {
                             console.log("[SurveyTakingPage] Aligning clientSessionId with resumed partial response sessionId:", response.data.partialResponse.sessionId);
                             setClientSessionId(response.data.partialResponse.sessionId);
@@ -166,6 +174,8 @@ function SurveyTakingPage() {
                     const currentSettingsString = JSON.stringify(collectorSettings);
                     if (response.data.collectorSettings && newApiSettingsString !== currentSettingsString) {
                         setCollectorSettings(response.data.collectorSettings);
+                        setRecaptchaToken(null); // Reset token if settings change
+                        if (recaptchaRef.current) recaptchaRef.current.reset();
                     }
                 } else { 
                     setSurveyError(response.message || "Failed to load survey details."); 
@@ -189,7 +199,7 @@ function SurveyTakingPage() {
             abortController.abort();
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [surveyId, collectorId, currentResumeToken]); // Removed clientSessionId from here to avoid re-fetch loop, it's set separately
+    }, [surveyId, collectorId, currentResumeToken]);
 
 
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
@@ -199,28 +209,38 @@ function SurveyTakingPage() {
             console.warn('[SurveyTakingPage - handleSubmit] Already submitting, call ignored.');
             return;
         }
-        console.log('[SurveyTakingPage - handleSubmit] Attempting submission using DIRECT FETCH to RELATIVE PATH...');
+        setSubmissionError(null); // Clear previous submission error
+        console.log('[SurveyTakingPage - handleSubmit] Attempting submission...');
         console.log('[SurveyTakingPage - handleSubmit] surveyId:', surveyId);
         console.log('[SurveyTakingPage - handleSubmit] collectorId:', collectorId);
 
-        if (!surveyId || !collectorId) { console.error("[SurveyTakingPage - handleSubmit] Cannot submit, survey/collector ID missing."); return; }
+        if (!surveyId || !collectorId) { 
+            console.error("[SurveyTakingPage - handleSubmit] Cannot submit, survey/collector ID missing."); 
+            setSubmissionError("Cannot submit, survey or collector ID is missing.");
+            return; 
+        }
         
-        // <<--- CRITICAL CHECK for clientSessionId before submission --->>
         if (!clientSessionId) {
             console.error("[SurveyTakingPage - handleSubmit] CRITICAL: clientSessionId is missing before submission!");
-            // Optionally, try to re-initialize it here as a fallback, though it should be set by useEffect
             let fallbackSessionId = sessionStorage.getItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
-            if (!fallbackSessionId) fallbackSessionId = uuidv4(); // Last resort
-            setClientSessionId(fallbackSessionId); // Update state for next attempt if any
+            if (!fallbackSessionId) fallbackSessionId = uuidv4(); 
+            setClientSessionId(fallbackSessionId); 
             sessionStorage.setItem(`surveyClientSessionId_${surveyId}_${collectorId}`, fallbackSessionId);
-            
-            // alert("A session error occurred. Please try submitting again."); // User-facing message
-            // setIsSubmitting(false); // Allow retry
+            // It's better to re-assign to a const for the current submission scope
+            const currentSubmitClientSessionId = fallbackSessionId; 
+            // alert("A session error occurred. Please try submitting again."); 
+            // setIsSubmitting(false); 
             // return; 
             // For now, we'll proceed with the fallback or existing clientSessionId from state
-            // but this indicates an issue if clientSessionId isn't ready.
         }
 
+        // <<--- Check for reCAPTCHA token if enabled --->>
+        if (collectorSettings?.enableRecaptcha && !recaptchaToken) {
+            console.error("[SurveyTakingPage - handleSubmit] reCAPTCHA is enabled but token is missing.");
+            setSubmissionError("Please complete the reCAPTCHA verification before submitting.");
+            setIsSubmitting(false); // Allow retry
+            return;
+        }
 
         setIsSubmitting(true);
 
@@ -231,51 +251,65 @@ function SurveyTakingPage() {
             answers: currentAnswers, 
             otherInputValues, 
             resumeToken: currentResumeToken,
-            clientSessionId: clientSessionId // <<--- ADDED clientSessionId to payload
-            // recaptchaTokenV2: yourRecaptchaTokenState, // If you implement reCAPTCHA
+            clientSessionId: clientSessionId, 
+            recaptchaTokenV2: recaptchaToken // <<--- Added reCAPTCHA token
         };
-        const token = localStorage.getItem('token');
+        const authToken = localStorage.getItem('token'); // Renamed to avoid conflict
 
         console.log('[SurveyTakingPage - handleSubmit] Relative Fetch URL for Netlify Proxy:', relativeFetchUrl);
-        console.log('[SurveyTakingPage - handleSubmit] Fetch Payload:', payloadToSubmit); // Verify clientSessionId is here
-        console.log('[SurveyTakingPage - handleSubmit] Auth Token for Fetch:', token ? "Present" : "Not Present");
+        console.log('[SurveyTakingPage - handleSubmit] Fetch Payload:', payloadToSubmit);
+        console.log('[SurveyTakingPage - handleSubmit] Auth Token for Fetch:', authToken ? "Present" : "Not Present");
 
         try {
             const response = await fetch(relativeFetchUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(token && { 'Authorization': `Bearer ${token}` }) },
+                headers: { 'Content-Type': 'application/json', ...(authToken && { 'Authorization': `Bearer ${authToken}` }) },
                 body: JSON.stringify(payloadToSubmit)
             });    
             console.log('[SurveyTakingPage - handleSubmit] Fetch raw response status:', response.status, response.statusText);
             const responseText = await response.text();
             console.log('[SurveyTakingPage - handleSubmit] Fetch raw response text:', responseText);
+            
+            let result;
+            try {
+                result = JSON.parse(responseText);
+            } catch (parseError) {
+                console.error('[SurveyTakingPage - handleSubmit] Error parsing JSON response from fetch. Raw text was:', responseText, parseError);
+                throw new Error(`Failed to parse server response. Status: ${response.status}`);
+            }
+
             if (!response.ok) {
-                console.error('[SurveyTakingPage - handleSubmit] Fetch failed. Status:', response.status, 'Body:', responseText);
+                console.error('[SurveyTakingPage - handleSubmit] Fetch failed. Status:', response.status, 'Body:', result);
                 if (response.headers.get("content-type")?.includes("text/html")) {
                     console.warn("[SurveyTakingPage - handleSubmit] Received HTML response, check Netlify proxy rules and ensure the API path is correct and doesn't fall back to index.html.");
                 }
-                throw new Error(`HTTP error ${response.status}: ${responseText}`);
+                setSubmissionError(result.message || `Submission failed with status: ${response.status}`);
+                throw new Error(`HTTP error ${response.status}: ${result.message || responseText}`);
             }
-            const result = JSON.parse(responseText);
+            
             console.log('[SurveyTakingPage - handleSubmit] Fetch parsed result:', result);
             if (result && result.success) {
                 console.log("Survey submitted successfully via FETCH (through Netlify proxy)!", result);
-                // Clear session storage for this survey attempt on successful submission
                 sessionStorage.removeItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
+                if (recaptchaRef.current) recaptchaRef.current.reset(); // Reset reCAPTCHA
+                setRecaptchaToken(null);
                 navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
             } else {
                 console.error("Submission failed on frontend (FETCH through Netlify proxy), API result indicates failure or is undefined:", result);
+                setSubmissionError(result.message || "An unknown error occurred during submission.");
+                if (recaptchaRef.current) recaptchaRef.current.reset(); // Reset reCAPTCHA on failure too
+                setRecaptchaToken(null);
             }
         } catch (err) {
             console.error("Submission error caught by try-catch in handleSubmit (FETCH through Netlify proxy):", err);
-            if (err instanceof SyntaxError) {
-                 console.error("Error parsing JSON response from fetch. Raw text was in previous log.");
-            }
+            setSubmissionError(err.message || "An unexpected error occurred.");
+            if (recaptchaRef.current) recaptchaRef.current.reset(); // Reset reCAPTCHA
+            setRecaptchaToken(null);
         } finally {
             console.log('[SurveyTakingPage - handleSubmit] Reached finally block (FETCH through Netlify proxy), setting isSubmitting to false.');
             setIsSubmitting(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting, clientSessionId]); // Added clientSessionId to dependencies
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting, clientSessionId, collectorSettings, recaptchaToken]);
 
     const handleNext = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
@@ -333,15 +367,12 @@ function SurveyTakingPage() {
     const performSaveAndContinue = useCallback(async (emailForSave = null) => {
         if (!surveyId || !collectorId) { console.error("Cannot save, survey/collector ID missing."); return; }
         
-        // <<--- Ensure clientSessionId is available for saving partial response --->>
         if (!clientSessionId) {
             console.error("[SurveyTakingPage - performSaveAndContinue] CRITICAL: clientSessionId is missing before saving partial response!");
-            // Attempt to initialize if somehow missed, though less critical for save than submit
             let fallbackSessionId = sessionStorage.getItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
             if (!fallbackSessionId) fallbackSessionId = uuidv4();
             setClientSessionId(fallbackSessionId);
             sessionStorage.setItem(`surveyClientSessionId_${surveyId}_${collectorId}`, fallbackSessionId);
-            // Proceed with the save attempt using the now set clientSessionId
         }
 
         setIsSavingAndContinueLater(true);
@@ -352,7 +383,7 @@ function SurveyTakingPage() {
                 otherInputValues, 
                 currentVisibleIndex: currentVisibleIndex, 
                 resumeToken: currentResumeToken,
-                sessionId: clientSessionId // <<--- Pass clientSessionId as sessionId to backend
+                sessionId: clientSessionId 
             };
             if (emailForSave) payload.respondentEmail = emailForSave;
             
@@ -372,7 +403,7 @@ function SurveyTakingPage() {
         } finally {
             setIsSavingAndContinueLater(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentVisibleIndex, currentResumeToken, clientSessionId, setIsSavingAndContinueLater, setCurrentResumeToken, setGeneratedResumeCode, setShowResumeCodeModal, setPromptForEmailOnSave]); // Added clientSessionId
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentVisibleIndex, currentResumeToken, clientSessionId, setIsSavingAndContinueLater, setCurrentResumeToken, setGeneratedResumeCode, setShowResumeCodeModal, setPromptForEmailOnSave]);
     
     const handleSaveAndContinueLater = useCallback(async () => {
         const saveMethod = survey?.settings?.behaviorNavigation?.saveAndContinueMethod || collectorSettings?.saveAndContinueMethod || 'email';
@@ -445,18 +476,55 @@ function SurveyTakingPage() {
     const progressBarElement = renderProgressBar();
     const displayTitle = survey?.title || initialSurveyTitle || "Survey";
     const saveAndContinueEnabled = collectorSettings?.allowResume ?? survey?.settings?.behaviorNavigation?.saveAndContinueEnabled ?? false;
+    
+    const isRecaptchaEnabled = collectorSettings?.enableRecaptcha;
+    const isRecaptchaVerified = !!recaptchaToken;
+
     const submitButton = isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && 
-        (<button type="button" onClick={handleSubmit} disabled={isSubmitting || isSavingAndContinueLater || !clientSessionId} className={styles.navButtonPrimary}>{isSubmitting ? 'Submitting...' : 'Submit'}</button>);
+        (<button 
+            type="button" 
+            onClick={handleSubmit} 
+            disabled={isSubmitting || isSavingAndContinueLater || !clientSessionId || (isRecaptchaEnabled && !isRecaptchaVerified)} 
+            className={styles.navButtonPrimary}
+         >
+            {isSubmitting ? 'Submitting...' : 'Submit'}
+         </button>);
 
     return (
         <div className={styles.surveyContainer}>
             <header className={styles.surveyHeader}><h1>{displayTitle}</h1>{survey.description && <p className={styles.description}>{survey.description}</p>}{progressBarElement}</header>
+            
+            {submissionError && (
+                <div className={styles.submissionErrorBanner}>
+                    <p><strong>Submission Error:</strong> {submissionError}</p>
+                    <button onClick={() => setSubmissionError(null)} className={styles.closeErrorButton}>&times;</button>
+                </div>
+            )}
+
             {currentQuestionToRender ? (<div className={styles.questionArea}>{renderQuestionInputs(currentQuestionToRender)}</div>) : 
                 (!isSubmitting && currentVisibleIndex >= visibleQuestionIndices.length &&
                 <div className={styles.surveyMessageContainer}><p className={styles.surveyMessage}>Thank you for your responses!</p>
                     {(visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && <p className={styles.surveyMessage}>Click "Submit" to finalize your survey.</p>}
                     {visibleQuestionIndices.length === 0 && Object.keys(currentAnswers).length === 0 && <p className={styles.surveyMessage}>Survey completed.</p>}
                 </div>)}
+
+            {/* Conditionally render reCAPTCHA before the navigation buttons if it's the submit state */}
+            {isSubmitState && isRecaptchaEnabled && (
+                <div className={styles.recaptchaContainer}>
+                    <ReCAPTCHA
+                        ref={recaptchaRef}
+                        sitekey={process.env.REACT_APP_RECAPTCHA_V2_SITE_KEY || "YOUR_FALLBACK_RECAPTCHA_V2_SITE_KEY"} // Ensure you have a fallback or handle missing key
+                        onChange={(token) => { console.log("reCAPTCHA token received:", token); setRecaptchaToken(token); }}
+                        onExpired={() => { console.log("reCAPTCHA token expired"); setRecaptchaToken(null); }}
+                        onErrored={() => {
+                            console.error("reCAPTCHA error occurred");
+                            setRecaptchaToken(null);
+                            setSubmissionError("reCAPTCHA challenge failed. Please try again.");
+                        }}
+                    />
+                </div>
+            )}
+
             <footer className={styles.surveyNavigation}>
                 {(collectorSettings?.allowBackButton ?? true) && currentVisibleIndex > 0 && (<button type="button" onClick={handlePrevious} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButton}>Previous</button>)}
                 {!( (collectorSettings?.allowBackButton ?? true) && currentVisibleIndex > 0) && <div style={{flexGrow: 1}}></div>}
@@ -481,4 +549,4 @@ function SurveyTakingPage() {
     );
 }
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (Added clientSessionId handling) -----
+// ----- END OF UPDATED FILE (Added reCAPTCHA handling) -----
