@@ -1,11 +1,12 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (Added test GET request in handleSubmit) -----
+// ----- START OF UPDATED FILE (Focus on preventing unintended actions) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 // import { toast } from 'react-toastify';
-import surveyApi from '../api/surveyApi'; // Assuming surveyApi is correctly imported as an object of functions
+import surveyApi from '../api/surveyApi'; 
 import styles from './SurveyTakingPage.module.css';
 
+// ... (all your question component imports remain the same) ...
 import CardSortQuestion from '../components/survey_question_renders/CardSortQuestion';
 import CheckboxQuestion from '../components/survey_question_renders/CheckboxQuestion';
 import ConjointQuestion from '../components/survey_question_renders/ConjointQuestion';
@@ -20,6 +21,7 @@ import RatingQuestion from '../components/survey_question_renders/RatingQuestion
 import ShortTextQuestion from '../components/survey_question_renders/ShortTextQuestion';
 import SliderQuestion from '../components/survey_question_renders/SliderQuestion';
 import TextAreaQuestion from '../components/survey_question_renders/TextAreaQuestion';
+
 
 const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : []));
 
@@ -41,7 +43,7 @@ function SurveyTakingPage() {
     
     const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0);
     const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false); // Critical state
     
     const [currentResumeToken, setCurrentResumeToken] = useState(routeResumeToken);
     const [isSavingAndContinueLater, setIsSavingAndContinueLater] = useState(false);
@@ -154,25 +156,36 @@ function SurveyTakingPage() {
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
     
     const handleSubmit = useCallback(async () => {
+        // Safeguard: if already submitting, do nothing.
+        if (isSubmitting) {
+            console.warn('[SurveyTakingPage - handleSubmit] Already submitting, call ignored.');
+            return;
+        }
+
         console.log('[SurveyTakingPage - handleSubmit] Attempting submission...');
         console.log('[SurveyTakingPage - handleSubmit] surveyId:', surveyId);
         console.log('[SurveyTakingPage - handleSubmit] collectorId:', collectorId);
         console.log('[SurveyTakingPage - handleSubmit] Expected API endpoint path (relative to base API URL):', `/surveys/${surveyId}/submit`);
 
-        if (!surveyId || !collectorId) { console.error("Cannot submit, survey/collector ID missing."); return; }
-        if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { return; }
+        if (!surveyId || !collectorId) { 
+            console.error("[SurveyTakingPage - handleSubmit] Cannot submit, survey/collector ID missing."); 
+            return; // Exit early
+        }
+        // It's okay to not have a currentQuestionToRender if we are on a "thank you" or final submission step
+        // if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) { 
+        //     return; 
+        // }
         
-        setIsSubmitting(true);
+        setIsSubmitting(true); // Set submitting flag
 
-        // +++ TEST GET REQUEST +++
+        // TEST GET REQUEST (keeping this for now)
         try {
             console.log('[SurveyTakingPage - handleSubmit] TESTING apiClient with GET /auth/me...');
-            const meResult = await surveyApi.getMe(); // Assuming surveyApi is the object of functions
+            const meResult = await surveyApi.getMe();
             console.log('[SurveyTakingPage - handleSubmit] Test GET /auth/me result:', meResult);
         } catch (testErr) {
             console.error('[SurveyTakingPage - handleSubmit] Test GET /auth/me FAILED:', testErr);
         }
-        // +++ END TEST GET REQUEST +++
 
         try {
             const submissionPayload = { 
@@ -182,22 +195,30 @@ function SurveyTakingPage() {
                 resumeToken: currentResumeToken 
             };
             console.log('[SurveyTakingPage - handleSubmit] Submission payload:', submissionPayload);
-            const result = await surveyApi.submitSurveyAnswers(surveyId, submissionPayload);
-            console.log('[SurveyTakingPage - handleSubmit] API call result for submitSurveyAnswers:', result); 
             
-            if (result && result.success) {
-                console.log("Survey submitted successfully via frontend!", result);
-                navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
-            } else {
-                console.error("Submission failed on frontend (submitSurveyAnswers), API result indicates failure or is undefined:", result);
-            }
+            // --- ACTUAL SUBMISSION CALL IS STILL COMMENTED OUT FOR THIS TEST ---
+            console.warn('[SurveyTakingPage - handleSubmit] The ACTUAL surveyApi.submitSurveyAnswers call is COMMENTED OUT for this test run.');
+            // const result = await surveyApi.submitSurveyAnswers(surveyId, submissionPayload);
+            // console.log('[SurveyTakingPage - handleSubmit] API call result for submitSurveyAnswers:', result); 
+            
+            // if (result && result.success) {
+            //     console.log("Survey submitted successfully via frontend!", result);
+            //     navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
+            // } else {
+            //     console.error("Submission failed on frontend (submitSurveyAnswers), API result indicates failure or is undefined:", result);
+            // }
+
+            // Simulate a delay as if an API call was made, then reset isSubmitting
+            // This helps see if the UI behaves correctly if the actual call was there.
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate 1 second delay
+
         } catch (err) {
-            console.error("Submission error caught by try-catch in handleSubmit (submitSurveyAnswers):", err);
+            console.error("Error caught by try-catch in handleSubmit (potentially from test GET or future submit):", err);
         } finally {
             console.log('[SurveyTakingPage - handleSubmit] Reached finally block, setting isSubmitting to false.');
-            setIsSubmitting(false);
+            setIsSubmitting(false); // Reset submitting flag
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, validateQuestion, currentQuestionToRender, navigate, survey?.title, initialSurveyTitle, isSubmitState]);
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting]); // Added isSubmitting to dependency array for the safeguard
 
     const handleNext = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) {
@@ -396,6 +417,23 @@ function SurveyTakingPage() {
     const displayTitle = survey?.title || initialSurveyTitle || "Survey";
     const saveAndContinueEnabled = collectorSettings?.allowResume ?? survey?.settings?.behaviorNavigation?.saveAndContinueEnabled ?? false;
 
+    // The actual button that triggers handleSubmit
+    const submitButton = isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && 
+        (<button 
+            type="button" // Explicitly type="button"
+            onClick={(event) => {
+                // console.log('[SurveyTakingPage - Submit Button onClick] Event defaultPrevented before handleSubmit:', event.defaultPrevented);
+                // event.preventDefault(); // You can try adding this if you suspect bubbling, though type="button" should suffice
+                // console.log('[SurveyTakingPage - Submit Button onClick] Event defaultPrevented after manual preventDefault:', event.defaultPrevented);
+                handleSubmit();
+            }} 
+            disabled={isSubmitting || isSavingAndContinueLater} 
+            className={styles.navButtonPrimary}
+        >
+            {isSubmitting ? 'Submitting...' : 'Submit'}
+        </button>);
+
+
     return (
         <div className={styles.surveyContainer}>
             <header className={styles.surveyHeader}>
@@ -430,9 +468,8 @@ function SurveyTakingPage() {
                 
                 {!isSubmitState && (<button type="button" onClick={handleNext} disabled={!currentQuestionToRender || isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>Next</button>)}
                 
-                {isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && 
-                    (<button type="button" onClick={handleSubmit} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>{isSubmitting ? 'Submitting...' : 'Submit'}</button>)
-                }
+                {/* Render the submit button using the variable */}
+                {submitButton}
             </footer>
 
             {showResumeCodeModal && (
@@ -486,4 +523,4 @@ function SurveyTakingPage() {
 }
 
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (Added test GET request in handleSubmit) -----
+// ----- END OF UPDATED FILE (Focus on preventing unintended actions) -----
