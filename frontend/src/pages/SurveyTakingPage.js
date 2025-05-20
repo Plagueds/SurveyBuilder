@@ -1,10 +1,11 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (Corrected syntax error, uncommented API call with Minimal Payload) -----
+// ----- START OF UPDATED FILE (Attempt to fix re-rendering loop) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import surveyApi from '../api/surveyApi'; 
 import styles from './SurveyTakingPage.module.css';
 
+// ... (all your question component imports remain the same) ...
 import CardSortQuestion from '../components/survey_question_renders/CardSortQuestion';
 import CheckboxQuestion from '../components/survey_question_renders/CheckboxQuestion';
 import ConjointQuestion from '../components/survey_question_renders/ConjointQuestion';
@@ -28,13 +29,15 @@ function SurveyTakingPage() {
     const location = useLocation();
     const navigate = useNavigate();
 
-    const [initialSurveyTitle, setInitialSurveyTitle] = useState(location.state?.surveyTitle || '');
-    const [collectorSettings, setCollectorSettings] = useState(location.state?.collectorSettings || null);
+    // Initialize from location.state ONCE, or if it truly changes.
+    // We'll use a separate effect for location.state processing.
+    const [initialSurveyTitle, setInitialSurveyTitle] = useState('');
+    const [collectorSettings, setCollectorSettings] = useState(null);
 
     const [survey, setSurvey] = useState(null);
     const [originalQuestions, setOriginalQuestions] = useState([]);
-    const [currentAnswers, setCurrentAnswers] = useState({}); // Will be used if minimal payload test fails
-    const [otherInputValues, setOtherInputValues] = useState({}); // Will be used if minimal payload test fails
+    const [currentAnswers, setCurrentAnswers] = useState({});
+    const [otherInputValues, setOtherInputValues] = useState({});
     
     const [isLoadingSurvey, setIsLoadingSurvey] = useState(true);
     const [surveyError, setSurveyError] = useState(null);
@@ -43,7 +46,7 @@ function SurveyTakingPage() {
     const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     
-    const [currentResumeToken, setCurrentResumeToken] = useState(routeResumeToken);
+    const [currentResumeToken, setCurrentResumeToken] = useState(routeResumeToken); // Initialize from route param
     const [isSavingAndContinueLater, setIsSavingAndContinueLater] = useState(false);
     const [showResumeCodeModal, setShowResumeCodeModal] = useState(false);
     const [generatedResumeCode, setGeneratedResumeCode] = useState('');
@@ -52,6 +55,23 @@ function SurveyTakingPage() {
 
     const autoAdvanceTimeoutRef = useRef(null);
     const OTHER_VALUE_INTERNAL = '__OTHER__';
+
+    // Effect to process location.state changes specifically
+    useEffect(() => {
+        const stateFromLocation = location.state;
+        if (stateFromLocation) {
+            if (stateFromLocation.surveyTitle && stateFromLocation.surveyTitle !== initialSurveyTitle) {
+                console.log("[SurveyTakingPage - location.state effect] Setting initialSurveyTitle from location.state");
+                setInitialSurveyTitle(stateFromLocation.surveyTitle);
+            }
+            // Deep comparison for objects is tricky. Stringify is a common, albeit imperfect, way.
+            // Only update if the stringified versions are different to avoid loops if location.state object identity changes but content doesn't.
+            if (stateFromLocation.collectorSettings && JSON.stringify(stateFromLocation.collectorSettings) !== JSON.stringify(collectorSettings)) {
+                console.log("[SurveyTakingPage - location.state effect] Setting collectorSettings from location.state");
+                setCollectorSettings(stateFromLocation.collectorSettings);
+            }
+        }
+    }, [location.state]); // Only re-run if location.state object itself changes.
 
     const questionsById = useMemo(() => { 
         if (!originalQuestions || originalQuestions.length === 0) return {};
@@ -81,30 +101,29 @@ function SurveyTakingPage() {
                 clearTimeout(autoAdvanceTimeoutRef.current);
             }
         };
-    }, [currentVisibleIndex]); 
+    }, []); // Empty dependency array, runs once on mount and unmount
 
+    // Main data fetching effect
     useEffect(() => {
         if (!surveyId) { setSurveyError("Survey ID missing."); setIsLoadingSurvey(false); return; }
         if (!collectorId) { setSurveyError("Collector ID missing."); setIsLoadingSurvey(false); return; }
         
-        if (location.state?.collectorSettings && JSON.stringify(collectorSettings) !== JSON.stringify(location.state.collectorSettings)) {
-            setCollectorSettings(location.state.collectorSettings);
-        }
-        if (location.state?.surveyTitle && initialSurveyTitle !== location.state.surveyTitle) {
-            setInitialSurveyTitle(location.state.surveyTitle);
+        console.log("[SurveyTakingPage - fetch effect] Running. surveyId, collectorId, currentResumeToken:", surveyId, collectorId, currentResumeToken);
+        setIsLoadingSurvey(true); 
+        setSurveyError(null); // Clear previous errors
+        
+        const fetchOptions = { forTaking: 'true', collectorId };
+        if (currentResumeToken) { // Use the state variable currentResumeToken
+            fetchOptions.resumeToken = currentResumeToken;
         }
 
-        setIsLoadingSurvey(true); setSurveyError(null);
-        
-        const effectiveTokenToUse = currentResumeToken || routeResumeToken;
-        const fetchOptions = { forTaking: 'true', collectorId };
-        if (effectiveTokenToUse) {
-            fetchOptions.resumeToken = effectiveTokenToUse;
-        }
+        const abortController = new AbortController();
+        fetchOptions.signal = abortController.signal;
 
         surveyApi.getSurveyById(surveyId, fetchOptions)
             .then(response => {
                 if (response.success && response.data) {
+                    console.log("[SurveyTakingPage - fetch effect] Survey data received:", response.data);
                     setSurvey(response.data);
                     const fetchedQuestions = response.data.questions || [];
                     const questionsWithIndex = fetchedQuestions.map((q, idx) => ({ ...q, originalIndex: typeof q.originalIndex === 'number' ? q.originalIndex : idx }));
@@ -114,28 +133,56 @@ function SurveyTakingPage() {
                         console.warn("[STM Debug] No valid originalIndex found on fetched questions.", "Fetched Questions:", fetchedQuestions);
                     }
                     setVisibleQuestionIndices(indices);
+                    
                     if (response.data.partialResponse) {
                         setCurrentAnswers(response.data.partialResponse.answers || {});
                         setOtherInputValues(response.data.partialResponse.otherInputValues || {});
                         if (typeof response.data.partialResponse.currentVisibleIndex === 'number') {
                             setCurrentVisibleIndex(response.data.partialResponse.currentVisibleIndex);
                         }
-                        if(response.data.partialResponse.resumeToken) {
+                        // Only update currentResumeToken if the fetched one is different
+                        if(response.data.partialResponse.resumeToken && response.data.partialResponse.resumeToken !== currentResumeToken) {
                            setCurrentResumeToken(response.data.partialResponse.resumeToken);
                         }
-                    } else if (effectiveTokenToUse && !response.data.partialResponse) {
-                        setCurrentResumeToken(null); 
+                    } else if (currentResumeToken && !response.data.partialResponse) { // If a token was used but no partial response came back
+                        setCurrentResumeToken(null); // Clear the token
                     }
-                    if (!initialSurveyTitle && response.data.title) setInitialSurveyTitle(response.data.title);
-                    if (!collectorSettings && response.data.collectorSettings) setCollectorSettings(response.data.collectorSettings);
-                    else if (collectorSettings && response.data.collectorSettings && JSON.stringify(collectorSettings) !== JSON.stringify(response.data.collectorSettings)) {
+
+                    // Set title and collector settings from API response only if they are not already set or different
+                    if (response.data.title && response.data.title !== initialSurveyTitle) {
+                        setInitialSurveyTitle(response.data.title);
+                    }
+                    if (response.data.collectorSettings && JSON.stringify(response.data.collectorSettings) !== JSON.stringify(collectorSettings)) {
                         setCollectorSettings(response.data.collectorSettings);
                     }
-                } else { setSurveyError(response.message || "Failed to load survey details."); setSurvey(null); }
+                } else { 
+                    setSurveyError(response.message || "Failed to load survey details."); 
+                    setSurvey(null); 
+                }
             })
-            .catch(err => { console.error("[STM Debug] Error fetching survey details:", err); setSurveyError(err.message || "Error loading survey details."); setSurvey(null); })
-            .finally(() => { setIsLoadingSurvey(false); });
-    }, [surveyId, collectorId, routeResumeToken, location.state, collectorSettings, initialSurveyTitle]); // Added collectorSettings and initialSurveyTitle to dependencies
+            .catch(err => { 
+                if (err.name === 'AbortError') {
+                    console.log('[SurveyTakingPage - fetch effect] Fetch aborted.');
+                } else {
+                    console.error("[STM Debug] Error fetching survey details:", err); 
+                    setSurveyError(err.message || "Error loading survey details."); 
+                    setSurvey(null); 
+                }
+            })
+            .finally(() => { 
+                setIsLoadingSurvey(false); 
+                console.log("[SurveyTakingPage - fetch effect] Finished.");
+            });
+        
+        return () => {
+            console.log("[SurveyTakingPage - fetch effect] Cleanup: Aborting fetch.");
+            abortController.abort();
+        };
+    // Rerun this effect if surveyId, collectorId, or currentResumeToken (from state) changes.
+    // initialSurveyTitle and collectorSettings (from state) are removed from deps here as they are set inside this effect,
+    // and their changes should not re-trigger the fetch unless surveyId/collectorId/resumeToken change.
+    }, [surveyId, collectorId, currentResumeToken]);
+
 
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
     
@@ -154,18 +201,14 @@ function SurveyTakingPage() {
         setIsSubmitting(true);
 
         try {
-            // --- MINIMAL PAYLOAD TEST ---
-            // Using currentAnswers and otherInputValues which might be empty or populated from previous interactions for this test.
-            // If this fails, the next step would be to force them to {} here.
             const payloadToSubmit = { 
                 collectorId, 
                 answers: currentAnswers, 
                 otherInputValues, 
                 resumeToken: currentResumeToken 
             };
-            console.log('[SurveyTakingPage - handleSubmit] SUBMITTING WITH CURRENT PAYLOAD (could be minimal or full):', payloadToSubmit);
+            console.log('[SurveyTakingPage - handleSubmit] SUBMITTING WITH CURRENT PAYLOAD:', payloadToSubmit);
             
-            // --- UNCOMMENTED THE ACTUAL SUBMISSION CALL ---
             const result = await surveyApi.submitSurveyAnswers(surveyId, payloadToSubmit); 
             console.log('[SurveyTakingPage - handleSubmit] API call result for submitSurveyAnswers:', result); 
             
@@ -244,7 +287,7 @@ function SurveyTakingPage() {
             if (emailForSave) payload.respondentEmail = emailForSave;
             const result = await surveyApi.savePartialResponse(surveyId, payload);
             if (result.success && result.resumeToken) {
-                setCurrentResumeToken(result.resumeToken);
+                setCurrentResumeToken(result.resumeToken); // Update state with new token
                 setGeneratedResumeCode(result.resumeToken);
                 setShowResumeCodeModal(true); 
                 setPromptForEmailOnSave(false); 
@@ -313,7 +356,6 @@ function SurveyTakingPage() {
             case 'maxdiff': questionComponent = <MaxDiffQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
             default: console.warn("Unsupported question type:", question.type); questionComponent = <p>Unsupported: {question.type}</p>;
         }
-        // Corrected syntax for conditional rendering of question number
         return (
             <>
                 {showQuestionNumber && question.text && (
@@ -367,4 +409,4 @@ function SurveyTakingPage() {
     );
 }
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (Corrected syntax error, uncommented API call with Minimal Payload) -----
+// ----- END OF UPDATED FILE (Attempt to fix re-rendering loop) -----
