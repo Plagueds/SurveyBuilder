@@ -1,7 +1,8 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (Correct handleSubmit to use relative path for fetch) -----
+// ----- START OF UPDATED FILE (Added clientSessionId handling) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { v4 as uuidv4 } from 'uuid'; // Import UUID generator
 import surveyApi from '../api/surveyApi'; 
 import styles from './SurveyTakingPage.module.css';
 
@@ -51,8 +52,24 @@ function SurveyTakingPage() {
     const [emailForReminder, setEmailForReminder] = useState('');
     const [promptForEmailOnSave, setPromptForEmailOnSave] = useState(false);
 
+    const [clientSessionId, setClientSessionId] = useState(null); // <<--- NEW STATE for clientSessionId
+
     const autoAdvanceTimeoutRef = useRef(null);
     const OTHER_VALUE_INTERNAL = '__OTHER__';
+
+    // Effect to initialize clientSessionId
+    useEffect(() => {
+        let currentSessionId = sessionStorage.getItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
+        if (!currentSessionId) {
+            currentSessionId = uuidv4();
+            sessionStorage.setItem(`surveyClientSessionId_${surveyId}_${collectorId}`, currentSessionId);
+            console.log('[SurveyTakingPage] New clientSessionId generated:', currentSessionId);
+        } else {
+            console.log('[SurveyTakingPage] Using existing clientSessionId from sessionStorage:', currentSessionId);
+        }
+        setClientSessionId(currentSessionId);
+    }, [surveyId, collectorId]); // Re-run if surveyId or collectorId changes (though usually they don't for a single session)
+
 
     useEffect(() => {
         const stateFromLocation = location.state;
@@ -106,17 +123,12 @@ function SurveyTakingPage() {
         setIsLoadingSurvey(true); 
         setSurveyError(null);
         
-        // surveyApi.getSurveyById should already be using relative paths if apiClient is configured correctly
-        // (e.g., baseURL = '' or '/api' if all calls go through Netlify proxy)
-        // For this test, we are focusing on handleSubmit's fetch call.
-        // The getSurveyById call in surveyApi.js should be to `/api/surveys/:id`
         const fetchOptions = { forTaking: 'true', collectorId };
         if (currentResumeToken) {
             fetchOptions.resumeToken = currentResumeToken;
         }
 
         const abortController = new AbortController();
-        // Assuming surveyApi.getSurveyById is already correctly using relative paths for Netlify proxy
         surveyApi.getSurveyById(surveyId, { ...fetchOptions, signal: abortController.signal })
             .then(response => {
                 if (response.success && response.data) {
@@ -136,6 +148,13 @@ function SurveyTakingPage() {
                         if(response.data.partialResponse.resumeToken && response.data.partialResponse.resumeToken !== currentResumeToken) {
                            setCurrentResumeToken(response.data.partialResponse.resumeToken);
                         }
+                        // If resuming, ensure clientSessionId from partial response is used if available
+                        if (response.data.partialResponse.sessionId && response.data.partialResponse.sessionId !== clientSessionId) {
+                            console.log("[SurveyTakingPage] Aligning clientSessionId with resumed partial response sessionId:", response.data.partialResponse.sessionId);
+                            setClientSessionId(response.data.partialResponse.sessionId);
+                            sessionStorage.setItem(`surveyClientSessionId_${surveyId}_${collectorId}`, response.data.partialResponse.sessionId);
+                        }
+
                     } else if (currentResumeToken && !response.data.partialResponse) {
                         setCurrentResumeToken(null); 
                     }
@@ -169,7 +188,8 @@ function SurveyTakingPage() {
         return () => {
             abortController.abort();
         };
-    }, [surveyId, collectorId, currentResumeToken]); // Removed initialSurveyTitle, collectorSettings
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [surveyId, collectorId, currentResumeToken]); // Removed clientSessionId from here to avoid re-fetch loop, it's set separately
 
 
     const validateQuestion = useCallback((question, answer) => { return true; }, []);
@@ -185,25 +205,43 @@ function SurveyTakingPage() {
 
         if (!surveyId || !collectorId) { console.error("[SurveyTakingPage - handleSubmit] Cannot submit, survey/collector ID missing."); return; }
         
+        // <<--- CRITICAL CHECK for clientSessionId before submission --->>
+        if (!clientSessionId) {
+            console.error("[SurveyTakingPage - handleSubmit] CRITICAL: clientSessionId is missing before submission!");
+            // Optionally, try to re-initialize it here as a fallback, though it should be set by useEffect
+            let fallbackSessionId = sessionStorage.getItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
+            if (!fallbackSessionId) fallbackSessionId = uuidv4(); // Last resort
+            setClientSessionId(fallbackSessionId); // Update state for next attempt if any
+            sessionStorage.setItem(`surveyClientSessionId_${surveyId}_${collectorId}`, fallbackSessionId);
+            
+            // alert("A session error occurred. Please try submitting again."); // User-facing message
+            // setIsSubmitting(false); // Allow retry
+            // return; 
+            // For now, we'll proceed with the fallback or existing clientSessionId from state
+            // but this indicates an issue if clientSessionId isn't ready.
+        }
+
+
         setIsSubmitting(true);
 
-        // CORRECTED: Use a relative path so Netlify can proxy it
         const relativeFetchUrl = `/api/surveys/${surveyId}/submit`; 
         
         const payloadToSubmit = { 
             collectorId, 
             answers: currentAnswers, 
             otherInputValues, 
-            resumeToken: currentResumeToken
+            resumeToken: currentResumeToken,
+            clientSessionId: clientSessionId // <<--- ADDED clientSessionId to payload
+            // recaptchaTokenV2: yourRecaptchaTokenState, // If you implement reCAPTCHA
         };
         const token = localStorage.getItem('token');
 
         console.log('[SurveyTakingPage - handleSubmit] Relative Fetch URL for Netlify Proxy:', relativeFetchUrl);
-        console.log('[SurveyTakingPage - handleSubmit] Fetch Payload:', payloadToSubmit);
+        console.log('[SurveyTakingPage - handleSubmit] Fetch Payload:', payloadToSubmit); // Verify clientSessionId is here
         console.log('[SurveyTakingPage - handleSubmit] Auth Token for Fetch:', token ? "Present" : "Not Present");
 
         try {
-            const response = await fetch(relativeFetchUrl, { // Use the relative URL
+            const response = await fetch(relativeFetchUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...(token && { 'Authorization': `Bearer ${token}` }) },
                 body: JSON.stringify(payloadToSubmit)
@@ -213,7 +251,6 @@ function SurveyTakingPage() {
             console.log('[SurveyTakingPage - handleSubmit] Fetch raw response text:', responseText);
             if (!response.ok) {
                 console.error('[SurveyTakingPage - handleSubmit] Fetch failed. Status:', response.status, 'Body:', responseText);
-                // It's possible the responseText is HTML from Netlify if the proxy rule isn't hit or if SPA fallback occurs
                 if (response.headers.get("content-type")?.includes("text/html")) {
                     console.warn("[SurveyTakingPage - handleSubmit] Received HTML response, check Netlify proxy rules and ensure the API path is correct and doesn't fall back to index.html.");
                 }
@@ -223,6 +260,8 @@ function SurveyTakingPage() {
             console.log('[SurveyTakingPage - handleSubmit] Fetch parsed result:', result);
             if (result && result.success) {
                 console.log("Survey submitted successfully via FETCH (through Netlify proxy)!", result);
+                // Clear session storage for this survey attempt on successful submission
+                sessionStorage.removeItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
                 navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle}});
             } else {
                 console.error("Submission failed on frontend (FETCH through Netlify proxy), API result indicates failure or is undefined:", result);
@@ -236,9 +275,8 @@ function SurveyTakingPage() {
             console.log('[SurveyTakingPage - handleSubmit] Reached finally block (FETCH through Netlify proxy), setting isSubmitting to false.');
             setIsSubmitting(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting]);
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting, clientSessionId]); // Added clientSessionId to dependencies
 
-    // ... (The rest of the functions: handleNext, handleInputChange, etc. remain IDENTICAL)
     const handleNext = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
         if (currentQuestionToRender && !validateQuestion(currentQuestionToRender, currentAnswers[currentQuestionToRender._id])) return;
@@ -294,12 +332,33 @@ function SurveyTakingPage() {
 
     const performSaveAndContinue = useCallback(async (emailForSave = null) => {
         if (!surveyId || !collectorId) { console.error("Cannot save, survey/collector ID missing."); return; }
+        
+        // <<--- Ensure clientSessionId is available for saving partial response --->>
+        if (!clientSessionId) {
+            console.error("[SurveyTakingPage - performSaveAndContinue] CRITICAL: clientSessionId is missing before saving partial response!");
+            // Attempt to initialize if somehow missed, though less critical for save than submit
+            let fallbackSessionId = sessionStorage.getItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
+            if (!fallbackSessionId) fallbackSessionId = uuidv4();
+            setClientSessionId(fallbackSessionId);
+            sessionStorage.setItem(`surveyClientSessionId_${surveyId}_${collectorId}`, fallbackSessionId);
+            // Proceed with the save attempt using the now set clientSessionId
+        }
+
         setIsSavingAndContinueLater(true);
         try {
-            // This should also use a relative path if surveyApi is correctly configured
-            const payload = { collectorId, answers: currentAnswers, otherInputValues, currentVisibleIndex: currentVisibleIndex, resumeToken: currentResumeToken };
+            const payload = { 
+                collectorId, 
+                answers: currentAnswers, 
+                otherInputValues, 
+                currentVisibleIndex: currentVisibleIndex, 
+                resumeToken: currentResumeToken,
+                sessionId: clientSessionId // <<--- Pass clientSessionId as sessionId to backend
+            };
             if (emailForSave) payload.respondentEmail = emailForSave;
-            const result = await surveyApi.savePartialResponse(surveyId, payload); // Assumes surveyApi uses relative paths
+            
+            console.log("[SurveyTakingPage - performSaveAndContinue] Payload for savePartialResponse:", payload);
+
+            const result = await surveyApi.savePartialResponse(surveyId, payload);
             if (result.success && result.resumeToken) {
                 setCurrentResumeToken(result.resumeToken); 
                 setGeneratedResumeCode(result.resumeToken);
@@ -313,7 +372,7 @@ function SurveyTakingPage() {
         } finally {
             setIsSavingAndContinueLater(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentVisibleIndex, currentResumeToken, setCurrentResumeToken, setGeneratedResumeCode, setShowResumeCodeModal, setPromptForEmailOnSave, setIsSavingAndContinueLater]);
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentVisibleIndex, currentResumeToken, clientSessionId, setIsSavingAndContinueLater, setCurrentResumeToken, setGeneratedResumeCode, setShowResumeCodeModal, setPromptForEmailOnSave]); // Added clientSessionId
     
     const handleSaveAndContinueLater = useCallback(async () => {
         const saveMethod = survey?.settings?.behaviorNavigation?.saveAndContinueMethod || collectorSettings?.saveAndContinueMethod || 'email';
@@ -387,7 +446,7 @@ function SurveyTakingPage() {
     const displayTitle = survey?.title || initialSurveyTitle || "Survey";
     const saveAndContinueEnabled = collectorSettings?.allowResume ?? survey?.settings?.behaviorNavigation?.saveAndContinueEnabled ?? false;
     const submitButton = isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && 
-        (<button type="button" onClick={handleSubmit} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>{isSubmitting ? 'Submitting...' : 'Submit'}</button>);
+        (<button type="button" onClick={handleSubmit} disabled={isSubmitting || isSavingAndContinueLater || !clientSessionId} className={styles.navButtonPrimary}>{isSubmitting ? 'Submitting...' : 'Submit'}</button>);
 
     return (
         <div className={styles.surveyContainer}>
@@ -401,7 +460,7 @@ function SurveyTakingPage() {
             <footer className={styles.surveyNavigation}>
                 {(collectorSettings?.allowBackButton ?? true) && currentVisibleIndex > 0 && (<button type="button" onClick={handlePrevious} disabled={isSubmitting || isSavingAndContinueLater} className={styles.navButton}>Previous</button>)}
                 {!( (collectorSettings?.allowBackButton ?? true) && currentVisibleIndex > 0) && <div style={{flexGrow: 1}}></div>}
-                {saveAndContinueEnabled && (<button type="button" onClick={handleSaveAndContinueLater} disabled={isSavingAndContinueLater || isSubmitting} className={styles.navButtonSecondary}>Save and Continue Later</button>)}
+                {saveAndContinueEnabled && (<button type="button" onClick={handleSaveAndContinueLater} disabled={isSavingAndContinueLater || isSubmitting || !clientSessionId} className={styles.navButtonSecondary}>Save and Continue Later</button>)}
                 {!isSubmitState && (<button type="button" onClick={handleNext} disabled={!currentQuestionToRender || isSubmitting || isSavingAndContinueLater} className={styles.navButtonPrimary}>Next</button>)}
                 {submitButton}
             </footer>
@@ -422,4 +481,4 @@ function SurveyTakingPage() {
     );
 }
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (Correct handleSubmit to use relative path for fetch) -----
+// ----- END OF UPDATED FILE (Added clientSessionId handling) -----
