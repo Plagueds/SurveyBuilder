@@ -513,7 +513,7 @@ function SurveyTakingPage() {
                 <div className={styles.recaptchaContainer}>
                     <ReCAPTCHA
                         ref={recaptchaRef}
-                        sitekey={process.env.REACT_APP_RECAPTCHA_V2_SITE_KEY || "YOUR_FALLBACK_RECAPTCHA_V2_SITE_KEY"} // Ensure you have a fallback or handle missing key
+                        sitekey={process.env.REACT_APP_RECAPTCHA_SITE_KEY || "YOUR_FALLBACK_RECAPTCHA_V2_SITE_KEY"} // Ensure you have a fallback or handle missing key
                         onChange={(token) => { console.log("reCAPTCHA token received:", token); setRecaptchaToken(token); }}
                         onExpired={() => { console.log("reCAPTCHA token expired"); setRecaptchaToken(null); }}
                         onErrored={() => {
