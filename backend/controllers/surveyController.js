@@ -196,7 +196,7 @@ exports.createSurvey = async (req, res) => { // From your vNext28
     }
 };
 
-exports.getSurveyById = async (req, res) => { // From your vNext28
+exports.getSurveyById = async (req, res) => { // From your vNext28, WITH PATH COLLISION FIX
     const { surveyId } = req.params;
     const { forTaking, collectorId, isPreviewingOwner, resumeToken } = req.query;
     console.log(`[getSurveyById] Request for survey: ${surveyId}, forTaking: ${forTaking}, collectorId: ${collectorId}, resumeToken: ${resumeToken}, isPreviewingOwner: ${isPreviewingOwner}`);
@@ -208,12 +208,8 @@ exports.getSurveyById = async (req, res) => { // From your vNext28
     try {
         let surveyQuery = Survey.findById(surveyId);
         let actualCollectorDoc = null;
-        let partialResponseData = null; // Will hold data from PartialResponse model
+        let partialResponseData = null;
 
-        // --- Authorization check for non-taking scenarios (admin/owner access) ---
-        // `protect` middleware ensures req.user exists for these routes.
-        // `authorizeSurveyAccess` middleware (if applied on route) would also handle this.
-        // Adding an explicit check here if `authorizeSurveyAccess` isn't universally on this GET.
         if (forTaking !== 'true') {
             if (!req.user || !req.user.id) {
                  console.error('[getSurveyById - Admin Access] User ID not found. Auth middleware issue?');
@@ -221,33 +217,39 @@ exports.getSurveyById = async (req, res) => { // From your vNext28
             }
         }
 
-
         if (forTaking === 'true') {
             surveyQuery = surveyQuery
                 .select('title description welcomeMessage thankYouMessage status questions settings.completion settings.behaviorNavigation settings.customVariables globalSkipLogic randomizationLogic')
-                .populate({ path: 'questions', model: 'Question', options: { sort: { originalIndex: 1 } } }); // Sort by originalIndex
+                .populate({ path: 'questions', model: 'Question', options: { sort: { originalIndex: 1 } } });
 
-            if (collectorId) { // Fetch collector if ID is provided
-                const selectFields = 'status type settings linkId survey responseCount ' + // Base fields
-                                     '+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist +settings.web_link.allowBackButton +settings.web_link.progressBarEnabled +settings.web_link.progressBarStyle +settings.web_link.progressBarPosition';
+            if (collectorId) {
+                // ***** MODIFICATION 1 HERE *****
+                const selectFields = 'status type linkId survey responseCount ' +
+                                     'settings.web_link ' +                     // Select the whole web_link sub-document
+                                     '+settings.web_link.password';             // Explicitly include the password
+                // Any other fields from settings.web_link that are not select:false will come automatically.
+                // If you need other top-level fields from 'settings' object (outside web_link), add them like 'settings.someOtherCategory'
+
                 if (mongoose.Types.ObjectId.isValid(collectorId)) {
                     actualCollectorDoc = await Collector.findOne({ _id: collectorId, survey: surveyId }).select(selectFields);
                 }
-                // Fallback to find by linkId or customSlug if not found by ObjectId (useful for public links)
-                if (!actualCollectorDoc) actualCollectorDoc = await Collector.findOne({ linkId: collectorId, survey: surveyId }).select(selectFields);
-                if (!actualCollectorDoc) actualCollectorDoc = await Collector.findOne({ 'settings.web_link.customSlug': collectorId, survey: surveyId }).select(selectFields);
+                if (!actualCollectorDoc) {
+                    actualCollectorDoc = await Collector.findOne({ linkId: collectorId, survey: surveyId }).select(selectFields);
+                }
+                if (!actualCollectorDoc) {
+                    actualCollectorDoc = await Collector.findOne({ 'settings.web_link.customSlug': collectorId, survey: surveyId }).select(selectFields);
+                }
             }
-        } else { // For admin/owner viewing survey details (not taking)
+        } else {
             surveyQuery = surveyQuery.populate({ path: 'questions', model: 'Question', options: { sort: { originalIndex: 1 } } }).populate('collectors');
         }
 
-        const survey = await surveyQuery.lean(); // Use .lean() for performance, especially if not modifying before sending
+        const survey = await surveyQuery.lean();
         if (!survey) {
             console.log(`[getSurveyById] Survey not found: ${surveyId}`);
             return res.status(404).json({ success: false, message: 'Survey not found.' });
         }
 
-        // Authorization for non-taking scenarios (if not handled by dedicated middleware on the route)
         if (forTaking !== 'true' && req.user && String(survey.createdBy) !== String(req.user.id) && req.user.role !== 'admin') {
             console.log(`[getSurveyById] Unauthorized attempt by user ${req.user.id} to access survey ${surveyId} owned by ${survey.createdBy}`);
             return res.status(403).json({ success: false, message: 'You are not authorized to view this survey\'s details.' });
@@ -256,65 +258,50 @@ exports.getSurveyById = async (req, res) => { // From your vNext28
         const effectiveIsOwnerPreviewing = isPreviewingOwner === 'true' && req.user && String(survey.createdBy) === String(req.user.id);
 
         if (forTaking === 'true') {
-            // --- Survey Status and Collector Validation for Taking/Resuming ---
             if (survey.status !== 'active' && !effectiveIsOwnerPreviewing && !resumeToken) {
                 return res.status(403).json({ success: false, message: 'This survey is not currently active.' });
             }
-            if (collectorId && !actualCollectorDoc && !effectiveIsOwnerPreviewing && !resumeToken) { // If collectorId was given but not found
+            if (collectorId && !actualCollectorDoc && !effectiveIsOwnerPreviewing && !resumeToken) {
                  return res.status(404).json({ success: false, message: 'Collector not found or invalid for this survey.' });
             }
 
-            // --- Handle Resuming a Partial Response ---
             if (resumeToken) {
                 const partialDoc = await PartialResponse.findOne({ resumeToken: resumeToken, survey: survey._id });
                 if (!partialDoc) {
                     return res.status(404).json({ success: false, message: 'Invalid or expired resume link.' });
                 }
                 if (partialDoc.expiresAt < new Date()) {
-                    // Optionally delete expired partialDoc here or via a cron job
                     return res.status(410).json({ success: false, message: 'This resume link has expired.' });
                 }
                 if (partialDoc.completedAt) {
                      return res.status(410).json({ success: false, message: 'This survey session has already been completed.' });
                 }
                 
-                partialResponseData = partialDoc.toObject(); // Convert Mongoose doc to plain object
+                partialResponseData = partialDoc.toObject();
                 
-                // If resuming, and we didn't have a collector from collectorId, try to get it from partialDoc
                 if (!actualCollectorDoc && partialDoc.collector) {
-                     const selectFields = 'status type settings linkId survey responseCount ' + // Duplicated from above, consider refactoring
-                                     '+settings.web_link.password +settings.web_link.allowMultipleResponses +settings.web_link.anonymousResponses +settings.web_link.enableRecaptcha +settings.web_link.recaptchaSiteKey +settings.web_link.ipAllowlist +settings.web_link.ipBlocklist +settings.web_link.allowBackButton +settings.web_link.progressBarEnabled +settings.web_link.progressBarStyle +settings.web_link.progressBarPosition';
-                     actualCollectorDoc = await Collector.findById(partialDoc.collector).select(selectFields);
-                     if (!actualCollectorDoc) { // Should not happen if partialDoc.collector is valid
+                     // ***** MODIFICATION 2 HERE *****
+                     const selectFieldsForResume = 'status type linkId survey responseCount ' +
+                                                   'settings.web_link ' +
+                                                   '+settings.web_link.password';
+                     actualCollectorDoc = await Collector.findById(partialDoc.collector).select(selectFieldsForResume);
+                     if (!actualCollectorDoc) {
                         console.error(`[getSurveyById] Collector ${partialDoc.collector} from partial response not found for survey ${surveyId}`);
-                        // Decide how to handle: error or proceed without collector settings?
                      }
                 }
-                // ** TODO: When resuming, fetch individual Answer documents for this session (`partialDoc.sessionId`)
-                // and reconstruct the `answers` and `otherInputValues` to populate the survey form.
-                // This replaces loading them from `partialResponseData.answers` if that field is removed from PartialResponse model.
-                // Example:
+                // ** TODO from previous version still applies: When resuming, fetch individual Answer documents...
                 // const savedAnswersRaw = await Answer.find({ survey: survey._id, sessionId: partialDoc.sessionId });
-                // const reconstructedAnswers = {};
-                // const reconstructedOtherValues = {};
-                // savedAnswersRaw.forEach(ans => {
-                //     reconstructedAnswers[ans.questionId.toString()] = ans.answerValue;
-                //     if (ans.otherText) reconstructedOtherValues[`${ans.questionId.toString()}_other`] = ans.otherText;
-                // });
-                // partialResponseData.answers = reconstructedAnswers; // Overwrite or add
-                // partialResponseData.otherInputValues = reconstructedOtherValues; // Overwrite or add
+                // ... reconstruct answers and add to partialResponseData ...
             }
 
-            // --- Collector-Specific Validations (if a collector is involved) ---
             if (actualCollectorDoc) {
-                if (String(actualCollectorDoc.survey) !== String(survey._id)) { // Should be caught by query, but double check
+                if (String(actualCollectorDoc.survey) !== String(survey._id)) {
                     return res.status(400).json({ success: false, message: 'Collector does not belong to this survey.' });
                 }
-                if (actualCollectorDoc.status !== 'open' && !effectiveIsOwnerPreviewing && !resumeToken) { // Allow preview/resume even if link is not 'open'
+                if (actualCollectorDoc.status !== 'open' && !effectiveIsOwnerPreviewing && !resumeToken) {
                     return res.status(403).json({ success: false, message: `This survey link is ${actualCollectorDoc.status}.` });
                 }
 
-                // IP Allow/Blocklist checks (only if not owner previewing and not resuming an existing session)
                 if (actualCollectorDoc.settings?.web_link && !effectiveIsOwnerPreviewing && !resumeToken) {
                     const respondentIp = getIpAddress(req);
                     const { ipAllowlist, ipBlocklist } = actualCollectorDoc.settings.web_link;
@@ -327,21 +314,18 @@ exports.getSurveyById = async (req, res) => { // From your vNext28
                         }
                     }
                 }
-                // Password check (only for new sessions, not for resumes or owner previews)
                 if (actualCollectorDoc.type === 'web_link' && actualCollectorDoc.settings?.web_link?.password && !resumeToken && !effectiveIsOwnerPreviewing) {
-                    const providedPassword = req.headers['x-survey-password']; // Frontend must send this
+                    const providedPassword = req.headers['x-survey-password'];
                     if (!providedPassword) return res.status(401).json({ success: false, message: 'Password required for this survey.', requiresPassword: true });
                     
                     const passwordMatch = await actualCollectorDoc.comparePassword(providedPassword);
                     if (!passwordMatch) return res.status(401).json({ success: false, message: 'Incorrect password.', requiresPassword: true });
                 }
             } else if (!effectiveIsOwnerPreviewing && survey.status === 'draft' && !collectorId && !resumeToken) {
-                // If it's a draft survey, not previewing, no collector, and not resuming -> deny
                 return res.status(403).json({ success: false, message: 'Survey is in draft mode and requires a specific collector link or preview access.' });
             }
         }
 
-        // --- Process Questions (e.g., generate conjoint profiles) ---
         let processedQuestions = survey.questions || [];
         if (Array.isArray(processedQuestions) && processedQuestions.length > 0 && typeof processedQuestions[0] === 'object' && processedQuestions[0] !== null) {
             processedQuestions = processedQuestions.map(q => {
@@ -354,47 +338,43 @@ exports.getSurveyById = async (req, res) => { // From your vNext28
 
         const surveyResponseData = { ...survey, questions: processedQuestions };
 
-        // --- Augment with Collector Settings and Partial Response Data for Taking ---
         if (forTaking === 'true') {
-            const defaultBehaviorNav = survey.settings?.behaviorNavigation || { // Use survey's defaults first
+            const defaultBehaviorNav = survey.settings?.behaviorNavigation || {
                 autoAdvance: false, questionNumberingEnabled: true, questionNumberingFormat: '123',
                 saveAndContinueEnabled: false, saveAndContinueEmailLinkExpiryDays: 7, saveAndContinueMethod: 'email',
             };
             const defaultCustomVariables = survey.settings?.customVariables || [];
 
-            surveyResponseData.settings = { // Ensure settings object exists
-                ...(surveyResponseData.settings || {}), // Keep existing survey settings
+            surveyResponseData.settings = {
+                ...(surveyResponseData.settings || {}),
                 behaviorNavigation: { ...defaultBehaviorNav, ...(surveyResponseData.settings?.behaviorNavigation || {}) },
                 customVariables: Array.isArray(surveyResponseData.settings?.customVariables) ? surveyResponseData.settings.customVariables : defaultCustomVariables
             };
 
-            // Overlay or provide collector-specific settings
             if (actualCollectorDoc?.settings?.web_link) {
                 const webLinkSettingsObject = actualCollectorDoc.settings.web_link.toObject ? actualCollectorDoc.settings.web_link.toObject() : { ...actualCollectorDoc.settings.web_link };
-                surveyResponseData.collectorSettings = webLinkSettingsObject; // Frontend will use these
-                surveyResponseData.actualCollectorObjectId = actualCollectorDoc._id; // Useful for frontend to know
-                // Ensure reCAPTCHA site key is available if enabled
-                if (surveyResponseData.collectorSettings.enableRecaptcha && !surveyResponseData.collectorSettings.recaptchaSiteKey && process.env.RECAPTCHA_SITE_KEY_V2) { // Use specific env var for v2 site key
+                surveyResponseData.collectorSettings = webLinkSettingsObject;
+                surveyResponseData.actualCollectorObjectId = actualCollectorDoc._id;
+                if (surveyResponseData.collectorSettings.enableRecaptcha && !surveyResponseData.collectorSettings.recaptchaSiteKey && process.env.RECAPTCHA_SITE_KEY_V2) {
                     surveyResponseData.collectorSettings.recaptchaSiteKey = process.env.RECAPTCHA_SITE_KEY_V2;
                 }
-                // Provide defaults for progress bar if not set on collector
                 if (typeof surveyResponseData.collectorSettings.allowBackButton === 'undefined') surveyResponseData.collectorSettings.allowBackButton = true;
                 if (typeof surveyResponseData.collectorSettings.progressBarEnabled === 'undefined') surveyResponseData.collectorSettings.progressBarEnabled = false;
                 if (typeof surveyResponseData.collectorSettings.progressBarStyle === 'undefined') surveyResponseData.collectorSettings.progressBarStyle = 'percentage';
                 if (typeof surveyResponseData.collectorSettings.progressBarPosition === 'undefined') surveyResponseData.collectorSettings.progressBarPosition = 'top';
 
-            } else { // Default "collector settings" if no specific collector is active (e.g., owner preview)
+            } else {
                 surveyResponseData.collectorSettings = {
                     allowMultipleResponses: true, anonymousResponses: false, enableRecaptcha: false,
-                    recaptchaSiteKey: process.env.RECAPTCHA_SITE_KEY_V2 || '', // Use specific env var
+                    recaptchaSiteKey: process.env.RECAPTCHA_SITE_KEY_V2 || '',
                     ipAllowlist: [], ipBlocklist: [], allowBackButton: true,
                     progressBarEnabled: false, progressBarStyle: 'percentage', progressBarPosition: 'top'
                 };
                 surveyResponseData.actualCollectorObjectId = null;
             }
 
-            if (partialResponseData) { // If resuming
-                surveyResponseData.partialResponse = partialResponseData; // Send full partial data
+            if (partialResponseData) {
+                surveyResponseData.partialResponse = partialResponseData;
             }
         }
         
@@ -402,7 +382,7 @@ exports.getSurveyById = async (req, res) => { // From your vNext28
         res.status(200).json({ success: true, data: surveyResponseData });
 
     } catch (error) {
-        console.error(`[getSurveyById] CRITICAL ERROR fetching survey ${surveyId}. Error:`, error.stack);
+        console.error(`[getSurveyById] CRITICAL ERROR fetching survey ${surveyId}. Error:`, error.stack); // Log the full error stack
         res.status(500).json({ success: false, message: 'Error fetching survey data on the server.' });
     }
 };
