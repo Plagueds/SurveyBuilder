@@ -178,6 +178,82 @@
 .inputError:focus {
     box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
 }
+.shareLinkContainer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem; /* Space below the link display */
+}
+
+.shareLinkInput {
+    flex-grow: 1;
+    padding: 0.65rem 0.75rem;
+    font-size: 0.9rem; /* Slightly smaller for readonly display */
+    color: #495057;
+    background-color: #e9ecef; /* Indicate readonly */
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    box-sizing: border-box;
+}
+
+.copyButton {
+    padding: 0.6rem 0.9rem; /* Adjust padding to align height with input */
+    white-space: nowrap;
+    /* Use your global button styles or define here */
+    /* Example:
+    font-size: 0.85rem;
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 0.25rem;
+    cursor: pointer; */
+}
+/* .copyButton:hover { background-color: #5a6268; } */
+
+
+.slugInputContainer {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.slugBaseUrl {
+    padding: 0.65rem 0.5rem 0.65rem 0; /* Align with input padding */
+    font-size: 0.95rem;
+    color: #6c757d;
+    white-space: nowrap;
+}
+
+.slugInput {
+    flex-grow: 1;
+    /* Uses general input styling from .formGroup input */
+    /* No specific styles needed unless you want to differentiate it further */
+}
+
+/* Ensure error messages are visible */
+.errorMessage {
+    color: #dc3545;
+    font-size: 0.8em; /* Adjusted size */
+    margin-top: 0.35rem; /* Adjusted margin */
+}
+
+/* General description text for fields */
+.fieldDescription {
+    font-size: 0.8em; /* Consistent small text */
+    color: #6c757d;
+    display: block;
+    margin-top: 0.35rem; /* Consistent margin */
+}
+/* For checkbox descriptions, align them if needed */
+.formGroupCheckbox .fieldDescription {
+    margin-left: calc(1.1em + 0.75rem); /* If your checkbox has specific dimensions */
+}
+
+
+/* Styling for the tristate select for saveAndContinueEnabled */
+#settings\.web_link\.saveAndContinueEnabled { /* Escaping special characters for ID selector if needed */
+    /* Uses general select styling from .formGroup select */
+}
 
 /* Use global button styles if available, or define here */
 /* You might have these in App.css or index.css */

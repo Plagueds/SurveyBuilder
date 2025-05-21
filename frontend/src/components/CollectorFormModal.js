@@ -1,37 +1,45 @@
 // frontend/src/components/CollectorFormModal.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.6 - Added ProgressBar Position UI) -----
-import React, { useState, useEffect, useCallback } from 'react';
+// ----- START OF COMPLETE UPDATED FILE (v1.7 - Enhanced linkId/customSlug UI & saveAndContinue) -----
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import surveyApiFunctions from '../api/surveyApi';
 import { toast } from 'react-toastify';
 import styles from './CollectorFormModal.module.css';
 
+// Helper to get the base URL for constructing shareable links
+const getPublicSiteUrl = () => {
+    // Use REACT_APP_PUBLIC_SURVEY_URL if defined, otherwise fallback to current origin
+    // This allows for different domains for the app and the public-facing survey links if needed.
+    return process.env.REACT_APP_PUBLIC_SURVEY_URL || window.location.origin;
+};
+
 const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSave }) => {
     const isEditMode = Boolean(existingCollector);
+    const shareableBaseUrl = useMemo(() => `${getPublicSiteUrl()}/s/`, []);
 
     const getInitialFormData = useCallback(() => {
         const defaults = {
             name: '',
-            type: 'web_link',
+            type: 'web_link', // This modal is currently focused on web_link
             status: 'draft',
             settings: {
                 web_link: {
                     customSlug: '',
-                    allowMultipleResponses: false,
-                    anonymousResponses: false,
-                    maxResponses: 0,
+                    passwordProtectionEnabled: false,
+                    password: '', // Input field, not the stored hash
                     openDate: '',
                     closeDate: '',
-                    passwordProtectionEnabled: false,
-                    password: '',
+                    maxResponses: 0, // 0 for unlimited
+                    allowMultipleResponses: false,
+                    anonymousResponses: false,
                     enableRecaptcha: false,
-                    recaptchaSiteKey: '',
+                    // recaptchaSiteKey: '', // Usually global, but can be overridden
                     ipAllowlistString: '',
                     ipBlocklistString: '',
                     allowBackButton: true,
                     progressBarEnabled: false,
                     progressBarStyle: 'percentage',
-                    // --- NEW: ProgressBar Position Default ---
                     progressBarPosition: 'top',
+                    saveAndContinueEnabled: undefined, // 'undefined' means inherit from survey
                 }
             }
         };
@@ -39,34 +47,34 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
         if (isEditMode && existingCollector) {
             const existingWebLinkSettings = existingCollector.settings?.web_link || {};
             const mergedWebLinkSettings = {
-                ...defaults.settings.web_link,
-                ...existingWebLinkSettings,
-                anonymousResponses: Boolean(existingWebLinkSettings.anonymousResponses),
-                maxResponses: existingWebLinkSettings.maxResponses === null || existingWebLinkSettings.maxResponses === undefined ? 0 : existingWebLinkSettings.maxResponses,
+                ...defaults.settings.web_link, // Start with defaults
+                ...existingWebLinkSettings,    // Override with existing settings
+                // Explicitly handle boolean conversions and specific formatting
+                customSlug: existingWebLinkSettings.customSlug || '',
+                passwordProtectionEnabled: Boolean(existingWebLinkSettings.passwordProtectionEnabled), // Ensure boolean
+                password: '', // Always clear password field for editing for security
                 openDate: existingWebLinkSettings.openDate ? new Date(existingWebLinkSettings.openDate).toISOString().slice(0, 16) : '',
                 closeDate: existingWebLinkSettings.closeDate ? new Date(existingWebLinkSettings.closeDate).toISOString().slice(0, 16) : '',
-                passwordProtectionEnabled: Boolean(existingWebLinkSettings.password),
+                maxResponses: existingWebLinkSettings.maxResponses === null || existingWebLinkSettings.maxResponses === undefined ? 0 : existingWebLinkSettings.maxResponses,
+                allowMultipleResponses: Boolean(existingWebLinkSettings.allowMultipleResponses),
+                anonymousResponses: Boolean(existingWebLinkSettings.anonymousResponses),
                 enableRecaptcha: Boolean(existingWebLinkSettings.enableRecaptcha),
-                recaptchaSiteKey: existingWebLinkSettings.recaptchaSiteKey || '',
                 ipAllowlistString: Array.isArray(existingWebLinkSettings.ipAllowlist) ? existingWebLinkSettings.ipAllowlist.join('\n') : '',
                 ipBlocklistString: Array.isArray(existingWebLinkSettings.ipBlocklist) ? existingWebLinkSettings.ipBlocklist.join('\n') : '',
-                allowBackButton: typeof existingWebLinkSettings.allowBackButton === 'boolean'
-                                 ? existingWebLinkSettings.allowBackButton
-                                 : true,
-                progressBarEnabled: typeof existingWebLinkSettings.progressBarEnabled === 'boolean'
-                                    ? existingWebLinkSettings.progressBarEnabled
-                                    : false,
+                allowBackButton: typeof existingWebLinkSettings.allowBackButton === 'boolean' ? existingWebLinkSettings.allowBackButton : true,
+                progressBarEnabled: Boolean(existingWebLinkSettings.progressBarEnabled),
                 progressBarStyle: existingWebLinkSettings.progressBarStyle || 'percentage',
-                // --- MODIFIED: Initialize ProgressBar Position ---
-                progressBarPosition: existingWebLinkSettings.progressBarPosition || 'top', // Default to 'top'
+                progressBarPosition: existingWebLinkSettings.progressBarPosition || 'top',
+                saveAndContinueEnabled: existingWebLinkSettings.saveAndContinueEnabled, // Can be true, false, or undefined
             };
 
             return {
                 name: existingCollector.name || '',
                 type: existingCollector.type || 'web_link',
                 status: existingCollector.status || 'draft',
+                linkId: existingCollector.linkId || null, // Store linkId for display
                 settings: {
-                    ...defaults.settings,
+                    ...defaults.settings, // Ensure structure for other types if modal expands
                     web_link: mergedWebLinkSettings
                 }
             };
@@ -77,13 +85,23 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
     const [formData, setFormData] = useState(getInitialFormData());
     const [isSaving, setIsSaving] = useState(false);
     const [errors, setErrors] = useState({});
+    const [generatedLinkDisplay, setGeneratedLinkDisplay] = useState('');
 
     useEffect(() => {
         if (isOpen) {
-            setFormData(getInitialFormData());
+            const initialData = getInitialFormData();
+            setFormData(initialData);
             setErrors({});
+            if (isEditMode && initialData.linkId) {
+                setGeneratedLinkDisplay(`${shareableBaseUrl}${initialData.linkId}`);
+            } else if (!isEditMode) {
+                setGeneratedLinkDisplay('Will be generated upon saving.');
+            } else {
+                setGeneratedLinkDisplay('');
+            }
         }
-    }, [isOpen, getInitialFormData]);
+    }, [isOpen, getInitialFormData, isEditMode, shareableBaseUrl]);
+
 
     if (!isOpen) {
         return null;
@@ -91,6 +109,7 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
+        const newErrors = { ...errors };
 
         if (name.startsWith("settings.web_link.")) {
             const field = name.split(".").pop();
@@ -104,24 +123,35 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     }
                 }
             }));
-            if (errors[`web_link_${field}`]) {
-                setErrors(prev => ({ ...prev, [`web_link_${field}`]: null }));
-            }
+            if (newErrors[`web_link_${field}`]) delete newErrors[`web_link_${field}`];
         } else {
             setFormData(prev => ({
                 ...prev,
                 [name]: type === 'checkbox' ? checked : value
             }));
-            if (errors[name]) {
-                setErrors(prev => ({ ...prev, [name]: null }));
-            }
+            if (newErrors[name]) delete newErrors[name];
         }
+        setErrors(newErrors); // Clear specific error on change
     };
+    
+    const handleSaveAndContinueChange = (value) => { // For a tristate: true, false, undefined
+        setFormData(prev => ({
+            ...prev,
+            settings: {
+                ...prev.settings,
+                web_link: {
+                    ...prev.settings.web_link,
+                    saveAndContinueEnabled: value
+                }
+            }
+        }));
+    };
+
 
     const parseIpListString = (ipString) => {
         if (!ipString || typeof ipString !== 'string') return [];
         return ipString
-            .split(/[\n,]+/)
+            .split(/[\n,]+/) // Split by newline or comma
             .map(ip => ip.trim())
             .filter(ip => ip.length > 0);
     };
@@ -132,31 +162,38 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
         if (!formData.name.trim()) {
             newErrors.name = "Collector name is required.";
         }
-        if (formData.settings.web_link.passwordProtectionEnabled && !formData.settings.web_link.password && !isEditMode) {
-            newErrors.web_link_password = "Password is required when password protection is enabled.";
-        }
-        if (formData.settings.web_link.passwordProtectionEnabled && formData.settings.web_link.password && formData.settings.web_link.password.length < 6) {
-            newErrors.web_link_password = "Password must be at least 6 characters long.";
-        }
-        if (formData.settings.web_link.openDate && formData.settings.web_link.closeDate &&
-            new Date(formData.settings.web_link.openDate) >= new Date(formData.settings.web_link.closeDate)) {
-            newErrors.web_link_closeDate = "Close date must be after the open date.";
-        }
-        if (formData.settings.web_link.customSlug && !/^[a-zA-Z0-9-_]+$/.test(formData.settings.web_link.customSlug)) {
-            newErrors.web_link_customSlug = "Custom slug can only contain letters, numbers, hyphens, and underscores.";
-        }
-        const maxResponsesNum = parseInt(formData.settings.web_link.maxResponses, 10);
-        if (isNaN(maxResponsesNum) || maxResponsesNum < 0) {
-            newErrors.web_link_maxResponses = "Max responses must be a non-negative number.";
+        const wlSettings = formData.settings.web_link;
+
+        if (wlSettings.customSlug && !/^[a-z0-9][a-z0-9-_]{1,48}[a-z0-9]$/.test(wlSettings.customSlug.toLowerCase())) {
+            newErrors.web_link_customSlug = "Slug: 3-50 chars, alphanumeric/hyphens/underscores, start/end alphanumeric.";
         }
 
-        const allowlist = parseIpListString(formData.settings.web_link.ipAllowlistString);
-        if (allowlist.some(ip => ip.includes(' '))) {
-            newErrors.web_link_ipAllowlistString = "IPs in allowlist should not contain spaces.";
+        // Password validation: only if protection is enabled AND (it's a new collector OR a password value is actually entered for edit mode)
+        if (wlSettings.passwordProtectionEnabled) {
+            if (!isEditMode && !wlSettings.password) { // Required for new collector if enabled
+                newErrors.web_link_password = "Password is required when protection is enabled.";
+            } else if (wlSettings.password && wlSettings.password.length < 6) { // If password is provided, check length
+                newErrors.web_link_password = "Password must be at least 6 characters long.";
+            }
         }
-        const blocklist = parseIpListString(formData.settings.web_link.ipBlocklistString);
+
+        if (wlSettings.openDate && wlSettings.closeDate && new Date(wlSettings.openDate) >= new Date(wlSettings.closeDate)) {
+            newErrors.web_link_closeDate = "Close date must be after the open date.";
+        }
+        
+        const maxResponsesNum = parseInt(wlSettings.maxResponses, 10);
+        if (wlSettings.maxResponses !== '' && (isNaN(maxResponsesNum) || maxResponsesNum < 0)) { // Allow empty string for "0" or null
+            newErrors.web_link_maxResponses = "Max responses must be a non-negative number (or 0 for unlimited).";
+        }
+
+        // Basic IP validation (just checking for spaces as an example, more robust validation is complex)
+        const allowlist = parseIpListString(wlSettings.ipAllowlistString);
+        if (allowlist.some(ip => ip.includes(' '))) { // Example: disallow spaces within an IP entry
+            newErrors.web_link_ipAllowlistString = "IPs/CIDRs in allowlist should not contain spaces within an entry.";
+        }
+        const blocklist = parseIpListString(wlSettings.ipBlocklistString);
         if (blocklist.some(ip => ip.includes(' '))) {
-            newErrors.web_link_ipBlocklistString = "IPs in blocklist should not contain spaces.";
+            newErrors.web_link_ipBlocklistString = "IPs/CIDRs in blocklist should not contain spaces within an entry.";
         }
 
         setErrors(newErrors);
@@ -170,74 +207,82 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
             return;
         }
         setIsSaving(true);
-        setErrors({});
+        setErrors({}); // Clear previous errors
 
-        const parsedMaxResponses = parseInt(formData.settings.web_link.maxResponses, 10);
-        const maxResponsesToSend = (isNaN(parsedMaxResponses) || parsedMaxResponses <= 0) ? null : parsedMaxResponses;
+        const wlSettings = formData.settings.web_link;
+        const parsedMaxResponses = parseInt(wlSettings.maxResponses, 10);
 
-        const ipAllowlistArray = parseIpListString(formData.settings.web_link.ipAllowlistString);
-        const ipBlocklistArray = parseIpListString(formData.settings.web_link.ipBlocklistString);
+        const payloadSettingsWebLink = {
+            ...wlSettings, // Includes all boolean toggles, style, position
+            customSlug: wlSettings.customSlug ? wlSettings.customSlug.trim() : undefined, // Backend normalizes to lowercase
+            openDate: wlSettings.openDate ? new Date(wlSettings.openDate).toISOString() : null,
+            closeDate: wlSettings.closeDate ? new Date(wlSettings.closeDate).toISOString() : null,
+            maxResponses: (isNaN(parsedMaxResponses) || parsedMaxResponses <= 0) ? null : parsedMaxResponses,
+            // Password: send if protection enabled AND password is not empty.
+            // If protection enabled and password empty, backend should ideally not update it if editing, or error if new.
+            // Backend pre-save hook handles hashing or clearing.
+            password: wlSettings.passwordProtectionEnabled && wlSettings.password ? wlSettings.password : undefined,
+            passwordProtectionEnabled: wlSettings.passwordProtectionEnabled, // Send this explicitly
+            ipAllowlist: parseIpListString(wlSettings.ipAllowlistString),
+            ipBlocklist: parseIpListString(wlSettings.ipBlocklistString),
+        };
+        // Remove the temporary string versions from the payload
+        delete payloadSettingsWebLink.ipAllowlistString;
+        delete payloadSettingsWebLink.ipBlocklistString;
+        
+        // Handle saveAndContinueEnabled: send if not undefined
+        if (wlSettings.saveAndContinueEnabled === undefined) {
+            delete payloadSettingsWebLink.saveAndContinueEnabled;
+        }
+
 
         const payload = {
-            name: formData.name,
-            type: formData.type,
+            name: formData.name.trim(),
+            type: formData.type, // Currently fixed to web_link for this modal
             status: formData.status,
             settings: {
-                web_link: {
-                    ...formData.settings.web_link, // Includes allowBackButton, progressBarEnabled, progressBarStyle, progressBarPosition
-                    customSlug: formData.settings.web_link.customSlug || undefined,
-                    openDate: formData.settings.web_link.openDate ? new Date(formData.settings.web_link.openDate).toISOString() : null,
-                    closeDate: formData.settings.web_link.closeDate ? new Date(formData.settings.web_link.closeDate).toISOString() : null,
-                    maxResponses: maxResponsesToSend,
-                    password: formData.settings.web_link.passwordProtectionEnabled && formData.settings.web_link.password
-                                ? formData.settings.web_link.password
-                                : undefined,
-                    ipAllowlist: ipAllowlistArray,
-                    ipBlocklist: ipBlocklistArray,
-                }
+                web_link: payloadSettingsWebLink
             }
         };
-
-        if (!formData.settings.web_link.passwordProtectionEnabled) {
-             payload.settings.web_link.password = null;
-        }
-        delete payload.settings.web_link.ipAllowlistString;
-        delete payload.settings.web_link.ipBlocklistString;
-
-
+        
         try {
+            let responseData;
             if (isEditMode) {
-                await surveyApiFunctions.updateCollector(surveyId, existingCollector._id, payload);
+                const apiResponse = await surveyApiFunctions.updateCollector(surveyId, existingCollector._id, payload);
+                responseData = apiResponse.data; // Assuming API returns {success: true, data: collector}
                 toast.success("Collector updated successfully!");
             } else {
-                await surveyApiFunctions.createCollector(surveyId, payload);
+                const apiResponse = await surveyApiFunctions.createCollector(surveyId, payload);
+                responseData = apiResponse.data;
                 toast.success("Collector created successfully!");
             }
-            onSave();
+            onSave(responseData); // Pass back the full collector object
         } catch (error) {
             console.error("Error saving collector:", error.response?.data || error.message);
             const errorData = error.response?.data;
-            let errorMessage = `Failed to save collector: ${errorData?.message || error.message || 'Unknown server error'}`;
-            if (errorData && errorData.errors) {
-                const backendErrors = {};
-                 Object.entries(errorData.errors).forEach(([key, value]) => {
-                    const fieldKey = key.replace('settings.web_link.', 'web_link_');
-                    backendErrors[fieldKey] = value.message;
-                });
-                setErrors(backendErrors);
-                errorMessage = `Validation failed: ${errorData.message || "Please check the form fields."}`;
+            let displayErrorMessage = "Failed to save collector. Please try again.";
 
-            } else if (errorData && errorData.message) {
-                if (errorData.message.includes("custom slug is already in use") || (errorData.keyValue && errorData.keyValue['settings.web_link.customSlug'])) {
-                    setErrors(prev => ({ ...prev, web_link_customSlug: "This custom slug is already in use."}));
-                    errorMessage = "This custom slug is already in use.";
-                } else {
+            if (errorData) {
+                displayErrorMessage = errorData.message || displayErrorMessage;
+                if (errorData.errors) { // Handle specific field errors from backend validation
+                    const backendErrors = {};
+                    Object.entries(errorData.errors).forEach(([key, value]) => {
+                        const fieldKey = key.replace('settings.web_link.', 'web_link_'); // Adjust key for frontend state
+                        backendErrors[fieldKey] = value.message;
+                    });
+                    setErrors(prev => ({ ...prev, ...backendErrors }));
+                    displayErrorMessage = "Please correct the highlighted errors.";
+                } else if (errorData.message && errorData.message.toLowerCase().includes("custom slug is already in use")) {
+                    setErrors(prev => ({ ...prev, web_link_customSlug: "This custom slug is already in use." }));
+                    displayErrorMessage = "This custom slug is already in use.";
+                } else if (errorData.message) {
                      setErrors(prev => ({ ...prev, general: errorData.message }));
                 }
-            } else {
-                 setErrors(prev => ({ ...prev, general: errorMessage }));
+            } else if (error.message) {
+                displayErrorMessage = error.message;
+                 setErrors(prev => ({ ...prev, general: error.message }));
             }
-            toast.error(errorMessage);
+            toast.error(displayErrorMessage);
         } finally {
             setIsSaving(false);
         }
@@ -245,6 +290,7 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
 
     const renderError = (fieldName) => errors[fieldName] ? <p className={styles.errorMessage}>{errors[fieldName]}</p> : null;
 
+    // --- UI Rendering ---
     return (
         <div className={styles.modalOverlay}>
             <div className={styles.modal}>
@@ -253,102 +299,80 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                     <button onClick={onClose} className={styles.closeButton} disabled={isSaving}>&times;</button>
                 </div>
                 <form onSubmit={handleSubmit} className={styles.modalBody}>
+                    {/* General Info */}
                     <div className={styles.formGroup}>
                         <label htmlFor="name">Collector Name</label>
-                        <input type="text" id="name" name="name" value={formData.name} onChange={handleChange} className={errors.name ? styles.inputError : ""} disabled={isSaving}/>
+                        <input type="text" id="name" name="name" value={formData.name} onChange={handleChange} className={errors.name ? styles.inputError : ""} disabled={isSaving} required />
                         {renderError("name")}
                     </div>
-                    <div className={styles.formGroup}>
-                        <label htmlFor="type">Collector Type</label>
-                        <select id="type" name="type" value={formData.type} onChange={handleChange} disabled={isSaving || isEditMode}>
-                            <option value="web_link">Web Link</option>
-                        </select>
-                        {renderError("type")}
-                    </div>
+                    {/* Type is fixed to web_link for this modal for now */}
+                    {/* <input type="hidden" name="type" value={formData.type} /> */}
                     <div className={styles.formGroup}>
                         <label htmlFor="status">Status</label>
                         <select id="status" name="status" value={formData.status} onChange={handleChange} disabled={isSaving}>
                             <option value="draft">Draft (Not collecting responses yet)</option>
                             <option value="open">Open (Actively collecting responses)</option>
-                            <option value="closed">Closed (Manually stopped)</option>
+                            <option value="paused">Paused (Temporarily not collecting)</option>
+                            <option value="closed">Closed (Manually stopped collecting)</option>
                         </select>
                         {renderError("status")}
                     </div>
 
+                    {/* Web Link Specific Settings */}
                     {formData.type === 'web_link' && (
                         <fieldset className={styles.settingsFieldset}>
                             <legend>Web Link Settings</legend>
+
+                            {/* Display Generated Link */}
+                            <div className={styles.formGroup}>
+                                <label>Shareable Link (auto-generated)</label>
+                                {isEditMode && formData.linkId ? (
+                                    <div className={styles.shareLinkContainer}>
+                                        <input type="text" value={generatedLinkDisplay} readOnly className={styles.shareLinkInput} onClick={(e) => e.target.select()} />
+                                        <button type="button" className={`${styles.copyButton} button button-outline`} onClick={() => navigator.clipboard.writeText(generatedLinkDisplay)}>Copy</button>
+                                    </div>
+                                ) : (
+                                    <p className={styles.fieldDescription}><em>{generatedLinkDisplay}</em></p>
+                                )}
+                            </div>
+
                             <div className={styles.formGroup}>
                                 <label htmlFor="settings.web_link.customSlug">Custom URL Slug (Optional)</label>
-                                <input type="text" id="settings.web_link.customSlug" name="settings.web_link.customSlug" value={formData.settings.web_link.customSlug} onChange={handleChange} placeholder="e.g., my-survey-event" className={errors.web_link_customSlug ? styles.inputError : ""} disabled={isSaving} />
-                                <small className={styles.fieldDescription}>Unique identifier for the link. Letters, numbers, hyphens, underscores.</small>
+                                <div className={styles.slugInputContainer}>
+                                    <span className={styles.slugBaseUrl}>{shareableBaseUrl}</span>
+                                    <input
+                                        type="text"
+                                        id="settings.web_link.customSlug"
+                                        name="settings.web_link.customSlug"
+                                        value={formData.settings.web_link.customSlug}
+                                        onChange={handleChange}
+                                        placeholder="e.g., my-event-survey"
+                                        className={`${styles.slugInput} ${errors.web_link_customSlug ? styles.inputError : ""}`}
+                                        disabled={isSaving}
+                                    />
+                                </div>
+                                <small className={styles.fieldDescription}>Unique identifier for the link. Will be lowercase. {shareableBaseUrl}<strong>your-slug-here</strong></small>
                                 {renderError("web_link_customSlug")}
                             </div>
-
+                            
+                            {/* Password Protection */}
                             <div className={styles.formGroupCheckbox}>
-                                <input
-                                    type="checkbox"
-                                    id="settings.web_link.allowBackButton"
-                                    name="settings.web_link.allowBackButton"
-                                    checked={formData.settings.web_link.allowBackButton}
-                                    onChange={handleChange}
-                                    disabled={isSaving}
-                                />
-                                <label htmlFor="settings.web_link.allowBackButton">Allow "Back" Button for Respondents</label>
-                                <small className={styles.fieldDescription}>If checked, respondents can navigate to previous questions.</small>
-                                {renderError("web_link_allowBackButton")}
+                                <input type="checkbox" id="settings.web_link.passwordProtectionEnabled" name="settings.web_link.passwordProtectionEnabled" checked={formData.settings.web_link.passwordProtectionEnabled} onChange={handleChange} disabled={isSaving} />
+                                <label htmlFor="settings.web_link.passwordProtectionEnabled">Password Protect Survey Link</label>
                             </div>
-
-                            <div className={styles.formGroupCheckbox}>
-                                <input
-                                    type="checkbox"
-                                    id="settings.web_link.progressBarEnabled"
-                                    name="settings.web_link.progressBarEnabled"
-                                    checked={formData.settings.web_link.progressBarEnabled}
-                                    onChange={handleChange}
-                                    disabled={isSaving}
-                                />
-                                <label htmlFor="settings.web_link.progressBarEnabled">Enable Progress Bar</label>
-                                <small className={styles.fieldDescription}>Show respondents their progress through the survey.</small>
-                                {renderError("web_link_progressBarEnabled")}
-                            </div>
-
-                            {formData.settings.web_link.progressBarEnabled && (
-                                <>
-                                    <div className={styles.formGroup}>
-                                        <label htmlFor="settings.web_link.progressBarStyle">Progress Bar Style</label>
-                                        <select
-                                            id="settings.web_link.progressBarStyle"
-                                            name="settings.web_link.progressBarStyle"
-                                            value={formData.settings.web_link.progressBarStyle}
-                                            onChange={handleChange}
-                                            disabled={isSaving}
-                                        >
-                                            <option value="percentage">Percentage (e.g., 50% Complete)</option>
-                                            <option value="pages">Pages (e.g., Page 3 of 5)</option>
-                                        </select>
-                                        {renderError("web_link_progressBarStyle")}
-                                    </div>
-                                    {/* --- NEW: ProgressBar Position UI --- */}
-                                    <div className={styles.formGroup}>
-                                        <label htmlFor="settings.web_link.progressBarPosition">Progress Bar Position</label>
-                                        <select
-                                            id="settings.web_link.progressBarPosition"
-                                            name="settings.web_link.progressBarPosition"
-                                            value={formData.settings.web_link.progressBarPosition}
-                                            onChange={handleChange}
-                                            disabled={isSaving}
-                                        >
-                                            <option value="top">Top of Page</option>
-                                            <option value="bottom">Bottom of Page</option>
-                                        </select>
-                                        {renderError("web_link_progressBarPosition")}
-                                    </div>
-                                    {/* --- END NEW --- */}
-                                </>
+                            {formData.settings.web_link.passwordProtectionEnabled && (
+                                <div className={styles.formGroup}>
+                                    <label htmlFor="settings.web_link.password">Link Password {isEditMode && "(leave blank to keep current)"}</label>
+                                    <input type="text" /* Changed from password to text for better UX if user wants to see what they type, common for "set password" fields */
+                                        id="settings.web_link.password" name="settings.web_link.password"
+                                        value={formData.settings.web_link.password} onChange={handleChange}
+                                        className={errors.web_link_password ? styles.inputError : ""} disabled={isSaving}
+                                        placeholder={isEditMode ? "Enter new password or leave blank" : "Minimum 6 characters"} />
+                                    {renderError("web_link_password")}
+                                </div>
                             )}
-
-
+                            
+                            {/* Other settings from your existing form, ensure names match formData structure */}
                             <div className={styles.formGroup}>
                                 <label htmlFor="settings.web_link.openDate">Open Date (Optional)</label>
                                 <input type="datetime-local" id="settings.web_link.openDate" name="settings.web_link.openDate" value={formData.settings.web_link.openDate} onChange={handleChange} disabled={isSaving} />
@@ -364,56 +388,82 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
                                 <input type="number" id="settings.web_link.maxResponses" name="settings.web_link.maxResponses" value={formData.settings.web_link.maxResponses} onChange={handleChange} min="0" className={errors.web_link_maxResponses ? styles.inputError : ""} disabled={isSaving} />
                                 {renderError("web_link_maxResponses")}
                             </div>
+
                             <div className={styles.formGroupCheckbox}>
                                 <input type="checkbox" id="settings.web_link.allowMultipleResponses" name="settings.web_link.allowMultipleResponses" checked={formData.settings.web_link.allowMultipleResponses} onChange={handleChange} disabled={isSaving} />
                                 <label htmlFor="settings.web_link.allowMultipleResponses">Allow Multiple Responses per Respondent</label>
-                                <small className={styles.fieldDescription}>If unchecked, uses browser storage to attempt to prevent multiple submissions from the same browser.</small>
-                                {renderError("web_link_allowMultipleResponses")}
                             </div>
                             <div className={styles.formGroupCheckbox}>
                                 <input type="checkbox" id="settings.web_link.anonymousResponses" name="settings.web_link.anonymousResponses" checked={formData.settings.web_link.anonymousResponses} onChange={handleChange} disabled={isSaving}/>
                                 <label htmlFor="settings.web_link.anonymousResponses">Collect Anonymous Responses</label>
-                                <small className={styles.fieldDescription}>If checked, respondent's IP address and browser details will not be stored.</small>
-                                {renderError("web_link_anonymousResponses")}
                             </div>
-                            <div className={styles.formGroup}>
-                                <label htmlFor="settings.web_link.ipAllowlistString">IP Allowlist (Optional)</label>
-                                <textarea id="settings.web_link.ipAllowlistString" name="settings.web_link.ipAllowlistString" value={formData.settings.web_link.ipAllowlistString} onChange={handleChange} rows="3" placeholder="Enter one IP address or CIDR range per line (e.g., 192.168.1.100 or 10.0.0.0/24)" className={errors.web_link_ipAllowlistString ? styles.inputError : ""} disabled={isSaving}/>
-                                <small className={styles.fieldDescription}>If specified, only these IPs can access the survey. One entry per line or comma-separated.</small>
-                                {renderError("web_link_ipAllowlistString")}
-                            </div>
-                            <div className={styles.formGroup}>
-                                <label htmlFor="settings.web_link.ipBlocklistString">IP Blocklist (Optional)</label>
-                                <textarea id="settings.web_link.ipBlocklistString" name="settings.web_link.ipBlocklistString" value={formData.settings.web_link.ipBlocklistString} onChange={handleChange} rows="3" placeholder="Enter one IP address or CIDR range per line (e.g., 1.2.3.4 or 2001:db8::/32)" className={errors.web_link_ipBlocklistString ? styles.inputError : ""} disabled={isSaving} />
-                                <small className={styles.fieldDescription}>If specified, these IPs will be blocked. One entry per line or comma-separated. Allowlist takes precedence.</small>
-                                {renderError("web_link_ipBlocklistString")}
-                            </div>
-                            <div className={styles.formGroupCheckbox}>
-                                <input type="checkbox" id="settings.web_link.passwordProtectionEnabled" name="settings.web_link.passwordProtectionEnabled" checked={formData.settings.web_link.passwordProtectionEnabled} onChange={handleChange} disabled={isSaving} />
-                                <label htmlFor="settings.web_link.passwordProtectionEnabled">Password Protect Survey Link</label>
-                                {renderError("web_link_passwordProtectionEnabled")}
-                            </div>
-                            {formData.settings.web_link.passwordProtectionEnabled && (
-                                <div className={styles.formGroup}>
-                                    <label htmlFor="settings.web_link.password">Link Password {isEditMode && "(leave blank to keep current)"}</label>
-                                    <input type="text" id="settings.web_link.password" name="settings.web_link.password" value={formData.settings.web_link.password} onChange={handleChange} className={errors.web_link_password ? styles.inputError : ""} disabled={isSaving} placeholder={isEditMode ? "Enter new password or leave blank" : ""} />
-                                    {renderError("web_link_password")}
-                                </div>
-                            )}
                             <div className={styles.formGroupCheckbox}>
                                 <input type="checkbox" id="settings.web_link.enableRecaptcha" name="settings.web_link.enableRecaptcha" checked={formData.settings.web_link.enableRecaptcha} onChange={handleChange} disabled={isSaving} />
                                 <label htmlFor="settings.web_link.enableRecaptcha">Enable reCAPTCHA (Bot Protection)</label>
-                                <small className={styles.fieldDescription}>Helps prevent automated submissions.</small>
-                                {renderError("web_link_enableRecaptcha")}
+                            </div>
+                             <div className={styles.formGroupCheckbox}>
+                                <input type="checkbox" id="settings.web_link.allowBackButton" name="settings.web_link.allowBackButton" checked={formData.settings.web_link.allowBackButton} onChange={handleChange} disabled={isSaving} />
+                                <label htmlFor="settings.web_link.allowBackButton">Allow "Back" Button for Respondents</label>
+                            </div>
+                            <div className={styles.formGroupCheckbox}>
+                                <input type="checkbox" id="settings.web_link.progressBarEnabled" name="settings.web_link.progressBarEnabled" checked={formData.settings.web_link.progressBarEnabled} onChange={handleChange} disabled={isSaving} />
+                                <label htmlFor="settings.web_link.progressBarEnabled">Enable Progress Bar</label>
+                            </div>
+
+                            {formData.settings.web_link.progressBarEnabled && (
+                                <>
+                                    <div className={styles.formGroup}>
+                                        <label htmlFor="settings.web_link.progressBarStyle">Progress Bar Style</label>
+                                        <select id="settings.web_link.progressBarStyle" name="settings.web_link.progressBarStyle" value={formData.settings.web_link.progressBarStyle} onChange={handleChange} disabled={isSaving} >
+                                            <option value="percentage">Percentage</option>
+                                            <option value="pages">Pages</option>
+                                        </select>
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                        <label htmlFor="settings.web_link.progressBarPosition">Progress Bar Position</label>
+                                        <select id="settings.web_link.progressBarPosition" name="settings.web_link.progressBarPosition" value={formData.settings.web_link.progressBarPosition} onChange={handleChange} disabled={isSaving} >
+                                            <option value="top">Top</option>
+                                            <option value="bottom">Bottom</option>
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+                            
+                            {/* Save and Continue Enabled (Tristate) */}
+                            <div className={styles.formGroup}>
+                                <label htmlFor="settings.web_link.saveAndContinueEnabled">Save & Continue Later (Collector Setting)</label>
+                                <select 
+                                    id="settings.web_link.saveAndContinueEnabled"
+                                    name="settings.web_link.saveAndContinueEnabled" /* This name is for direct mapping if you change handleChange */
+                                    value={formData.settings.web_link.saveAndContinueEnabled === undefined ? "inherit" : String(formData.settings.web_link.saveAndContinueEnabled)}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        handleSaveAndContinueChange(val === "inherit" ? undefined : (val === "true"));
+                                    }}
+                                    disabled={isSaving}
+                                >
+                                    <option value="inherit">Inherit from Survey Setting</option>
+                                    <option value="true">Enable for this Collector</option>
+                                    <option value="false">Disable for this Collector</option>
+                                </select>
+                                <small className={styles.fieldDescription}>Overrides the survey-level "Save & Continue" setting for this specific link.</small>
+                            </div>
+
+
+                            <div className={styles.formGroup}>
+                                <label htmlFor="settings.web_link.ipAllowlistString">IP Allowlist (Optional, one per line/comma)</label>
+                                <textarea id="settings.web_link.ipAllowlistString" name="settings.web_link.ipAllowlistString" value={formData.settings.web_link.ipAllowlistString} onChange={handleChange} rows="3" placeholder="e.g., 192.168.1.100 or 10.0.0.0/24" className={errors.web_link_ipAllowlistString ? styles.inputError : ""} disabled={isSaving}/>
+                                {renderError("web_link_ipAllowlistString")}
                             </div>
                             <div className={styles.formGroup}>
-                                <label htmlFor="settings.web_link.recaptchaSiteKey">reCAPTCHA Site Key (Optional)</label>
-                                <input type="text" id="settings.web_link.recaptchaSiteKey" name="settings.web_link.recaptchaSiteKey" value={formData.settings.web_link.recaptchaSiteKey} onChange={handleChange} placeholder="Overrides global key if set" disabled={isSaving}/>
-                                <small className={styles.fieldDescription}>Leave blank to use the site-wide reCAPTCHA key.</small>
+                                <label htmlFor="settings.web_link.ipBlocklistString">IP Blocklist (Optional, one per line/comma)</label>
+                                <textarea id="settings.web_link.ipBlocklistString" name="settings.web_link.ipBlocklistString" value={formData.settings.web_link.ipBlocklistString} onChange={handleChange} rows="3" placeholder="e.g., 1.2.3.4 or 2001:db8::/32" className={errors.web_link_ipBlocklistString ? styles.inputError : ""} disabled={isSaving} />
+                                {renderError("web_link_ipBlocklistString")}
                             </div>
+                            {/* recaptchaSiteKey is usually global, not per collector normally */}
                         </fieldset>
                     )}
-                    {renderError("general")}
+                    {renderError("general")} {/* For general errors not tied to a field */}
 
                     <div className={styles.modalFooter}>
                         <button type="button" onClick={onClose} className="button button-secondary" disabled={isSaving}>
@@ -430,4 +480,4 @@ const CollectorFormModal = ({ isOpen, onClose, surveyId, existingCollector, onSa
 };
 
 export default CollectorFormModal;
-// ----- END OF COMPLETE MODIFIED FILE (v1.6 - Added ProgressBar Position UI) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.7 - Enhanced linkId/customSlug UI & saveAndContinue) -----
