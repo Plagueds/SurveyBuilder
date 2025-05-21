@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyBuildPage.js
-// ----- START OF COMPLETE UPDATED FILE (v1.8 - Added Debug Log for updateQuestion) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.9 - Integrate Survey Status in Settings Panel) -----
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { DndProvider } from 'react-dnd';
@@ -63,8 +63,7 @@ const SurveyBuildPage = () => {
         try {
             const surveyResponse = await surveyApi.getSurveyById(routeSurveyId);
             if (surveyResponse && surveyResponse.success && surveyResponse.data && surveyResponse.data._id) {
-                // <<< DEBUG LOG: Check fetched questions for originalIndex >>>
-                console.log("[SBP fetchSurveyData] Fetched survey data, questions:", JSON.stringify(surveyResponse.data.questions, null, 2));
+                console.log("[SBP fetchSurveyData] Fetched survey data (full):", JSON.stringify(surveyResponse.data, null, 2));
                 setSurvey(surveyResponse.data);
                 try {
                     const collectorsResponse = await surveyApi.getCollectorsForSurvey(routeSurveyId);
@@ -104,16 +103,12 @@ const SurveyBuildPage = () => {
         if (!survey?._id) { toast.error("Survey not loaded."); return; }
         setSaving(true);
         const payload = { ...newQuestionDataFromPanel, survey: survey._id };
-        delete payload._id; // Ensure no _id is sent for new question
-
-        // <<< DEBUG LOG for create >>>
+        delete payload._id;
         console.log("[SBP handleCreateQuestionFromPanel] Payload to API for create:", JSON.stringify(payload, null, 2));
-
         try {
             const response = await surveyApi.createQuestion(payload);
             if (response && response.success && response.data && response.data._id) {
                 const savedQuestion = response.data;
-                // <<< DEBUG LOG for create success >>>
                 console.log("[SBP handleCreateQuestionFromPanel] API response for create (savedQuestion):", JSON.stringify(savedQuestion, null, 2));
                 setSurvey(prevSurvey => ({
                     ...prevSurvey,
@@ -139,16 +134,12 @@ const SurveyBuildPage = () => {
         setSaving(true);
         const payload = { ...updates };
         delete payload._id;
-        delete payload.survey; // Survey ID should not be part of question update payload itself
-
-        // <<< DEBUG LOG 4 >>>
+        delete payload.survey;
         console.log("[SBP updateQuestion] Payload to API (updates from QEP):", JSON.stringify(payload, null, 2));
-
         try {
             const response = await surveyApi.updateQuestionContent(questionId, payload);
             if (response && response.success && response.data && response.data._id) {
                 const updatedQuestionFromApi = response.data;
-                // <<< DEBUG LOG 5 >>>
                 console.log("[SBP updateQuestion] API response for update (updatedQuestionFromApi):", JSON.stringify(updatedQuestionFromApi, null, 2));
                 setSurvey(prevSurvey => {
                     const updatedQuestions = (prevSurvey.questions || []).map(q =>
@@ -202,14 +193,11 @@ const SurveyBuildPage = () => {
             const reorderedQuestions = Array.from(prevSurvey.questions);
             const [removed] = reorderedQuestions.splice(dragIndex, 1);
             reorderedQuestions.splice(hoverIndex, 0, removed);
-            
-            // Update originalIndex after reordering
             const finalReorderedQuestions = reorderedQuestions.map((q, index) => ({
                 ...q,
                 originalIndex: index 
             }));
             console.log("[SBP moveQuestion] New question order with updated originalIndex:", JSON.stringify(finalReorderedQuestions.map(q => ({id: q._id, text: q.text, originalIndex: q.originalIndex})), null, 2));
-
             toast.info("Order changed. Click 'Save Survey Structure'.");
             return { ...prevSurvey, questions: finalReorderedQuestions };
         });
@@ -220,56 +208,32 @@ const SurveyBuildPage = () => {
         if (!survey.title?.trim()) { toast.error("Survey title cannot be empty."); return; }
         setSaving(true);
         
-        // Ensure questions sent to backend for survey update have correct originalIndex
-        const questionsWithUpdatedOrder = (survey.questions || []).map((q, index) => ({
-            ...q, // spread existing question data
-            _id: q._id, // ensure _id is present
-            originalIndex: index // explicitly set originalIndex based on current array order
+        // Ensure questions have updated originalIndex based on current order in local state
+        const questionsWithCorrectOrder = (survey.questions || []).map((q, index) => ({
+            ...q,
+            originalIndex: index
         }));
         
-        console.log("[SBP handleSaveSurvey] Questions being sent for survey update (structure save):", JSON.stringify(questionsWithUpdatedOrder.map(q=>({_id: q._id, originalIndex: q.originalIndex, text: q.text})), null, 2));
-
         const payload = {
-            title: survey.title.trim(), 
-            description: survey.description || '', 
-            status: survey.status || 'draft',
-            questions: questionsWithUpdatedOrder.map(q => q._id), // Send only IDs for structure update
-            // If backend expects full question objects for structure, send questionsWithUpdatedOrder
-            // For now, assuming /surveys/:surveyId (PATCH) might take full question objects if they are part of 'updates'
-            // but /surveys/:surveyId/structure (if it exists) would take array of IDs or objects with originalIndex.
-            // Let's assume the main PATCH /surveys/:surveyId handles full survey object updates.
-            // The `surveyApi.updateSurvey` calls `PATCH /surveys/:surveyId`.
-            // We need to ensure the questions within the survey object have the correct originalIndex.
-            
-            // Correct approach: update the survey state with questions that have correct originalIndex
-            // THEN send the whole survey state.
-            // The `moveQuestion` already updates the survey state with correct originalIndex.
-            // So, the `survey.questions` here should be correct.
-
-            globalSkipLogic: survey.globalSkipLogic || [], 
-            settings: survey.settings || {},
-            randomizationLogic: survey.randomizationLogic || {},
-            welcomeMessage: survey.welcomeMessage || { text: "Welcome to the survey!" },
-            thankYouMessage: survey.thankYouMessage || { text: "Thank you for completing the survey!" },
+            ...survey, // Spread existing survey data (like title, description, status, settings etc.)
+            questions: questionsWithCorrectOrder, // Override questions with the correctly ordered ones
         };
-        // Add the full question objects with updated originalIndex to the payload IF the backend expects it
-        // For now, assuming the survey object in state is the source of truth for questions.
-        payload.questions = survey.questions;
-
+        // Remove fields that backend might not expect or that are auto-managed (like collectors array here)
+        delete payload.collectors; 
+        
+        console.log("[SBP handleSaveSurvey] Payload for survey update:", JSON.stringify(payload, null, 2));
 
         try {
             const response = await surveyApi.updateSurvey(survey._id, payload); 
             if (response && response.success && response.data) {
                 const updatedApiSurvey = response.data;
-                // Ensure local state reflects the saved state, especially question order
                 const questionsFromApi = (updatedApiSurvey.questions && updatedApiSurvey.questions.length > 0 && typeof updatedApiSurvey.questions[0] === 'object')
-                                     ? updatedApiSurvey.questions.sort((a, b) => a.originalIndex - b.originalIndex) // Sort by originalIndex from API
+                                     ? updatedApiSurvey.questions.sort((a, b) => a.originalIndex - b.originalIndex)
                                      : (survey.questions || []).sort((a, b) => a.originalIndex - b.originalIndex);
                 setSurvey(prev => ({
                     ...prev, 
                     ...updatedApiSurvey, 
                     questions: questionsFromApi, 
-                    globalSkipLogic: updatedApiSurvey.globalSkipLogic || [], 
                 }));
                 toast.success('Survey structure saved successfully!');
             } else {
@@ -292,11 +256,28 @@ const SurveyBuildPage = () => {
         toast.info("Logic updated locally. Click 'Save Survey Structure'.");
     };
 
-    const handleSaveSettings = (updatedSettings) => {
-        setSurvey(prev => ({ ...prev, settings: updatedSettings }));
+    // MODIFIED: handleSaveSettings to accept updatedSurveyData
+    const handleSaveSettings = (updatedSurveyDataFromPanel) => {
+        console.log("[SBP handleSaveSettings] Received from panel:", JSON.stringify(updatedSurveyDataFromPanel, null, 2));
+        setSurvey(prevSurvey => {
+            const newSurveyState = { ...prevSurvey };
+            if (updatedSurveyDataFromPanel.hasOwnProperty('status')) {
+                newSurveyState.status = updatedSurveyDataFromPanel.status;
+            }
+            if (updatedSurveyDataFromPanel.hasOwnProperty('settings')) {
+                newSurveyState.settings = { 
+                    ...(prevSurvey.settings || {}), 
+                    ...updatedSurveyDataFromPanel.settings 
+                };
+            }
+            // If other top-level fields were part of updatedSurveyDataFromPanel, handle them too
+            // For now, assuming only status and settings object are passed.
+            return newSurveyState;
+        });
         setIsSettingsPanelOpen(false);
-        toast.info("Settings updated locally. Click 'Save Survey Structure'.");
+        toast.info("Settings (including status) updated locally. Click 'Save Survey Structure' to persist all survey changes.");
     };
+
 
     const handleOpenAddQuestionPanel = () => { setSelectedQuestionId(null); setShowAddQuestionPanel(true); };
     const handleQuestionClick = (id) => { setShowAddQuestionPanel(false); setSelectedQuestionId(id); };
@@ -420,7 +401,17 @@ const SurveyBuildPage = () => {
                     </div>
                 )}
 
-                {isSettingsPanelOpen && survey?._id && (<SurveySettingsPanel isOpen={isSettingsPanelOpen} onClose={() => setIsSettingsPanelOpen(false)} settings={survey.settings || {}} onSave={handleSaveSettings} surveyId={survey._id} />)}
+                {/* MODIFIED: Pass the whole survey object to initialSurveyData */}
+                {isSettingsPanelOpen && survey?._id && (
+                    <SurveySettingsPanel
+                        isOpen={isSettingsPanelOpen}
+                        onClose={() => setIsSettingsPanelOpen(false)}
+                        initialSurveyData={survey} // Pass the whole survey object
+                        onSave={handleSaveSettings} 
+                        surveyId={survey._id}
+                    />
+                )}
+
                 {isCollectorsPanelOpen && survey?._id && (<CollectorsPanel isOpen={isCollectorsPanelOpen} onClose={() => setIsCollectorsPanelOpen(false)} surveyId={survey._id} collectors={collectors} onCollectorsUpdate={() => {
                     toast.info("Refreshing collectors..."); setIsLoadingCollectors(true);
                     surveyApi.getCollectorsForSurvey(survey._id)
@@ -436,4 +427,4 @@ const SurveyBuildPage = () => {
     );
 };
 export default SurveyBuildPage;
-// ----- END OF COMPLETE UPDATED FILE (v1.8 - Added Debug Log for updateQuestion) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.9 - Integrate Survey Status in Settings Panel) -----
