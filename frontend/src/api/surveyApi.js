@@ -1,5 +1,5 @@
 // frontend/src/api/surveyApi.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext7 - Added Axios Interceptor Logging) -----
+// ----- START OF UPDATED FILE (vNext8 - Implemented updateQuestionContent) -----
 import axios from 'axios';
 
 const envApiBaseUrl = process.env.REACT_APP_API_BASE_URL;
@@ -51,18 +51,15 @@ apiClient.interceptors.request.use(
             config.headers['X-Survey-Password'] = config.surveyPassword;
         }
 
-        // +++ ADDED LOGGING FOR SUBMIT REQUESTS +++
-        // Check if config.url exists before trying to use .includes() or .endsWith()
-        const isSubmitRequest = config.url && 
-                                config.url.includes('/submit') && 
-                                config.method && 
+        const isSubmitRequest = config.url &&
+                                config.url.includes('/submit') &&
+                                config.method &&
                                 config.method.toLowerCase() === 'post';
 
         if (isSubmitRequest) {
             console.log('[AXIOS INTERCEPTOR - SUBMIT REQUEST DETAILS]');
             console.log('  Axios config.baseURL:', config.baseURL);
             console.log('  Axios config.url (path relative to baseURL):', config.url);
-            // Construct the full URL carefully, ensuring no double slashes if baseURL ends with / and url starts with /
             let fullUrl = config.baseURL;
             if (config.baseURL && config.baseURL.endsWith('/') && config.url && config.url.startsWith('/')) {
                 fullUrl = config.baseURL + config.url.substring(1);
@@ -75,8 +72,6 @@ apiClient.interceptors.request.use(
             console.log('  Axios config.method:', config.method);
             console.log('  Axios config.data (payload):', config.data);
         }
-        // +++ END ADDED LOGGING +++
-
         return config;
     },
     (error) => {
@@ -94,7 +89,6 @@ apiClient.interceptors.response.use(
                 console.warn('[surveyApi] Unauthorized (401) response. Token might be invalid or expired. Logging out.');
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
-                // Consider redirecting to login page: window.location.href = '/login';
             }
         }
         return Promise.reject(error);
@@ -111,10 +105,10 @@ const handleApiError = (error, functionName) => {
         }
     }
     const errToThrow = error.response?.data || error;
-    if (typeof errToThrow === 'string') { 
+    if (typeof errToThrow === 'string') {
         throw new Error(errToThrow);
     }
-    throw errToThrow; 
+    throw errToThrow;
 };
 
 // --- Survey Endpoints ---
@@ -139,12 +133,12 @@ const createSurvey = async (surveyData, options = {}) => {
 
 const getSurveyById = async (surveyId, options = {}) => {
     try {
-        const { signal, surveyPassword, ...queryParams } = options; 
-        const config = { 
-            params: queryParams, 
+        const { signal, surveyPassword, ...queryParams } = options;
+        const config = {
+            params: queryParams,
             signal: signal,
         };
-        if (surveyPassword) { 
+        if (surveyPassword) {
             config.surveyPassword = surveyPassword;
         }
         const response = await apiClient.get(`/surveys/${surveyId}`, config);
@@ -181,10 +175,42 @@ const deleteSurvey = async (surveyId, options = {}) => {
     }
 };
 
-// --- Question Endpoints (Placeholders - implement as needed) ---
-const createQuestion = async (questionData, options = {}) => { console.warn("createQuestion API not implemented"); return Promise.reject(new Error("Not implemented")); };
-const updateQuestionContent = async (questionId, updates, options = {}) => { console.warn("updateQuestionContent API not implemented"); return Promise.reject(new Error("Not implemented")); };
-const deleteQuestionById = async (questionId, options = {}) => { console.warn("deleteQuestionById API not implemented"); return Promise.reject(new Error("Not implemented")); };
+// --- Question Endpoints ---
+// MODIFIED: Implemented createQuestion
+const createQuestion = async (questionData, options = {}) => {
+    try {
+        // The surveyId should be part of questionData if it's to be associated
+        // The backend controller for createQuestion expects 'survey' field in req.body
+        const response = await apiClient.post('/questions', questionData, { signal: options.signal });
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'createQuestion');
+    }
+};
+
+// MODIFIED: Implemented updateQuestionContent
+const updateQuestionContent = async (questionId, updates, options = {}) => {
+    try {
+        // Using PATCH as it's for partial updates to a resource.
+        // The backend route is router.patch('/:id', questionController.updateQuestion);
+        const response = await apiClient.patch(`/questions/${questionId}`, updates, { signal: options.signal });
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, `updateQuestionContent (${questionId})`);
+    }
+};
+
+// MODIFIED: Implemented deleteQuestionById
+const deleteQuestionById = async (questionId, options = {}) => {
+    try {
+        // The backend route is router.delete('/:id', questionController.deleteQuestion);
+        const response = await apiClient.delete(`/questions/${questionId}`, { signal: options.signal });
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, `deleteQuestionById (${questionId})`);
+    }
+};
+
 
 // --- Survey Submission and Results Endpoints ---
 const submitSurveyAnswers = async (surveyId, submissionData, options = {}) => {
@@ -199,13 +225,13 @@ const submitSurveyAnswers = async (surveyId, submissionData, options = {}) => {
 const savePartialResponse = async (surveyId, partialData, options = {}) => {
     try {
         const response = await apiClient.post(`/surveys/${surveyId}/save-partial`, partialData, { signal: options.signal });
-        return response.data; 
+        return response.data;
     } catch (error) {
         return handleApiError(error, `savePartialResponse (${surveyId})`);
     }
 };
 
-const getSurveyResults = async (surveyId, options = {}) => { 
+const getSurveyResults = async (surveyId, options = {}) => {
     try {
         const { signal, ...queryParams } = options;
         const response = await apiClient.get(`/surveys/${surveyId}/results`, { params: queryParams, signal: signal });
@@ -214,11 +240,11 @@ const getSurveyResults = async (surveyId, options = {}) => {
         return handleApiError(error, `getSurveyResults (${surveyId})`);
     }
 };
-const exportSurveyResults = async (surveyId, options = {}) => { 
+const exportSurveyResults = async (surveyId, options = {}) => {
     try {
         const { signal, format = 'csv', ...queryParams } = options;
-        const response = await apiClient.get(`/surveys/${surveyId}/export`, { 
-            params: { ...queryParams, format }, 
+        const response = await apiClient.get(`/surveys/${surveyId}/export`, {
+            params: { ...queryParams, format },
             signal: signal,
             responseType: format.toLowerCase() === 'csv' ? 'blob' : 'json'
         });
@@ -235,13 +261,13 @@ const exportSurveyResults = async (surveyId, options = {}) => {
 const loginUser = async (credentials, options = {}) => {
     try {
         const response = await apiClient.post('/auth/login', credentials, { signal: options.signal });
-        if (response.data.token) { 
+        if (response.data.token) {
             localStorage.setItem('token', response.data.token);
             if (response.data.user) {
                 localStorage.setItem('user', JSON.stringify(response.data.user));
             }
         }
-        return response.data; 
+        return response.data;
     } catch (error) {
         return handleApiError(error, 'loginUser');
     }
@@ -269,9 +295,9 @@ const logoutUser = () => {
 
 const getMe = async (options = {}) => {
     try {
-        const { signal, ...queryParams } = options; 
+        const { signal, ...queryParams } = options;
         const response = await apiClient.get('/auth/me', { params: queryParams, signal: signal });
-        return response.data; 
+        return response.data;
     } catch (error) {
         return handleApiError(error, 'getMe');
     }
@@ -321,9 +347,9 @@ const accessPublicSurvey = async (accessIdentifier, password = null, options = {
         const publicAccessClient = axios.create({ baseURL: effectivePublicAccessRootUrl });
         const config = { signal: options.signal };
         const payload = password ? { password } : {};
-        
+
         console.log(`[surveyApi] Calling POST ${effectivePublicAccessRootUrl}/s/${accessIdentifier}`);
-        const response = await publicAccessClient.post(`/s/${accessIdentifier}`, payload, config); 
+        const response = await publicAccessClient.post(`/s/${accessIdentifier}`, payload, config);
         return response.data;
     } catch (error) {
         if (axios.isCancel(error) || error.name === 'AbortError') {
@@ -340,13 +366,13 @@ const accessPublicSurvey = async (accessIdentifier, password = null, options = {
 
 
 const surveyApiFunctions = {
-    getAllSurveys, createSurvey, getSurveyById, 
-    updateSurvey, 
-    updateSurveyStructure, 
+    getAllSurveys, createSurvey, getSurveyById,
+    updateSurvey,
+    updateSurveyStructure,
     deleteSurvey,
-    createQuestion, updateQuestionContent, deleteQuestionById,
-    submitSurveyAnswers, 
-    savePartialResponse, 
+    createQuestion, updateQuestionContent, deleteQuestionById, // These are now implemented
+    submitSurveyAnswers,
+    savePartialResponse,
     getSurveyResults, exportSurveyResults,
     loginUser, registerUser, logoutUser, getMe,
     getCollectorsForSurvey, createCollector, updateCollector, deleteCollector,
@@ -354,4 +380,4 @@ const surveyApiFunctions = {
 };
 
 export default surveyApiFunctions;
-// ----- END OF COMPLETE MODIFIED FILE (vNext7 - Added Axios Interceptor Logging) -----
+// ----- END OF UPDATED FILE (vNext8 - Implemented updateQuestionContent) -----
