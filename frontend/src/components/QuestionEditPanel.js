@@ -1,5 +1,5 @@
 // frontend/src/components/QuestionEditPanel.js
-// ----- START OF COMPLETE UPDATED FILE (v11.5 - Enhanced Conjoint Save Logging) -----
+// ----- START OF COMPLETE UPDATED FILE (v11.6 - Ensure originalIndex for updates) -----
 import React, { useState, useEffect, useCallback } from 'react';
 import styles from './QuestionEditPanel.module.css';
 
@@ -23,9 +23,8 @@ const TEXT_INPUT_TYPES = ['text', 'textarea'];
 function QuestionEditPanel({
     questionData, mode, onSave, onCancel, isSaving,
     allQuestions = [],
-    questionIndex = -1
+    questionIndex = -1 // This is the display index in the list, used for UI like "#1"
 }) {
-    // console.log("[QEP v11.5] Rendering. Mode:", mode, "Q Index:", questionIndex);
     const [activeTab, setActiveTab] = useState('content');
 
     const getInitialState = useCallback(() => {
@@ -43,18 +42,26 @@ function QuestionEditPanel({
 
         let initialConjointNumTasks = questionData?.conjointNumTasks;
         if (typeof initialConjointNumTasks !== 'number' || initialConjointNumTasks < 1) {
-            initialConjointNumTasks = 5; 
+            initialConjointNumTasks = 5;
         }
         let initialConjointProfilesPerTask = questionData?.conjointProfilesPerTask;
         if (typeof initialConjointProfilesPerTask !== 'number' || initialConjointProfilesPerTask < 2) {
-            initialConjointProfilesPerTask = 3; 
+            initialConjointProfilesPerTask = 3;
         }
+        
+        // *** CRUCIAL: Ensure originalIndex is part of the initial state for editing ***
+        // When adding (mode === 'add'), originalIndex might be set by the backend or based on list length.
+        // For editing, it MUST come from questionData.
+        const initialOriginalIndex = typeof questionData?.originalIndex === 'number'
+            ? questionData.originalIndex
+            : undefined; // For 'add' mode, this will be undefined, backend will handle it.
 
         return {
             _id: questionData?._id || null,
-            survey: questionData?.survey || '',
+            survey: questionData?.survey || '', // survey ID association
             text: questionData?.text || '',
             type: currentType,
+            originalIndex: initialOriginalIndex, // <<<--- MODIFIED: Ensure this is initialized
             options: initialOptions,
             rows: currentType === 'textarea' ? (questionData?.rows || 4) : 4,
             addOtherOption: allowNAOther ? (questionData?.addOtherOption || false) : false,
@@ -70,6 +77,7 @@ function QuestionEditPanel({
             sliderMaxLabel: questionData?.sliderMaxLabel || '',
             imageUrl: questionData?.imageUrl || '',
             heatmapMaxClicks: questionData?.heatmapMaxClicks ?? '',
+            definedHeatmapAreas: ensureArray(questionData?.definedHeatmapAreas),
             maxDiffItemsPerSet: questionData?.maxDiffItemsPerSet || 4,
             conjointAttributes: ensureArray(questionData?.conjointAttributes).map(attr => ({ name: attr?.name || '', levels: ensureArray(attr?.levels) })),
             conjointProfilesPerTask: initialConjointProfilesPerTask,
@@ -93,7 +101,7 @@ function QuestionEditPanel({
             minAnswersRequired: initialMinRequired,
             textValidation: allowTextOptions ? (questionData?.textValidation || 'none') : 'none',
         };
-    }, [questionData]);
+    }, [questionData]); // questionData is the key dependency for initial state
 
     const [questionState, setQuestionState] = useState(getInitialState);
     const [errors, setErrors] = useState({});
@@ -108,8 +116,11 @@ function QuestionEditPanel({
         setCurrentAttributeName('');
         setCurrentAttributeLevels('');
         setActiveTab('content');
-    }, [questionData, mode, getInitialState]);
+    }, [questionData, mode, getInitialState]); // mode is included here if it influences re-initialization
 
+    // ... (handleChange, handleNumberChange, handleListItemChange, etc. from your v11.5 remain the same) ...
+    // Ensure these handlers do NOT inadvertently clear or modify `originalIndex` unless intended.
+    // The current spread operator usage `...prevState` should preserve it.
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
         const isCheckbox = type === 'checkbox';
@@ -125,6 +136,7 @@ function QuestionEditPanel({
             const newType = value;
             setQuestionState(prevState => {
                 let newState = { ...prevState, type: newType };
+                // ... (rest of your type change logic from v11.5)
                 if (newType !== 'checkbox') { newState.limitAnswers = false; newState.limitAnswersMax = ''; newState.minAnswersRequired = ''; }
                 const wasOptionBased = OPTION_BASED_TYPES.includes(prevState.type); const isOptionBased = OPTION_BASED_TYPES.includes(newType);
                 const wasCardSort = prevState.type === CARD_SORT_TYPE; const isCardSort = newType === CARD_SORT_TYPE;
@@ -175,7 +187,7 @@ function QuestionEditPanel({
     const handleNumberChange = (e) => {
         const { name, value } = e.target;
         setQuestionState(prevState => {
-            let updatedState = { ...prevState, [name]: value }; // value is string here
+            let updatedState = { ...prevState, [name]: value }; 
             if (name === 'limitAnswersMax') { const maxNum = Number(value); if (value === '' || isNaN(maxNum) || maxNum < 1) { updatedState.limitAnswers = false; } }
             return updatedState;
         });
@@ -194,6 +206,9 @@ function QuestionEditPanel({
     const handleCancelEditAttribute = () => { setEditingAttributeIndex(null); setCurrentAttributeName(''); setCurrentAttributeLevels(''); };
 
     const validate = useCallback((stateToValidate = questionState) => {
+        // ... (validation logic from v11.5 remains the same) ...
+        // Ensure that originalIndex is not accidentally validated here unless necessary
+        // The backend handles its 'required' nature.
         const newErrors = {};
         const safeAllQuestions = Array.isArray(allQuestions) ? allQuestions : [];
         const currentQActualIndex = mode === 'edit' && stateToValidate._id ? safeAllQuestions.findIndex(q => q._id === stateToValidate._id) : (mode === 'add' ? safeAllQuestions.length : -1);
@@ -215,10 +230,8 @@ function QuestionEditPanel({
         else if (currentType === 'conjoint') {
             const validAttributes = ensureArray(stateToValidate.conjointAttributes).filter(attr => attr.name?.trim() && ensureArray(attr.levels).filter(l => l?.trim()).length >= 2);
             if (validAttributes.length < 1) newErrors.conjoint = 'At least one valid attribute (name + >= 2 levels) is required.';
-            
             const profilesPerTask = Number(stateToValidate.conjointProfilesPerTask); 
             if (isNaN(profilesPerTask) || profilesPerTask < 2) newErrors.conjoint = (newErrors.conjoint ? newErrors.conjoint + ' ' : '') + 'Profiles per task must be at least 2.';
-            
             const numTasks = Number(stateToValidate.conjointNumTasks); 
             if (isNaN(numTasks) || numTasks < 1) newErrors.conjoint = (newErrors.conjoint ? newErrors.conjoint + ' ' : '') + 'Number of tasks must be at least 1.';
         }
@@ -228,15 +241,29 @@ function QuestionEditPanel({
         const previousQuestions = currentQActualIndex > 0 ? safeAllQuestions.slice(0, currentQActualIndex) : []; const previousQuestionIdsSet = new Set(previousQuestions.map(q => q._id)); const validSourceIdsSet = new Set(previousQuestions.filter(q => PIPING_REPEAT_SOURCE_TYPES.includes(q.type)).map(q => q._id));
         if (stateToValidate.pipeOptionsFromQuestionId || stateToValidate.repeatForEachOptionFromQuestionId) { if (stateToValidate.pipeOptionsFromQuestionId && !previousQuestionIdsSet.has(stateToValidate.pipeOptionsFromQuestionId)) newErrors.pipeOptionsFromQuestionId = 'Piping source question invalid or after current.'; else if (stateToValidate.pipeOptionsFromQuestionId && !validSourceIdsSet.has(stateToValidate.pipeOptionsFromQuestionId)) newErrors.pipeOptionsFromQuestionId = 'Piping source question type incompatible.'; if (stateToValidate.repeatForEachOptionFromQuestionId && !previousQuestionIdsSet.has(stateToValidate.repeatForEachOptionFromQuestionId)) newErrors.repeatForEachOptionFromQuestionId = 'Repeating source question invalid or after current.'; else if (stateToValidate.repeatForEachOptionFromQuestionId && !validSourceIdsSet.has(stateToValidate.repeatForEachOptionFromQuestionId)) newErrors.repeatForEachOptionFromQuestionId = 'Repeating source question type incompatible.'; }
         setErrors(newErrors); return Object.keys(newErrors).length === 0;
-    }, [allQuestions, mode]); // Removed questionState from dependency array as stateToValidate is passed directly
+    }, [allQuestions, mode, questionState]); // questionState is a dependency here for default validation
 
     const handleSave = (e) => {
         e.preventDefault();
         if (editingAttributeIndex !== null) { alert("Please save or cancel the current Conjoint attribute before saving the question."); return; }
         
         let stateToSave = { ...questionState };
-        console.log("[QEP SAVE] Initial stateToSave.conjointNumTasks:", stateToSave.conjointNumTasks, "(type:", typeof stateToSave.conjointNumTasks + ")");
+        // Ensure originalIndex is present for updates
+        if (mode === 'edit' && typeof stateToSave.originalIndex !== 'number') {
+            // This should ideally not happen if getInitialState is correct,
+            // but as a safeguard or if it's managed differently:
+            const existingQuestion = allQuestions.find(q => q._id === stateToSave._id);
+            if (existingQuestion && typeof existingQuestion.originalIndex === 'number') {
+                stateToSave.originalIndex = existingQuestion.originalIndex;
+            } else {
+                // Fallback, though this indicates a deeper issue if originalIndex is lost
+                console.warn("[QEP SAVE] originalIndex missing for an edit operation. This might cause backend validation failure.");
+                // Do not assign a default here, let backend validation catch it if truly missing.
+            }
+        }
 
+
+        // ... (rest of your handleSave data cleaning logic from v11.5) ...
         const fieldsToFilter = ['options', 'matrixRows', 'matrixColumns', 'cardSortCategories'];
         fieldsToFilter.forEach(field => { if (stateToSave[field]) { stateToSave[field] = ensureArray(stateToSave[field]).filter(item => item?.trim() !== ''); } });
         if (stateToSave.conjointAttributes) { stateToSave.conjointAttributes = ensureArray(stateToSave.conjointAttributes).map(attr => ({ name: attr.name, levels: ensureArray(attr.levels).filter(l => l?.trim() !== '') })).filter(attr => attr.name?.trim() && attr.levels.length >= 2); }
@@ -253,22 +280,12 @@ function QuestionEditPanel({
         if (stateToSave.type === 'conjoint') {
             let numTasksRaw = stateToSave.conjointNumTasks;
             let numTasksVal = Number(numTasksRaw);
-            console.log(`[QEP SAVE] Conjoint - numTasksRaw: "${numTasksRaw}", numTasksVal (after Number()): ${numTasksVal}`);
-            if (isNaN(numTasksVal) || numTasksVal < 1) {
-                console.log(`[QEP SAVE] Conjoint - numTasksVal is invalid (${numTasksVal}), defaulting to 5.`);
-                numTasksVal = 5; 
-            }
+            if (isNaN(numTasksVal) || numTasksVal < 1) numTasksVal = 5; 
             stateToSave.conjointNumTasks = numTasksVal;
-
             let profilesRaw = stateToSave.conjointProfilesPerTask;
             let profilesVal = Number(profilesRaw);
-            console.log(`[QEP SAVE] Conjoint - profilesRaw: "${profilesRaw}", profilesVal (after Number()): ${profilesVal}`);
-            if (isNaN(profilesVal) || profilesVal < 2) {
-                console.log(`[QEP SAVE] Conjoint - profilesVal is invalid (${profilesVal}), defaulting to 3.`);
-                profilesVal = 3; 
-            }
+            if (isNaN(profilesVal) || profilesVal < 2) profilesVal = 3; 
             stateToSave.conjointProfilesPerTask = profilesVal;
-            console.log(`[QEP SAVE] Conjoint - Sanitized: conjointNumTasks=${stateToSave.conjointNumTasks}, conjointProfilesPerTask=${stateToSave.conjointProfilesPerTask}`);
         } else { 
             delete stateToSave.conjointNumTasks;
             delete stateToSave.conjointProfilesPerTask;
@@ -294,11 +311,19 @@ function QuestionEditPanel({
             stateToSave.minAnswersRequired = null; 
         }
         
-        console.log("[QEP SAVE] State prepared for validation. conjointNumTasks:", stateToSave.conjointNumTasks);
-        if (validate(stateToSave)) { 
-            console.log("[QEP SAVE] Validation passed. Final conjointNumTasks before sending:", stateToSave.conjointNumTasks);
+        if (validate(stateToSave)) {
             let payload = { ...stateToSave };
-            if (mode === 'edit') delete payload.survey; 
+            if (mode === 'edit') {
+                delete payload.survey; // survey field should not be updated for an existing question via this panel
+            } else { // 'add' mode
+                // For adding, originalIndex might be determined by the backend based on current question count for the survey
+                // Or, if you want frontend to suggest it:
+                // payload.originalIndex = allQuestions.length; // Simple append
+                // It's often safer to let backend handle initial originalIndex for new questions.
+                // If it's already in stateToSave (e.g. from a default), it will be sent.
+                // If `initialOriginalIndex` was undefined for 'add' mode, `payload.originalIndex` will be undefined.
+                // The backend createQuestion should then assign it.
+            }
 
             if (payload.type === 'slider') { payload.sliderMin = Number(payload.sliderMin); payload.sliderMax = Number(payload.sliderMax); payload.sliderStep = Number(payload.sliderStep); }
             if (payload.type === 'maxdiff') payload.maxDiffItemsPerSet = Number(payload.maxDiffItemsPerSet);
@@ -306,14 +331,21 @@ function QuestionEditPanel({
             
             if (payload.minAnswersRequired === null) delete payload.minAnswersRequired;
             if (payload.limitAnswersMax === null) delete payload.limitAnswersMax;
-            if (payload.limitAnswers === false) delete payload.limitAnswers; 
+            if (payload.limitAnswers === false) delete payload.limitAnswers;
             if (payload.heatmapMaxClicks === null) delete payload.heatmapMaxClicks;
             if (payload.pipeOptionsFromQuestionId === null || payload.pipeOptionsFromQuestionId === '') delete payload.pipeOptionsFromQuestionId;
             if (payload.repeatForEachOptionFromQuestionId === null || payload.repeatForEachOptionFromQuestionId === '') delete payload.repeatForEachOptionFromQuestionId;
             
+            // Remove originalIndex for 'add' mode if it's undefined, let backend set it.
+            // For 'edit' mode, it MUST be present.
+            if (mode === 'add' && payload.originalIndex === undefined) {
+                delete payload.originalIndex;
+            }
+
             console.log("[QEP SAVE] Final payload for onSave:", JSON.stringify(payload, null, 2));
             onSave(payload);
         } else {
+            // ... (error focusing logic from v11.5) ...
             console.log("[QEP SAVE] Validation failed. Current errors:", JSON.stringify(errors, null, 2));
             const currentErrors = errors; const firstErrorKey = Object.keys(currentErrors)[0];
             const errorKeyToFocus = currentErrors.answerRequirements ? 'minAnswersRequired' : (currentErrors.conjoint ? 'conjointNumTasks' : firstErrorKey); 
@@ -324,9 +356,13 @@ function QuestionEditPanel({
         }
     };
 
+    // ... (renderDynamicList and pipingSourceCandidates from v11.5) ...
     const renderDynamicList = (fieldName, label, placeholderPrefix, errorKey, minItems = 1, addButtonText = '+ Add Item') => { const list = ensureArray(questionState[fieldName]); return ( <div className={styles.dynamicListContainer}> <label className={styles.formLabel}>{label}:</label> {errors[errorKey] && <div className={`${styles.invalidFeedback} d-block mb-2`}>{errors[errorKey]}</div>} {list.map((item, index) => ( <div key={index} className={styles.dynamicListItem}> <input type="text" value={item} onChange={(e) => handleListItemChange(fieldName, index, e.target.value)} className={`${styles.formControl} ${styles.dynamicListInput} ${errors[errorKey] ? styles.isInvalid : ''}`} placeholder={`${placeholderPrefix} ${index + 1}`} /> {list.length > minItems && ( <button type="button" onClick={() => removeListItem(fieldName, index)} className={`button button-danger button-small ${styles.dynamicListRemoveButton}`} title={`Remove ${placeholderPrefix}`}> &times; </button> )} </div> ))} <button type="button" onClick={() => addListItem(fieldName)} className={`button button-secondary button-small ${styles.dynamicListAddButton}`}> {addButtonText} </button> </div> ); };
     const pipingSourceCandidates = useCallback(() => { const safeAllQuestions = Array.isArray(allQuestions) ? allQuestions : []; if (mode === 'add') { return safeAllQuestions.filter(q => PIPING_REPEAT_SOURCE_TYPES.includes(q.type)); } else { if (questionIndex >= 0 && questionIndex < safeAllQuestions.length) { return safeAllQuestions.slice(0, questionIndex).filter(q => PIPING_REPEAT_SOURCE_TYPES.includes(q.type)); } if (questionData?._id) { const actualIdx = safeAllQuestions.findIndex(q => q._id === questionData._id); return actualIdx > 0 ? safeAllQuestions.slice(0, actualIdx).filter(q => PIPING_REPEAT_SOURCE_TYPES.includes(q.type)) : []; } return []; } }, [allQuestions, mode, questionIndex, questionData?._id]);
 
+
+    // --- JSX Rendering ---
+    // ... (Your JSX from v11.5 remains the same, it uses questionState which now includes originalIndex) ...
     if (mode === 'edit' && !questionData) { return ( <div className={styles.questionEditPanel} style={{ padding: '20px', border: '1px solid red' }}> <p style={{ color: 'red', fontWeight: 'bold' }}>Error: No question data provided for editing.</p> <button type="button" onClick={onCancel} className="button button-secondary">Close</button> </div> ); }
     const isLimitAnswersMaxValidPositive = questionState.limitAnswersMax !== '' && !isNaN(Number(questionState.limitAnswersMax)) && Number(questionState.limitAnswersMax) > 0;
 
@@ -336,7 +372,9 @@ function QuestionEditPanel({
             <div className={styles.panelTabs}><button onClick={() => setActiveTab('content')} className={`${styles.panelTabButton} ${activeTab === 'content' ? styles.active : ''}`}>Content</button><button onClick={() => setActiveTab('logic')} className={`${styles.panelTabButton} ${activeTab === 'logic' ? styles.active : ''}`}>Logic</button><button onClick={() => setActiveTab('piping')} className={`${styles.panelTabButton} ${activeTab === 'piping' ? styles.active : ''}`}>Piping/Repeat</button><button onClick={() => setActiveTab('validation')} className={`${styles.panelTabButton} ${activeTab === 'validation' ? styles.active : ''}`}>Validation</button></div>
             {questionState ? (
                 <div className={styles.panelContent}>
+                     {/* Content Tab */}
                      <div className={`${styles.panelTabContent} ${activeTab === 'content' ? styles.active : ''}`}>
+                        {/* ... (all your content tab fields from v11.5) ... */}
                         <div className={styles.formGroup}><label htmlFor="questionText" className={styles.formLabel}>Question Text:</label><textarea id="questionText" name="text" value={questionState.text || ''} onChange={handleChange} className={`${styles.formControl} ${errors.text ? styles.isInvalid : ''}`} rows="3" required />{errors.text && <div className={styles.invalidFeedback}>{errors.text}</div>}</div>
                         <div className={styles.formGroup}><label htmlFor="questionType" className={styles.formLabel}>Question Type:</label><select id="questionType" name="type" value={questionState.type || 'text'} onChange={handleChange} className={styles.formControl}><option value="text">Single-Line Text</option><option value="textarea">Multi-Line Text</option><option value="multiple-choice">Multiple Choice</option><option value="checkbox">Checkbox</option><option value="dropdown">Dropdown</option><option value="rating">Rating (1-5)</option><option value="nps">NPS (0-10)</option><option value="matrix">Matrix / Grid</option><option value="slider">Slider</option><option value="ranking">Ranking Order</option><option value="heatmap">Image Heatmap</option><option value="maxdiff">MaxDiff (Best/Worst)</option><option value="conjoint">Conjoint Task</option><option value="cardsort">Card Sorting Task</option></select></div>
                         {questionState.type === 'textarea' && ( <div className={styles.formGroup}><label htmlFor="questionRows" className={styles.formLabel}>Number of Rows:</label><input type="number" id="questionRows" name="rows" value={questionState.rows} onChange={handleNumberChange} className={`${styles.formControl} ${errors.rows ? styles.isInvalid : ''}`} min="1" step="1" placeholder="e.g., 4" />{errors.rows && <div className={styles.invalidFeedback}>{errors.rows}</div>}</div> )}
@@ -345,35 +383,16 @@ function QuestionEditPanel({
                         {questionState.type === 'slider' && ( <>{errors.slider && <div className={`${styles.invalidFeedback} d-block mb-2`}>{errors.slider}</div>}<div className={styles.sliderControls}><div className={styles.formGroup}><label htmlFor="sliderMin" className={styles.formLabel}>Min:</label><input type="number" id="sliderMin" name="sliderMin" value={questionState.sliderMin} onChange={handleNumberChange} className={`${styles.formControl} ${errors.slider ? styles.isInvalid : ''}`} /></div><div className={styles.formGroup}><label htmlFor="sliderMax" className={styles.formLabel}>Max:</label><input type="number" id="sliderMax" name="sliderMax" value={questionState.sliderMax} onChange={handleNumberChange} className={`${styles.formControl} ${errors.slider ? styles.isInvalid : ''}`} /></div><div className={styles.formGroup}><label htmlFor="sliderStep" className={styles.formLabel}>Step:</label><input type="number" id="sliderStep" name="sliderStep" value={questionState.sliderStep} onChange={handleNumberChange} className={`${styles.formControl} ${errors.slider ? styles.isInvalid : ''}`} step="any" min="0.01"/></div></div><div className={styles.sliderLabels}><div className={styles.formGroup}><label htmlFor="sliderMinLabel" className={styles.formLabel}>Min Label:</label><input type="text" id="sliderMinLabel" name="sliderMinLabel" value={questionState.sliderMinLabel} onChange={handleChange} className={styles.formControl} /></div><div className={styles.formGroup}><label htmlFor="sliderMaxLabel" className={styles.formLabel}>Max Label:</label><input type="text" id="sliderMaxLabel" name="sliderMaxLabel" value={questionState.sliderMaxLabel} onChange={handleChange} className={styles.formControl} /></div></div></> )}
                         {questionState.type === 'heatmap' && ( <><div className={styles.formGroup}><label htmlFor="imageUrl" className={styles.formLabel}>Image URL:</label><input type="url" id="imageUrl" name="imageUrl" value={questionState.imageUrl || ''} onChange={handleChange} className={`${styles.formControl} ${errors.imageUrl ? styles.isInvalid : ''}`} placeholder="https://..." required />{errors.imageUrl && <div className={styles.invalidFeedback}>{errors.imageUrl}</div>}</div><div className={styles.formGroup}><label htmlFor="heatmapMaxClicks" className={styles.formLabel}>Max Clicks:</label><input type="number" id="heatmapMaxClicks" name="heatmapMaxClicks" value={questionState.heatmapMaxClicks} onChange={handleNumberChange} className={`${styles.formControl} ${errors.heatmapMaxClicks ? styles.isInvalid : ''}`} min="0" step="1" placeholder="Blank=unlimited"/>{errors.heatmapMaxClicks && <div className={styles.invalidFeedback}>{errors.heatmapMaxClicks}</div>}</div></> )}
                         {questionState.type === 'maxdiff' && ( <div className={styles.formGroup}><label htmlFor="maxDiffItemsPerSet" className={styles.formLabel}>Items per Task:</label><input type="number" id="maxDiffItemsPerSet" name="maxDiffItemsPerSet" value={questionState.maxDiffItemsPerSet} onChange={handleNumberChange} className={styles.formControl} min="2" step="1"/></div> )}
-                        {questionState.type === 'conjoint' && (
-                            <>
-                                {errors.conjoint && <div className={`${styles.invalidFeedback} d-block mb-2`}>{errors.conjoint}</div>}
-                                <div className={styles.conjointAttributesSection}>
-                                    <h4>Attributes & Levels</h4>
-                                    {ensureArray(questionState.conjointAttributes).map((attr, index) => ( <div key={index} className={styles.conjointAttributeItem}><span><strong>{attr.name || `Attr ${index + 1}`}</strong>: {ensureArray(attr.levels).join(', ')}</span><div className={styles.conjointAttributeControls}><button type="button" onClick={() => handleEditAttribute(index)} className="button button-secondary button-small">Edit</button><button type="button" onClick={() => handleRemoveAttribute(index)} className="button button-danger button-small">Remove</button></div></div> ))}
-                                    <button type="button" onClick={handleAddNewAttribute} className="button button-secondary button-small mt-2">+ Add Attribute</button>
-                                </div>
-                                {editingAttributeIndex !== null && ( <div className={styles.conjointAttributeModal}><h5>{editingAttributeIndex === -1 ? 'Add' : 'Edit'} Attribute</h5><div className={styles.formGroup}><label>Name:</label><input type="text" value={currentAttributeName} onChange={(e) => setCurrentAttributeName(e.target.value)} className={styles.formControl} /></div><div className={styles.formGroup}><label>Levels (one per line):</label><textarea value={currentAttributeLevels} onChange={(e) => setCurrentAttributeLevels(e.target.value)} className={styles.formControl} rows="4" /></div><div className={styles.conjointAttributeModalFooter}><button type="button" onClick={handleCancelEditAttribute} className="button button-secondary">Cancel</button><button type="button" onClick={handleSaveAttribute} className="button button-primary">Save</button></div></div> )}
-                                <div className={styles.formGroup}>
-                                    <label htmlFor="conjointProfilesPerTask" className={styles.formLabel}>Profiles per Task:</label>
-                                    <input type="number" id="conjointProfilesPerTask" name="conjointProfilesPerTask" value={questionState.conjointProfilesPerTask} onChange={handleNumberChange} className={`${styles.formControl} ${errors.conjoint ? styles.isInvalid : ''}`} min="2" step="1"/>
-                                </div>
-                                <div className={styles.formGroup}>
-                                    <label htmlFor="conjointNumTasks" className={styles.formLabel}>Number of Tasks:</label>
-                                    <input type="number" id="conjointNumTasks" name="conjointNumTasks" value={questionState.conjointNumTasks} onChange={handleNumberChange} className={`${styles.formControl} ${errors.conjoint ? styles.isInvalid : ''}`} min="1" step="1"/>
-                                </div>
-                                <div className={styles.formCheck}>
-                                    <input className={styles.formCheckInput} type="checkbox" id="conjointIncludeNoneOption" name="conjointIncludeNoneOption" checked={!!questionState.conjointIncludeNoneOption} onChange={handleChange} />
-                                    <label className={styles.formCheckLabel} htmlFor="conjointIncludeNoneOption"> Include "None of these" option in tasks </label>
-                                </div>
-                            </>
-                        )}
+                        {questionState.type === 'conjoint' && ( /* ... Conjoint JSX from v11.5 ... */ <> {errors.conjoint && <div className={`${styles.invalidFeedback} d-block mb-2`}>{errors.conjoint}</div>} <div className={styles.conjointAttributesSection}> <h4>Attributes & Levels</h4> {ensureArray(questionState.conjointAttributes).map((attr, index) => ( <div key={index} className={styles.conjointAttributeItem}><span><strong>{attr.name || `Attr ${index + 1}`}</strong>: {ensureArray(attr.levels).join(', ')}</span><div className={styles.conjointAttributeControls}><button type="button" onClick={() => handleEditAttribute(index)} className="button button-secondary button-small">Edit</button><button type="button" onClick={() => handleRemoveAttribute(index)} className="button button-danger button-small">Remove</button></div></div> ))} <button type="button" onClick={handleAddNewAttribute} className="button button-secondary button-small mt-2">+ Add Attribute</button> </div> {editingAttributeIndex !== null && ( <div className={styles.conjointAttributeModal}><h5>{editingAttributeIndex === -1 ? 'Add' : 'Edit'} Attribute</h5><div className={styles.formGroup}><label>Name:</label><input type="text" value={currentAttributeName} onChange={(e) => setCurrentAttributeName(e.target.value)} className={styles.formControl} /></div><div className={styles.formGroup}><label>Levels (one per line):</label><textarea value={currentAttributeLevels} onChange={(e) => setCurrentAttributeLevels(e.target.value)} className={styles.formControl} rows="4" /></div><div className={styles.conjointAttributeModalFooter}><button type="button" onClick={handleCancelEditAttribute} className="button button-secondary">Cancel</button><button type="button" onClick={handleSaveAttribute} className="button button-primary">Save</button></div></div> )} <div className={styles.formGroup}> <label htmlFor="conjointProfilesPerTask" className={styles.formLabel}>Profiles per Task:</label> <input type="number" id="conjointProfilesPerTask" name="conjointProfilesPerTask" value={questionState.conjointProfilesPerTask} onChange={handleNumberChange} className={`${styles.formControl} ${errors.conjoint ? styles.isInvalid : ''}`} min="2" step="1"/> </div> <div className={styles.formGroup}> <label htmlFor="conjointNumTasks" className={styles.formLabel}>Number of Tasks:</label> <input type="number" id="conjointNumTasks" name="conjointNumTasks" value={questionState.conjointNumTasks} onChange={handleNumberChange} className={`${styles.formControl} ${errors.conjoint ? styles.isInvalid : ''}`} min="1" step="1"/> </div> <div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="conjointIncludeNoneOption" name="conjointIncludeNoneOption" checked={!!questionState.conjointIncludeNoneOption} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="conjointIncludeNoneOption"> Include "None of these" option in tasks </label> </div> </> )}
                         {questionState.type === CARD_SORT_TYPE && ( <>{renderDynamicList('options', 'Card Items', 'Card', 'cardsToSort', 1, '+ Add Card Item')}{renderDynamicList('cardSortCategories', 'Predefined Categories (Optional)', 'Category', 'cardSortCategories', 0, '+ Add Category')}<div className={styles.formCheck}><input className={styles.formCheckInput} type="checkbox" id="cardSortAllowUserCategories" name="cardSortAllowUserCategories" checked={!!questionState.cardSortAllowUserCategories} onChange={handleChange} /><label className={styles.formCheckLabel} htmlFor="cardSortAllowUserCategories"> Allow user categories </label></div></> )}
                         {SPECIAL_OPTION_TYPES_WITH_NA_OTHER.includes(questionState.type) && ( <div className={styles.specialOptions}><div className={styles.formCheck}><input className={styles.formCheckInput} type="checkbox" id="addOtherOption" name="addOtherOption" checked={!!questionState.addOtherOption} onChange={handleChange} /><label className={styles.formCheckLabel} htmlFor="addOtherOption"> Add "Other"</label></div>{questionState.addOtherOption && ( <div className={`${styles.formCheck} ${styles.subOption}`}><input className={styles.formCheckInput} type="checkbox" id="requireOtherIfSelected" name="requireOtherIfSelected" checked={!!questionState.requireOtherIfSelected} onChange={handleChange} /><label className={styles.formCheckLabel} htmlFor="requireOtherIfSelected"> Require text if "Other" selected</label></div> )}<div className={styles.formCheck}><input className={styles.formCheckInput} type="checkbox" id="addNAOption" name="addNAOption" checked={!!questionState.addNAOption} onChange={handleChange} /><label className={styles.formCheckLabel} htmlFor="addNAOption"> Add "N/A"</label></div></div> )}
                     </div>
-                     <div className={`${styles.panelTabContent} ${activeTab === 'logic' ? styles.active : ''}`}> <div className={styles.logicSection}><h4>Visibility & Behavior</h4>{HIDE_AFTER_ANSWERING_TYPES.includes(questionState.type) && ( <div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="hideAfterAnswering" name="hideAfterAnswering" checked={!!questionState.hideAfterAnswering} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="hideAfterAnswering"> Hide after answering </label> </div> )}<div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="hideByDefault" name="hideByDefault" checked={!!questionState.hideByDefault} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="hideByDefault"> Hide by default </label> </div><div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="showOnlyToAdmin" name="showOnlyToAdmin" checked={!!questionState.showOnlyToAdmin} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="showOnlyToAdmin"> Show only to admin </label> </div></div> <div className={styles.logicSection}><h4>Disable Question</h4><div className={`${styles.formCheck} ${styles.formCheckInline}`}> <input className={styles.formCheckInput} type="radio" name="isDisabled" id="isDisabledYes" value="true" checked={questionState.isDisabled === true} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="isDisabledYes">Yes</label> </div><div className={`${styles.formCheck} ${styles.formCheckInline}`}> <input className={styles.formCheckInput} type="radio" name="isDisabled" id="isDisabledNo" value="false" checked={questionState.isDisabled === false} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="isDisabledNo">No</label> </div><div><small className="text-muted">Visible but cannot be answered.</small></div></div> <div className={styles.logicSection}><h4>Question Randomization</h4><div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="randomizationAlwaysInclude" name="randomizationAlwaysInclude" checked={!!questionState.randomizationAlwaysInclude} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="randomizationAlwaysInclude"> Always include in random sets </label> </div><div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="randomizationPinPosition" name="randomizationPinPosition" checked={!!questionState.randomizationPinPosition} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="randomizationPinPosition"> Pin position during shuffling </label> </div></div> {RANDOMIZATION_SUPPORTING_TYPES.includes(questionState.type) && ( <div className={styles.logicSection}> <h4>Option Randomization</h4> <div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="randomizeOptions" name="randomizeOptions" checked={!!questionState.randomizeOptions} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="randomizeOptions"> Randomize option order </label> {errors.randomizeOptions && <div className={styles.invalidFeedback}>{errors.randomizeOptions}</div>} </div> </div> )} </div>
-                    <div className={`${styles.panelTabContent} ${activeTab === 'piping' ? styles.active : ''}`} id="piping-repeat-section"> <div className={styles.logicSummary}> <h4>Current Piping/Repeating:</h4> {questionState.pipeOptionsFromQuestionId ? ( <p>Options piped from: "{findQuestionTextById(questionState.pipeOptionsFromQuestionId, allQuestions)}".</p> ) : ( <p>Option Piping: None</p> )} {questionState.repeatForEachOptionFromQuestionId ? ( <p>Repeats for each from: "{findQuestionTextById(questionState.repeatForEachOptionFromQuestionId, allQuestions)}".</p> ) : ( <p>Question Repeating: None</p> )} </div> <div className={styles.pipingSection}> <h4>Option Piping</h4> <p><small>Populate options from a previous question.</small></p> {!PIPING_TARGET_TYPES.includes(questionState.type) && <p className="text-muted"><small>Not available for this question type.</small></p>} {PIPING_TARGET_TYPES.includes(questionState.type) && ( <div className={styles.formGroup}> <label htmlFor="pipeOptionsFromQuestionId" className={styles.formLabel}>Pipe Options From:</label> <select id="pipeOptionsFromQuestionId" name="pipeOptionsFromQuestionId" value={questionState.pipeOptionsFromQuestionId || ''} onChange={handleChange} className={`${styles.formControl} ${errors.pipeOptionsFromQuestionId ? styles.isInvalid : ''}`} disabled={pipingSourceCandidates().length === 0}> <option value="">-- None --</option> {pipingSourceCandidates().map((q) => ( <option key={q._id} value={q._id}> {allQuestions.findIndex(aq => aq._id === q._id) + 1}. {truncateText(q.text)} ({getQuestionTypeLabel(q.type)}) </option> ))} {pipingSourceCandidates().length === 0 && <option value="" disabled>No compatible previous questions</option>} </select> {errors.pipeOptionsFromQuestionId && <div className={styles.invalidFeedback}>{errors.pipeOptionsFromQuestionId}</div>} <small className="text-muted">Source: MC, Checkbox, Dropdown.</small> </div> )} </div> <hr className={styles.pipingDivider} /> <div className={styles.pipingSection}> <h4>Question Repeating</h4> <p><small>Repeat this question for each selected option.</small></p> <div className={styles.formGroup}> <label htmlFor="repeatForEachOptionFromQuestionId" className={styles.formLabel}>Repeat For Each Option From:</label> <select id="repeatForEachOptionFromQuestionId" name="repeatForEachOptionFromQuestionId" value={questionState.repeatForEachOptionFromQuestionId || ''} onChange={handleChange} className={`${styles.formControl} ${errors.repeatForEachOptionFromQuestionId ? styles.isInvalid : ''}`} disabled={pipingSourceCandidates().length === 0}> <option value="">-- None --</option> {pipingSourceCandidates().map((q) => ( <option key={q._id} value={q._id}> {allQuestions.findIndex(aq => aq._id === q._id) + 1}. {truncateText(q.text)} ({getQuestionTypeLabel(q.type)}) </option> ))} {pipingSourceCandidates().length === 0 && <option value="" disabled>No compatible previous questions</option>} </select> {errors.repeatForEachOptionFromQuestionId && <div className={styles.invalidFeedback}>{errors.repeatForEachOptionFromQuestionId}</div>} <small className="text-muted">Source: MC, Checkbox, Dropdown.</small> </div> </div> </div>
-                    <div className={`${styles.panelTabContent} ${activeTab === 'validation' ? styles.active : ''}`}> <div className={styles.validationSection}> <h4>Required Setting</h4> <select name="requiredSetting" value={questionState.requiredSetting} onChange={handleChange} className={`${styles.formControl} ${errors.requiredSetting ? styles.isInvalid : ''}`}> <option value="not_required">Not Required</option> <option value="required">Required</option> <option value="soft_required">Soft Required</option> </select> {errors.requiredSetting && <div className={styles.invalidFeedback}>{errors.requiredSetting}</div>} </div> {TEXT_INPUT_TYPES.includes(questionState.type) && ( <div className={styles.validationSection}> <h4>Text Input Validation</h4> <select name="textValidation" value={questionState.textValidation} onChange={handleChange} className={`${styles.formControl} ${errors.textValidation ? styles.isInvalid : ''}`}> <option value="none">None</option> <option value="email">Email Address</option> <option value="numeric">Numeric</option> </select> {errors.textValidation && <div className={styles.invalidFeedback}>{errors.textValidation}</div>} </div> )} {questionState.type === 'checkbox' && ( <div className={styles.validationSection}> <h4>Checkbox Answer Limits</h4> {errors.answerRequirements && <div className={`${styles.invalidFeedback} d-block mb-2`}>{errors.answerRequirements}</div>} <div className={styles.answerRequirementsGroup}> <div className={styles.answerRequirementRow}> <label htmlFor="minAnswersRequired" className={styles.formLabel}>Min Answers:</label> <input type="number" id="minAnswersRequired" name="minAnswersRequired" value={questionState.minAnswersRequired} onChange={handleNumberChange} className={`${styles.formControl} ${errors.answerRequirements ? styles.isInvalid : ''}`} min="0" step="1" placeholder="e.g., 1 (0=none)" /> </div> <div className={styles.answerRequirementRow}> <label htmlFor="limitAnswersMax" className={styles.formLabel}>Max Answers:</label> <input type="number" id="limitAnswersMax" name="limitAnswersMax" value={questionState.limitAnswersMax} onChange={handleNumberChange} className={`${styles.formControl} ${errors.answerRequirements ? styles.isInvalid : ''}`} min="1" step="1" placeholder="e.g., 3" /> <div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="limitAnswers" name="limitAnswers" checked={!!questionState.limitAnswers} onChange={handleChange} disabled={!isLimitAnswersMaxValidPositive} /> <label className={styles.formCheckLabel} htmlFor="limitAnswers"> Enforce Max Limit </label> </div> </div> </div> </div> )} {TEXT_INPUT_TYPES.includes(questionState.type) && ( <div className={styles.validationSection}> <h4>Answer Formatting</h4> <div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="answerFormatCapitalization" name="answerFormatCapitalization" checked={!!questionState.answerFormatCapitalization} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="answerFormatCapitalization"> Force Uppercase </label> </div> </div> )} </div>
+                    {/* Logic Tab */}
+                    <div className={`${styles.panelTabContent} ${activeTab === 'logic' ? styles.active : ''}`}> {/* ... Logic tab JSX from v11.5 ... */}<div className={styles.logicSection}><h4>Visibility & Behavior</h4>{HIDE_AFTER_ANSWERING_TYPES.includes(questionState.type) && ( <div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="hideAfterAnswering" name="hideAfterAnswering" checked={!!questionState.hideAfterAnswering} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="hideAfterAnswering"> Hide after answering </label> </div> )}<div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="hideByDefault" name="hideByDefault" checked={!!questionState.hideByDefault} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="hideByDefault"> Hide by default </label> </div><div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="showOnlyToAdmin" name="showOnlyToAdmin" checked={!!questionState.showOnlyToAdmin} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="showOnlyToAdmin"> Show only to admin </label> </div></div> <div className={styles.logicSection}><h4>Disable Question</h4><div className={`${styles.formCheck} ${styles.formCheckInline}`}> <input className={styles.formCheckInput} type="radio" name="isDisabled" id="isDisabledYes" value="true" checked={questionState.isDisabled === true} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="isDisabledYes">Yes</label> </div><div className={`${styles.formCheck} ${styles.formCheckInline}`}> <input className={styles.formCheckInput} type="radio" name="isDisabled" id="isDisabledNo" value="false" checked={questionState.isDisabled === false} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="isDisabledNo">No</label> </div><div><small className="text-muted">Visible but cannot be answered.</small></div></div> <div className={styles.logicSection}><h4>Question Randomization</h4><div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="randomizationAlwaysInclude" name="randomizationAlwaysInclude" checked={!!questionState.randomizationAlwaysInclude} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="randomizationAlwaysInclude"> Always include in random sets </label> </div><div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="randomizationPinPosition" name="randomizationPinPosition" checked={!!questionState.randomizationPinPosition} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="randomizationPinPosition"> Pin position during shuffling </label> </div></div> {RANDOMIZATION_SUPPORTING_TYPES.includes(questionState.type) && ( <div className={styles.logicSection}> <h4>Option Randomization</h4> <div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="randomizeOptions" name="randomizeOptions" checked={!!questionState.randomizeOptions} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="randomizeOptions"> Randomize option order </label> {errors.randomizeOptions && <div className={styles.invalidFeedback}>{errors.randomizeOptions}</div>} </div> </div> )} </div>
+                    {/* Piping/Repeat Tab */}
+                    <div className={`${styles.panelTabContent} ${activeTab === 'piping' ? styles.active : ''}`} id="piping-repeat-section"> {/* ... Piping tab JSX from v11.5 ... */} <div className={styles.logicSummary}> <h4>Current Piping/Repeating:</h4> {questionState.pipeOptionsFromQuestionId ? ( <p>Options piped from: "{findQuestionTextById(questionState.pipeOptionsFromQuestionId, allQuestions)}".</p> ) : ( <p>Option Piping: None</p> )} {questionState.repeatForEachOptionFromQuestionId ? ( <p>Repeats for each from: "{findQuestionTextById(questionState.repeatForEachOptionFromQuestionId, allQuestions)}".</p> ) : ( <p>Question Repeating: None</p> )} </div> <div className={styles.pipingSection}> <h4>Option Piping</h4> <p><small>Populate options from a previous question.</small></p> {!PIPING_TARGET_TYPES.includes(questionState.type) && <p className="text-muted"><small>Not available for this question type.</small></p>} {PIPING_TARGET_TYPES.includes(questionState.type) && ( <div className={styles.formGroup}> <label htmlFor="pipeOptionsFromQuestionId" className={styles.formLabel}>Pipe Options From:</label> <select id="pipeOptionsFromQuestionId" name="pipeOptionsFromQuestionId" value={questionState.pipeOptionsFromQuestionId || ''} onChange={handleChange} className={`${styles.formControl} ${errors.pipeOptionsFromQuestionId ? styles.isInvalid : ''}`} disabled={pipingSourceCandidates().length === 0}> <option value="">-- None --</option> {pipingSourceCandidates().map((q) => ( <option key={q._id} value={q._id}> {allQuestions.findIndex(aq => aq._id === q._id) + 1}. {truncateText(q.text)} ({getQuestionTypeLabel(q.type)}) </option> ))} {pipingSourceCandidates().length === 0 && <option value="" disabled>No compatible previous questions</option>} </select> {errors.pipeOptionsFromQuestionId && <div className={styles.invalidFeedback}>{errors.pipeOptionsFromQuestionId}</div>} <small className="text-muted">Source: MC, Checkbox, Dropdown.</small> </div> )} </div> <hr className={styles.pipingDivider} /> <div className={styles.pipingSection}> <h4>Question Repeating</h4> <p><small>Repeat this question for each selected option.</small></p> <div className={styles.formGroup}> <label htmlFor="repeatForEachOptionFromQuestionId" className={styles.formLabel}>Repeat For Each Option From:</label> <select id="repeatForEachOptionFromQuestionId" name="repeatForEachOptionFromQuestionId" value={questionState.repeatForEachOptionFromQuestionId || ''} onChange={handleChange} className={`${styles.formControl} ${errors.repeatForEachOptionFromQuestionId ? styles.isInvalid : ''}`} disabled={pipingSourceCandidates().length === 0}> <option value="">-- None --</option> {pipingSourceCandidates().map((q) => ( <option key={q._id} value={q._id}> {allQuestions.findIndex(aq => aq._id === q._id) + 1}. {truncateText(q.text)} ({getQuestionTypeLabel(q.type)}) </option> ))} {pipingSourceCandidates().length === 0 && <option value="" disabled>No compatible previous questions</option>} </select> {errors.repeatForEachOptionFromQuestionId && <div className={styles.invalidFeedback}>{errors.repeatForEachOptionFromQuestionId}</div>} <small className="text-muted">Source: MC, Checkbox, Dropdown.</small> </div> </div> </div>
+                    {/* Validation Tab */}
+                    <div className={`${styles.panelTabContent} ${activeTab === 'validation' ? styles.active : ''}`}> {/* ... Validation tab JSX from v11.5 ... */} <div className={styles.validationSection}> <h4>Required Setting</h4> <select name="requiredSetting" value={questionState.requiredSetting} onChange={handleChange} className={`${styles.formControl} ${errors.requiredSetting ? styles.isInvalid : ''}`}> <option value="not_required">Not Required</option> <option value="required">Required</option> <option value="soft_required">Soft Required</option> {/* <option value="conditional">Conditional</option> Removed for now */} </select> {errors.requiredSetting && <div className={styles.invalidFeedback}>{errors.requiredSetting}</div>} </div> {TEXT_INPUT_TYPES.includes(questionState.type) && ( <div className={styles.validationSection}> <h4>Text Input Validation</h4> <select name="textValidation" value={questionState.textValidation} onChange={handleChange} className={`${styles.formControl} ${errors.textValidation ? styles.isInvalid : ''}`}> <option value="none">None</option> <option value="email">Email Address</option> <option value="numeric">Numeric</option> </select> {errors.textValidation && <div className={styles.invalidFeedback}>{errors.textValidation}</div>} </div> )} {questionState.type === 'checkbox' && ( <div className={styles.validationSection}> <h4>Checkbox Answer Limits</h4> {errors.answerRequirements && <div className={`${styles.invalidFeedback} d-block mb-2`}>{errors.answerRequirements}</div>} <div className={styles.answerRequirementsGroup}> <div className={styles.answerRequirementRow}> <label htmlFor="minAnswersRequired" className={styles.formLabel}>Min Answers:</label> <input type="number" id="minAnswersRequired" name="minAnswersRequired" value={questionState.minAnswersRequired} onChange={handleNumberChange} className={`${styles.formControl} ${errors.answerRequirements ? styles.isInvalid : ''}`} min="0" step="1" placeholder="e.g., 1 (0=none)" /> </div> <div className={styles.answerRequirementRow}> <label htmlFor="limitAnswersMax" className={styles.formLabel}>Max Answers:</label> <input type="number" id="limitAnswersMax" name="limitAnswersMax" value={questionState.limitAnswersMax} onChange={handleNumberChange} className={`${styles.formControl} ${errors.answerRequirements ? styles.isInvalid : ''}`} min="1" step="1" placeholder="e.g., 3" /> <div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="limitAnswers" name="limitAnswers" checked={!!questionState.limitAnswers} onChange={handleChange} disabled={!isLimitAnswersMaxValidPositive} /> <label className={styles.formCheckLabel} htmlFor="limitAnswers"> Enforce Max Limit </label> </div> </div> </div> </div> )} {TEXT_INPUT_TYPES.includes(questionState.type) && ( <div className={styles.validationSection}> <h4>Answer Formatting</h4> <div className={styles.formCheck}> <input className={styles.formCheckInput} type="checkbox" id="answerFormatCapitalization" name="answerFormatCapitalization" checked={!!questionState.answerFormatCapitalization} onChange={handleChange} /> <label className={styles.formCheckLabel} htmlFor="answerFormatCapitalization"> Force Uppercase </label> </div> </div> )} </div>
                 </div>
             ) : ( <div className={styles.panelContent}><p>Initializing panel...</p></div> )}
             <div className={styles.panelFooter}><button type="button" onClick={onCancel} className="button button-secondary" disabled={isSaving}>Cancel</button><button type="button" onClick={handleSave} className="button button-primary" disabled={isSaving}>{isSaving ? 'Saving...' : (mode === 'add' ? 'Add Question' : 'Save Changes')}</button></div>
@@ -382,4 +401,4 @@ function QuestionEditPanel({
 }
 
 export default QuestionEditPanel;
-// ----- END OF COMPLETE MODIFIED FILE (v11.5 - Enhanced Conjoint Save Logging) -----
+// ----- END OF COMPLETE UPDATED FILE (v11.6 - Ensure originalIndex for updates) -----
