@@ -303,6 +303,52 @@
 .validationModalButton:hover {
     background-color: var(--primary-color-dark, #0056b3);
 }
+.modalActions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.resumeCodeDisplayContainer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* Puts code on left, button on right */
+  padding: 10px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  margin-top: 5px;
+  margin-bottom: 10px;
+}
+
+.resumeCodeDisplay {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.1em;
+  word-break: break-all; /* If code is very long */
+}
+
+.copyCodeButton {
+  padding: 6px 10px;
+  margin-left: 10px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.copyCodeButton:hover {
+  background-color: #0056b3;
+}
+
+.emailInputForReminder {
+    width: 100%;
+    padding: 8px;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-top: 5px;
+}
 
 /* ----- END OF NEW STYLES FOR VALIDATION MODAL ----- */
 /* Removed .debugInfo styles */
