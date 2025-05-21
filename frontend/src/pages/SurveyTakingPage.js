@@ -1,11 +1,11 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF UPDATED FILE (v1.3 - Fix isPreviewMode and ESLint warning) -----
+// ----- START OF UPDATED FILE (v1.4 - "Other" Validation Modal) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
-import ReCAPTCHA from "react-google-recaptcha"; 
+import ReCAPTCHA from "react-google-recaptcha";
 import { toast } from 'react-toastify';
-import surveyApi from '../api/surveyApi'; 
+import surveyApi from '../api/surveyApi';
 import styles from './SurveyTakingPage.module.css';
 
 // ... (all your question component imports remain the same) ...
@@ -28,10 +28,10 @@ import TextAreaQuestion from '../components/survey_question_renders/TextAreaQues
 const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : []));
 
 const formatQuestionNumber = (index, format, customPrefix) => {
-    const number = index + 1; 
+    const number = index + 1;
     switch (format) {
-        case 'abc': return String.fromCharCode(96 + number); 
-        case 'ABC': return String.fromCharCode(64 + number); 
+        case 'abc': return String.fromCharCode(96 + number);
+        case 'ABC': return String.fromCharCode(64 + number);
         case 'roman':
             const romanMap = { M: 1000, CM: 900, D: 500, CD: 400, C: 100, XC: 90, L: 50, XL: 40, X: 10, IX: 9, V: 5, IV: 4, I: 1 };
             let roman = '';
@@ -42,7 +42,7 @@ const formatQuestionNumber = (index, format, customPrefix) => {
                     num -= romanMap[key];
                 }
             }
-            return roman || String(number); 
+            return roman || String(number);
         case 'custom':
             return `${customPrefix || ''}${number}`;
         case '123':
@@ -64,15 +64,15 @@ function SurveyTakingPage() {
     const [originalQuestions, setOriginalQuestions] = useState([]);
     const [currentAnswers, setCurrentAnswers] = useState({});
     const [otherInputValues, setOtherInputValues] = useState({});
-    
+
     const [isLoadingSurvey, setIsLoadingSurvey] = useState(true);
     const [surveyError, setSurveyError] = useState(null);
-    
-    const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0); 
-    const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]); 
+
+    const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0);
+    const [visibleQuestionIndices, setVisibleQuestionIndices] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [submissionError, setSubmissionError] = useState(null); 
-    
+    const [submissionError, setSubmissionError] = useState(null);
+
     const [currentResumeToken, setCurrentResumeToken] = useState(routeResumeToken);
     const [isSavingAndContinueLater, setIsSavingAndContinueLater] = useState(false);
     const [showResumeCodeModal, setShowResumeCodeModal] = useState(false);
@@ -81,10 +81,14 @@ function SurveyTakingPage() {
     const [promptForEmailOnSave, setPromptForEmailOnSave] = useState(false);
 
     const [clientSessionId, setClientSessionId] = useState(null);
-    const [recaptchaToken, setRecaptchaToken] = useState(null); 
+    const [recaptchaToken, setRecaptchaToken] = useState(null);
     const recaptchaRef = useRef(null);
 
-    const [questionValidationError, setQuestionValidationError] = useState('');
+    // const [questionValidationError, setQuestionValidationError] = useState(''); // OLD
+    // NEW: State for validation modal
+    const [showValidationModal, setShowValidationModal] = useState(false);
+    const [validationModalMessage, setValidationModalMessage] = useState('');
+
 
     const autoAdvanceTimeoutRef = useRef(null);
     const OTHER_VALUE_INTERNAL = '__OTHER__';
@@ -99,7 +103,7 @@ function SurveyTakingPage() {
             console.log('[SurveyTakingPage] Using existing clientSessionId from sessionStorage:', currentSessionId);
         }
         setClientSessionId(currentSessionId);
-    }, [surveyId, collectorId]); 
+    }, [surveyId, collectorId]);
 
 
     useEffect(() => {
@@ -119,9 +123,9 @@ function SurveyTakingPage() {
             }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [location.state]); 
+    }, [location.state]);
 
-    const questionsById = useMemo(() => { 
+    const questionsById = useMemo(() => {
         if (!originalQuestions || originalQuestions.length === 0) return {};
         return originalQuestions.reduce((acc, q) => { acc[q._id] = q; return acc; }, {});
     }, [originalQuestions]);
@@ -140,23 +144,25 @@ function SurveyTakingPage() {
         return currentVisibleIndex >= visibleQuestionIndices.length - 1;
     }, [isLoadingSurvey, survey, visibleQuestionIndices, currentVisibleIndex]);
 
-    useEffect(() => { 
+    useEffect(() => {
         return () => {
             if (autoAdvanceTimeoutRef.current) {
                 clearTimeout(autoAdvanceTimeoutRef.current);
             }
         };
-    }, []); 
+    }, []);
 
     useEffect(() => {
         if (!surveyId) { setSurveyError("Survey ID missing."); setIsLoadingSurvey(false); return; }
         if (!collectorId) { setSurveyError("Collector ID missing."); setIsLoadingSurvey(false); return; }
-        
-        setIsLoadingSurvey(true); 
+
+        setIsLoadingSurvey(true);
         setSurveyError(null);
-        setSubmissionError(null); 
-        setQuestionValidationError(''); 
-        
+        setSubmissionError(null);
+        // setQuestionValidationError(''); // OLD
+        setShowValidationModal(false); // NEW: Reset validation modal
+        setValidationModalMessage(''); // NEW
+
         const fetchOptions = { forTaking: 'true', collectorId };
         if (currentResumeToken) {
             fetchOptions.resumeToken = currentResumeToken;
@@ -170,10 +176,10 @@ function SurveyTakingPage() {
                     const fetchedQuestions = response.data.questions || [];
                     const questionsWithIndex = fetchedQuestions.map((q, idx) => ({ ...q, originalIndex: typeof q.originalIndex === 'number' ? q.originalIndex : idx }));
                     setOriginalQuestions(questionsWithIndex);
-                    
+
                     const indices = questionsWithIndex.map(q => q.originalIndex).sort((a, b) => a - b);
-                    setVisibleQuestionIndices(indices); 
-                    
+                    setVisibleQuestionIndices(indices);
+
                     if (response.data.partialResponse) {
                         setCurrentAnswers(response.data.partialResponse.answers || {});
                         setOtherInputValues(response.data.partialResponse.otherInputValues || {});
@@ -209,27 +215,27 @@ function SurveyTakingPage() {
 
                     if (newSettings && newSettingsString !== currentSettingsString) {
                         setCollectorSettings(newSettings);
-                        setRecaptchaToken(null); 
+                        setRecaptchaToken(null);
                         if (recaptchaRef.current) recaptchaRef.current.reset();
                     }
-                } else { 
-                    setSurveyError(response.message || "Failed to load survey details."); 
-                    setSurvey(null); 
+                } else {
+                    setSurveyError(response.message || "Failed to load survey details.");
+                    setSurvey(null);
                 }
             })
-            .catch(err => { 
+            .catch(err => {
                 if (err.name === 'AbortError' || err.message === 'canceled') {
                     console.log('[SurveyTakingPage - fetch effect] Fetch for getSurveyById aborted/canceled.');
                 } else {
-                    console.error("[STM Debug] Error fetching survey details (getSurveyById):", err); 
-                    setSurveyError(err.message || "Error loading survey details."); 
-                    setSurvey(null); 
+                    console.error("[STM Debug] Error fetching survey details (getSurveyById):", err);
+                    setSurveyError(err.message || "Error loading survey details.");
+                    setSurvey(null);
                 }
             })
-            .finally(() => { 
-                setIsLoadingSurvey(false); 
+            .finally(() => {
+                setIsLoadingSurvey(false);
             });
-        
+
         return () => {
             abortController.abort();
         };
@@ -237,9 +243,16 @@ function SurveyTakingPage() {
     }, [surveyId, collectorId, currentResumeToken]);
 
     const validateQuestion = useCallback((question) => {
-        if (!question) return true; 
+        if (!question) return true;
         const answerValue = currentAnswers[question._id];
         const otherText = otherInputValues[`${question._id}_other`];
+
+        // MODIFIED: Function to show validation modal
+        const triggerValidationModal = (message) => {
+            setValidationModalMessage(message);
+            setShowValidationModal(true);
+            return false; // Indicate validation failed
+        };
 
         if (question.requiredSetting === 'required') {
             let isEmpty = false;
@@ -250,17 +263,17 @@ function SurveyTakingPage() {
             } else if (Array.isArray(answerValue) && answerValue.length === 0) {
                 isEmpty = true;
             }
-            
+
             if (isEmpty) {
-                if (question.addOtherOption && question.requireOtherIfSelected && 
+                if (question.addOtherOption && question.requireOtherIfSelected &&
                     ((Array.isArray(answerValue) && answerValue.includes(OTHER_VALUE_INTERNAL)) || answerValue === OTHER_VALUE_INTERNAL) &&
                     (otherText === undefined || otherText === null || String(otherText).trim() === '')) {
-                    setQuestionValidationError(`Please provide text for the "Other" option for "${question.text}".`);
-                    return false;
+                    // MODIFIED
+                    return triggerValidationModal(`Please provide text for the "Other" option for "${question.text || 'this question'}".`);
                 }
                 if (!question.addOtherOption || !((Array.isArray(answerValue) && answerValue.includes(OTHER_VALUE_INTERNAL)) || answerValue === OTHER_VALUE_INTERNAL)) {
-                     setQuestionValidationError(`This question ("${question.text}") is required.`);
-                     return false;
+                     // MODIFIED
+                     return triggerValidationModal(`This question ("${question.text || 'this question'}") is required.`);
                 }
             }
         }
@@ -268,53 +281,57 @@ function SurveyTakingPage() {
         if (question.addOtherOption && question.requireOtherIfSelected) {
             const otherIsSelected = Array.isArray(answerValue) ? answerValue.includes(OTHER_VALUE_INTERNAL) : answerValue === OTHER_VALUE_INTERNAL;
             if (otherIsSelected && (otherText === undefined || otherText === null || String(otherText).trim() === '')) {
-                setQuestionValidationError(`Please provide text for the "Other" option for "${question.text}".`);
-                return false;
+                // MODIFIED
+                return triggerValidationModal(`Please provide text for the "Other" option for "${question.text || 'this question'}".`);
             }
         }
-        
-        setQuestionValidationError(''); 
+
+        setShowValidationModal(false); // NEW: Clear modal if validation passes
+        setValidationModalMessage(''); // NEW
         return true;
-    }, [currentAnswers, otherInputValues, OTHER_VALUE_INTERNAL, setQuestionValidationError]); // Added setQuestionValidationError
-    
+    // MODIFIED: Added setShowValidationModal, setValidationModalMessage to dependencies
+    }, [currentAnswers, otherInputValues, OTHER_VALUE_INTERNAL, setShowValidationModal, setValidationModalMessage]);
+
     const handleSubmit = useCallback(async () => {
         if (isSubmitting) return;
         if (currentQuestionToRender && !validateQuestion(currentQuestionToRender)) {
-            return; 
+            return;
         }
-        setSubmissionError(null); 
+        setSubmissionError(null);
         console.log('[SurveyTakingPage - handleSubmit] Attempting submission...');
 
-        if (!surveyId || !collectorId) { 
+        if (!surveyId || !collectorId) {
             setSubmissionError("Cannot submit, survey or collector ID is missing.");
-            return; 
+            return;
         }
-        
+
         let currentSubmitClientSessionId = clientSessionId;
         if (!currentSubmitClientSessionId) {
             console.error("[SurveyTakingPage - handleSubmit] CRITICAL: clientSessionId is missing!");
             let fallbackSessionId = sessionStorage.getItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
-            if (!fallbackSessionId) fallbackSessionId = uuidv4(); 
-            setClientSessionId(fallbackSessionId); 
+            if (!fallbackSessionId) fallbackSessionId = uuidv4();
+            setClientSessionId(fallbackSessionId);
             sessionStorage.setItem(`surveyClientSessionId_${surveyId}_${collectorId}`, fallbackSessionId);
             currentSubmitClientSessionId = fallbackSessionId;
         }
 
         if (collectorSettings?.enableRecaptcha && !recaptchaToken) {
-            setSubmissionError("Please complete the reCAPTCHA verification before submitting.");
-            setIsSubmitting(false); 
+            // MODIFIED: Use validation modal for reCAPTCHA
+            setValidationModalMessage("Please complete the reCAPTCHA verification before submitting.");
+            setShowValidationModal(true);
+            setIsSubmitting(false);
             return;
         }
 
         setIsSubmitting(true);
-        const relativeFetchUrl = `/api/surveys/${surveyId}/submit`; 
-        const payloadToSubmit = { 
-            collectorId, 
-            answers: currentAnswers, 
-            otherInputValues, 
+        const relativeFetchUrl = `/api/surveys/${surveyId}/submit`;
+        const payloadToSubmit = {
+            collectorId,
+            answers: currentAnswers,
+            otherInputValues,
             resumeToken: currentResumeToken,
-            clientSessionId: currentSubmitClientSessionId, 
-            recaptchaTokenV2: recaptchaToken 
+            clientSessionId: currentSubmitClientSessionId,
+            recaptchaTokenV2: recaptchaToken
         };
         const authToken = localStorage.getItem('token');
         console.log('[SurveyTakingPage - handleSubmit] Fetch Payload:', payloadToSubmit);
@@ -324,7 +341,7 @@ function SurveyTakingPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...(authToken && { 'Authorization': `Bearer ${authToken}` }) },
                 body: JSON.stringify(payloadToSubmit)
-            });    
+            });
             const responseText = await response.text();
             let result;
             try { result = JSON.parse(responseText); } catch (parseError) {
@@ -336,55 +353,62 @@ function SurveyTakingPage() {
                 setSubmissionError(result.message || `Submission failed with status: ${response.status}`);
                 throw new Error(`HTTP error ${response.status}: ${result.message || responseText}`);
             }
-            
+
             if (result && result.success) {
-                toast.success("Survey submitted successfully!"); 
+                toast.success("Survey submitted successfully!");
                 sessionStorage.removeItem(`surveyClientSessionId_${surveyId}_${collectorId}`);
-                if (recaptchaRef.current) recaptchaRef.current.reset(); 
+                if (recaptchaRef.current) recaptchaRef.current.reset();
                 setRecaptchaToken(null);
                 navigate(`/thank-you`, {state: {surveyTitle: survey?.title || initialSurveyTitle, thankYouMessage: result.thankYouMessage}});
             } else {
                 setSubmissionError(result.message || "An unknown error occurred during submission.");
-                if (recaptchaRef.current) recaptchaRef.current.reset(); 
+                if (recaptchaRef.current) recaptchaRef.current.reset();
                 setRecaptchaToken(null);
             }
         } catch (err) {
             setSubmissionError(err.message || "An unexpected error occurred.");
-            if (recaptchaRef.current) recaptchaRef.current.reset(); 
+            if (recaptchaRef.current) recaptchaRef.current.reset();
             setRecaptchaToken(null);
         } finally {
             setIsSubmitting(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting, clientSessionId, collectorSettings, recaptchaToken, currentQuestionToRender, validateQuestion, setClientSessionId, setRecaptchaToken, setIsSubmitting, setSubmissionError]); // Added setters
+    // MODIFIED: Added setShowValidationModal, setValidationModalMessage to dependencies
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentResumeToken, navigate, survey?.title, initialSurveyTitle, isSubmitting, clientSessionId, collectorSettings, recaptchaToken, currentQuestionToRender, validateQuestion, setClientSessionId, setRecaptchaToken, setIsSubmitting, setSubmissionError, setShowValidationModal, setValidationModalMessage]);
 
     const handleNext = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
         if (currentQuestionToRender && !validateQuestion(currentQuestionToRender)) {
-            return; 
+            return;
         }
-        setQuestionValidationError(''); 
+        // setQuestionValidationError(''); // OLD
+        setShowValidationModal(false); // NEW
+        setValidationModalMessage(''); // NEW
         if (!isSubmitState) {
             setCurrentVisibleIndex(prev => prev + 1);
         } else {
-            handleSubmit(); 
+            handleSubmit();
         }
-    }, [isSubmitState, validateQuestion, currentQuestionToRender, handleSubmit, setCurrentVisibleIndex, setQuestionValidationError]); // Added setters
+    // MODIFIED: Added setShowValidationModal, setValidationModalMessage to dependencies
+    }, [isSubmitState, validateQuestion, currentQuestionToRender, handleSubmit, setCurrentVisibleIndex, setShowValidationModal, setValidationModalMessage]);
 
     const handleInputChange = useCallback((questionId, value) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: value }));
-        setQuestionValidationError(''); 
+        // setQuestionValidationError(''); // OLD
+        setShowValidationModal(false); // NEW
+        setValidationModalMessage(''); // NEW
         const autoAdvanceEnabled = collectorSettings?.autoAdvance ?? survey?.settings?.behaviorNavigation?.autoAdvance ?? false;
-        const question = questionsById[questionId]; 
-        const autoAdvanceTypes = ['multiple-choice', 'nps', 'rating']; 
+        const question = questionsById[questionId];
+        const autoAdvanceTypes = ['multiple-choice', 'nps', 'rating'];
         const isOtherSelectedForOtherQuestion = question && question.addOtherOption && value === OTHER_VALUE_INTERNAL;
         if (autoAdvanceEnabled && question && autoAdvanceTypes.includes(question.type) && !isSubmitState && !isOtherSelectedForOtherQuestion) {
             if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
-            autoAdvanceTimeoutRef.current = setTimeout(() => { handleNext(); autoAdvanceTimeoutRef.current = null; }, 500); 
+            autoAdvanceTimeoutRef.current = setTimeout(() => { handleNext(); autoAdvanceTimeoutRef.current = null; }, 500);
         } else if (autoAdvanceTimeoutRef.current && isOtherSelectedForOtherQuestion) {
             clearTimeout(autoAdvanceTimeoutRef.current);
             autoAdvanceTimeoutRef.current = null;
         }
-    }, [collectorSettings, survey, questionsById, isSubmitState, handleNext, OTHER_VALUE_INTERNAL, setQuestionValidationError]); // Added setter
+    // MODIFIED: Added setShowValidationModal, setValidationModalMessage to dependencies
+    }, [collectorSettings, survey, questionsById, isSubmitState, handleNext, OTHER_VALUE_INTERNAL, setShowValidationModal, setValidationModalMessage]);
 
     const handleCheckboxChange = useCallback((questionId, optionValue, isChecked) => {
         setCurrentAnswers(prevAnswers => {
@@ -395,9 +419,12 @@ function SurveyTakingPage() {
             }
             return { ...prevAnswers, [questionId]: newSelection };
         });
-        setQuestionValidationError(''); 
-    }, [OTHER_VALUE_INTERNAL, setQuestionValidationError]); // Added setter
-    
+        // setQuestionValidationError(''); // OLD
+        setShowValidationModal(false); // NEW
+        setValidationModalMessage(''); // NEW
+    // MODIFIED: Added setShowValidationModal, setValidationModalMessage to dependencies
+    }, [OTHER_VALUE_INTERNAL, setShowValidationModal, setValidationModalMessage]);
+
     const handleOtherInputChange = useCallback((questionId, value) => {
         setOtherInputValues(prev => ({ ...prev, [`${questionId}_other`]: value }));
         setCurrentAnswers(prevAnswers => {
@@ -407,19 +434,28 @@ function SurveyTakingPage() {
             }
             return prevAnswers;
         });
-        setQuestionValidationError(''); 
-    }, [OTHER_VALUE_INTERNAL, setQuestionValidationError]); // Added setter
+        // setQuestionValidationError(''); // OLD
+        setShowValidationModal(false); // NEW
+        setValidationModalMessage(''); // NEW
+    // MODIFIED: Added setShowValidationModal, setValidationModalMessage to dependencies
+    }, [OTHER_VALUE_INTERNAL, setShowValidationModal, setValidationModalMessage]);
 
     const handleComplexAnswerChange = useCallback((questionId, structuredAnswer) => {
         setCurrentAnswers(prev => ({ ...prev, [questionId]: structuredAnswer }));
-        setQuestionValidationError(''); 
-    }, [setQuestionValidationError]); // Added setter
-    
-    const handlePrevious = useCallback(() => { // Corrected ESLint dependency
+        // setQuestionValidationError(''); // OLD
+        setShowValidationModal(false); // NEW
+        setValidationModalMessage(''); // NEW
+    // MODIFIED: Added setShowValidationModal, setValidationModalMessage to dependencies
+    }, [setShowValidationModal, setValidationModalMessage]);
+
+    const handlePrevious = useCallback(() => {
         if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
-        setQuestionValidationError(''); 
+        // setQuestionValidationError(''); // OLD
+        setShowValidationModal(false); // NEW
+        setValidationModalMessage(''); // NEW
         setCurrentVisibleIndex(prevIndex => (prevIndex > 0 ? prevIndex - 1 : prevIndex));
-    }, [setQuestionValidationError, setCurrentVisibleIndex]); // Only stable setters needed
+    // MODIFIED: Added setShowValidationModal, setValidationModalMessage, setCurrentVisibleIndex to dependencies
+    }, [setShowValidationModal, setValidationModalMessage, setCurrentVisibleIndex]);
 
     const performSaveAndContinue = useCallback(async (emailForSave = null) => {
         if (!surveyId || !collectorId) { console.error("Cannot save, survey/collector ID missing."); return; }
@@ -433,21 +469,21 @@ function SurveyTakingPage() {
         }
         setIsSavingAndContinueLater(true);
         try {
-            const payload = { 
-                collectorId, 
-                answers: currentAnswers, 
-                otherInputValues, 
-                currentVisibleIndex: currentVisibleIndex, 
+            const payload = {
+                collectorId,
+                answers: currentAnswers,
+                otherInputValues,
+                currentVisibleIndex: currentVisibleIndex,
                 resumeToken: currentResumeToken,
-                sessionId: currentSaveClientSessionId 
+                sessionId: currentSaveClientSessionId
             };
             if (emailForSave) payload.respondentEmail = emailForSave;
             const result = await surveyApi.savePartialResponse(surveyId, payload);
             if (result.success && result.resumeToken) {
-                setCurrentResumeToken(result.resumeToken); 
+                setCurrentResumeToken(result.resumeToken);
                 setGeneratedResumeCode(result.resumeToken);
-                setShowResumeCodeModal(true); 
-                setPromptForEmailOnSave(false); 
+                setShowResumeCodeModal(true);
+                setPromptForEmailOnSave(false);
                 toast.info("Progress saved!");
             } else {
                 toast.error(result.message || "Failed to save progress.");
@@ -457,15 +493,15 @@ function SurveyTakingPage() {
         } finally {
             setIsSavingAndContinueLater(false);
         }
-    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentVisibleIndex, currentResumeToken, clientSessionId, setClientSessionId, setIsSavingAndContinueLater, setCurrentResumeToken, setGeneratedResumeCode, setShowResumeCodeModal, setPromptForEmailOnSave]); // Added setters
-    
+    }, [surveyId, collectorId, currentAnswers, otherInputValues, currentVisibleIndex, currentResumeToken, clientSessionId, setClientSessionId, setIsSavingAndContinueLater, setCurrentResumeToken, setGeneratedResumeCode, setShowResumeCodeModal, setPromptForEmailOnSave]);
+
     const handleSaveAndContinueLater = useCallback(async () => {
         const saveMethod = survey?.settings?.behaviorNavigation?.saveAndContinueMethod || collectorSettings?.saveAndContinueMethod || 'email';
         const needsEmailPrompt = (saveMethod === 'email' || saveMethod === 'both') && !emailForReminder;
         if (needsEmailPrompt) {
-            setPromptForEmailOnSave(true); 
-            setShowResumeCodeModal(true); 
-            return; 
+            setPromptForEmailOnSave(true);
+            setShowResumeCodeModal(true);
+            return;
         }
         performSaveAndContinue(emailForReminder || null);
     }, [survey, collectorSettings, emailForReminder, performSaveAndContinue]);
@@ -473,12 +509,16 @@ function SurveyTakingPage() {
     const handleModalEmailSubmitAndSave = useCallback(() => {
         const saveMethod = survey?.settings?.behaviorNavigation?.saveAndContinueMethod || collectorSettings?.saveAndContinueMethod || 'email';
         if ((saveMethod === 'email' || saveMethod === 'both') && !emailForReminder.trim()) {
-            alert("Please enter your email address to save and continue.");
+            // MODIFIED: Use validation modal for email prompt
+            setValidationModalMessage("Please enter your email address to save and continue.");
+            setShowValidationModal(true); // This will show the general validation modal
+            // We might need a separate modal state if we want this specific message in the *resume* modal
             return;
         }
         performSaveAndContinue(emailForReminder.trim());
-    }, [survey, collectorSettings, emailForReminder, performSaveAndContinue]);
-    
+    // MODIFIED: Added setShowValidationModal, setValidationModalMessage to dependencies
+    }, [survey, collectorSettings, emailForReminder, performSaveAndContinue, setShowValidationModal, setValidationModalMessage]);
+
     const renderProgressBar = useCallback(() => {
         const showBar = collectorSettings?.progressBarEnabled ?? survey?.settings?.behaviorNavigation?.progressBarEnabled ?? false;
         if (!survey || !showBar || !visibleQuestionIndices || visibleQuestionIndices.length === 0) return null;
@@ -490,23 +530,23 @@ function SurveyTakingPage() {
     }, [survey, visibleQuestionIndices, currentVisibleIndex, collectorSettings]);
 
     const renderQuestionInputs = (question) => {
-        if (!question) return <div className={styles.questionContainer}><p>Error: Question data is missing.</p></div>; // Wrap in container for consistency
-        
+        if (!question) return <div className={styles.questionContainer}><p>Error: Question data is missing.</p></div>;
+
         const surveySettings = survey?.settings?.behaviorNavigation;
         const showQuestionNumber = surveySettings?.questionNumberingEnabled ?? collectorSettings?.questionNumberingEnabled ?? true;
-        
+
         let questionNumberDisplay = "";
         if (showQuestionNumber) {
             const format = surveySettings?.questionNumberingFormat || '123';
             const prefix = surveySettings?.questionNumberingCustomPrefix || '';
-            questionNumberDisplay = formatQuestionNumber(currentVisibleIndex, format, prefix); // No extra space here
+            questionNumberDisplay = formatQuestionNumber(currentVisibleIndex, format, prefix);
         }
 
-        const commonProps = { 
-            question, 
-            currentAnswer: currentAnswers[question._id], 
-            disabled: isSubmitting || isSavingAndContinueLater, 
-            isPreviewMode: false // Corrected: This page is for taking, not previewing design
+        const commonProps = {
+            question,
+            currentAnswer: currentAnswers[question._id],
+            disabled: isSubmitting || isSavingAndContinueLater,
+            isPreviewMode: false
         };
         const choiceProps = { ...commonProps, otherValue: otherInputValues[`${question._id}_other`], onOtherTextChange: handleOtherInputChange };
         let questionComponent;
@@ -527,15 +567,11 @@ function SurveyTakingPage() {
             case 'maxdiff': questionComponent = <MaxDiffQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break;
             default: console.warn("Unsupported question type:", question.type); questionComponent = <p>Unsupported: {question.type}</p>;
         }
-        // Individual question components are now expected to render their own title (question.text) and description
-        // The .questionHeader and .questionNumber are for the numbering part if enabled.
         return (
-            <div className={styles.questionContentWrapper}> {/* Wrapper for content within the bordered container */}
+            <div className={styles.questionContentWrapper}>
                 <div className={styles.questionHeader}>
                     {showQuestionNumber && <span className={styles.questionNumber}>{questionNumberDisplay}</span>}
-                    {/* Individual question components will render question.text as their main title */}
                 </div>
-                {/* Individual question components can render question.description if they wish */}
                 {questionComponent}
             </div>
         );
@@ -548,39 +584,51 @@ function SurveyTakingPage() {
     const progressBarElement = renderProgressBar();
     const displayTitle = survey?.title || initialSurveyTitle || "Survey";
     const saveAndContinueEnabled = collectorSettings?.allowResume ?? survey?.settings?.behaviorNavigation?.saveAndContinueEnabled ?? false;
-    
+
     const isRecaptchaEnabled = collectorSettings?.enableRecaptcha;
     const isRecaptchaVerified = !!recaptchaToken;
 
-    const submitButton = isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && 
-        (<button 
-            type="button" 
-            onClick={handleSubmit} 
-            disabled={isSubmitting || isSavingAndContinueLater || !clientSessionId || (isRecaptchaEnabled && !isRecaptchaVerified)} 
+    const submitButton = isSubmitState && (visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) &&
+        (<button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting || isSavingAndContinueLater || !clientSessionId || (isRecaptchaEnabled && !isRecaptchaVerified)}
             className={styles.navButtonPrimary}
          >
             {isSubmitting ? 'Submitting...' : 'Submit'}
          </button>);
 
     return (
-        <div className={styles.surveyTakingPageWrapper}> {/* Overall page wrapper */}
+        <div className={styles.surveyTakingPageWrapper}>
             <header className={styles.surveyHeader}><h1>{displayTitle}</h1>{survey.description && <p className={styles.description}>{survey.description}</p>}{progressBarElement}</header>
-            
+
             {submissionError && (
                 <div className={styles.submissionErrorBanner}>
                     <p><strong>Submission Error:</strong> {submissionError}</p>
                     <button onClick={() => setSubmissionError(null)} className={styles.closeErrorButton}>&times;</button>
                 </div>
             )}
-             {questionValidationError && currentQuestionToRender && ( // Only show if there's a current question
+            {/* OLD Inline Validation Message - REMOVED
+            {questionValidationError && currentQuestionToRender && (
                 <div className={styles.questionValidationErrorBanner}>
                     <p>{questionValidationError}</p>
                 </div>
             )}
-            
-            {/* This is the main container that will get the border/padding */}
-            <div className={styles.questionContainer}> 
-                {currentQuestionToRender ? (renderQuestionInputs(currentQuestionToRender)) : 
+            */}
+
+            {/* NEW: Validation Modal */}
+            {showValidationModal && (
+                <div className={styles.validationModalBackdrop} onClick={() => setShowValidationModal(false)}>
+                    <div className={styles.validationModalContent} onClick={e => e.stopPropagation()}>
+                        <h4>Validation Error</h4>
+                        <p>{validationModalMessage}</p>
+                        <button onClick={() => setShowValidationModal(false)} className={styles.validationModalButton}>OK</button>
+                    </div>
+                </div>
+            )}
+
+            <div className={styles.questionContainer}>
+                {currentQuestionToRender ? (renderQuestionInputs(currentQuestionToRender)) :
                     (!isSubmitting && currentVisibleIndex >= visibleQuestionIndices.length &&
                     <div className={styles.surveyMessageContainer}><p className={styles.surveyMessage}>Thank you for your responses!</p>
                         {(visibleQuestionIndices.length > 0 || Object.keys(currentAnswers).length > 0) && <p className={styles.surveyMessage}>Click "Submit" to finalize your survey.</p>}
@@ -592,7 +640,7 @@ function SurveyTakingPage() {
                 <div className={styles.recaptchaContainer}>
                     <ReCAPTCHA
                         ref={recaptchaRef}
-                        sitekey={process.env.REACT_APP_RECAPTCHA_SITE_KEY || "YOUR_FALLBACK_RECAPTCHA_V2_SITE_KEY"} 
+                        sitekey={process.env.REACT_APP_RECAPTCHA_SITE_KEY || "YOUR_FALLBACK_RECAPTCHA_V2_SITE_KEY"}
                         onChange={(token) => { setRecaptchaToken(token); setSubmissionError(null); }}
                         onExpired={() => { setRecaptchaToken(null); setSubmissionError("reCAPTCHA has expired. Please verify again."); }}
                         onErrored={(err) => {
@@ -628,4 +676,4 @@ function SurveyTakingPage() {
     );
 }
 export default SurveyTakingPage;
-// ----- END OF UPDATED FILE (v1.3 - Fix isPreviewMode and ESLint warning) -----
+// ----- END OF UPDATED FILE (v1.4 - "Other" Validation Modal) -----

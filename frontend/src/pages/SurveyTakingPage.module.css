@@ -245,7 +245,66 @@
 .modalContentWrapper .buttonSecondary:hover {
     background-color: var(--button-secondary-hover-bg, #5a6268);
 }
+* ----- NEW STYLES FOR VALIDATION MODAL ----- */
+.validationModalBackdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5); /* Slightly less dark than resume modal for differentiation if needed */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1060; /* Higher than resume modal if they can overlap, or same if not */
+}
 
+.validationModalContent {
+    background-color: var(--background-secondary, #fff);
+    padding: 20px 25px;
+    border-radius: var(--border-radius-md, 6px);
+    box-shadow: var(--shadow-lg, 0 5px 15px rgba(0,0,0,0.2));
+    width: 90%;
+    max-width: 450px; /* Slightly smaller for simple messages */
+    text-align: left;
+}
+
+.validationModalContent h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.25em;
+    color: var(--text-primary, #333);
+    font-weight: 600;
+}
+
+.validationModalContent p {
+    margin-bottom: 20px;
+    font-size: 1em;
+    line-height: 1.6;
+    color: var(--text-secondary, #555);
+}
+
+.validationModalButton {
+    display: block; /* Make button take full width or align as needed */
+    width: auto;
+    min-width: 80px;
+    padding: 10px 20px;
+    margin-left: auto; /* Align to the right */
+    background-color: var(--primary-color, #007bff);
+    color: var(--primary-text-light, white);
+    border: none;
+    border-radius: var(--border-radius-sm, 4px);
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+.validationModalButton:hover {
+    background-color: var(--primary-color-dark, #0056b3);
+}
+
+/* ----- END OF NEW STYLES FOR VALIDATION MODAL ----- */
 /* Removed .debugInfo styles */
 
 /* ----- END OF UPDATED FILE ----- */
