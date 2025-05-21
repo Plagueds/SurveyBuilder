@@ -251,10 +251,6 @@
 
 
 /* Styling for the tristate select for saveAndContinueEnabled */
-#settings\.web_link\.saveAndContinueEnabled { /* Escaping special characters for ID selector if needed */
-    /* Uses general select styling from .formGroup select */
-}
-
 /* Use global button styles if available, or define here */
 /* You might have these in App.css or index.css */
 /*
