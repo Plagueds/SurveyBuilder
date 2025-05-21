@@ -1,5 +1,5 @@
 // backend/routes/publicSurveyAccessRoutes.js
-// ----- START OF COMPLETE NEW FILE (v1.0 - Public Survey Access Routes) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.1 - Added Resume With Code Route) -----
 const express = require('express');
 const router = express.Router();
 const publicSurveyAccessController = require('../controllers/publicSurveyAccessController');
@@ -8,5 +8,8 @@ const publicSurveyAccessController = require('../controllers/publicSurveyAccessC
 // Using POST to allow sending password in the request body if needed.
 router.post('/:accessIdentifier', publicSurveyAccessController.accessSurvey);
 
+// +++ NEW: Route for respondents to resume a survey using a code +++
+router.post('/:accessIdentifier/resume', publicSurveyAccessController.resumeSurveyWithCode);
+
 module.exports = router;
-// ----- END OF COMPLETE NEW FILE (v1.0 - Public Survey Access Routes) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.1 - Added Resume With Code Route) -----
