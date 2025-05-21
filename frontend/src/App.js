@@ -1,7 +1,8 @@
 // frontend/src/App.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.2 - Added route for Survey Thank You Preview) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.3 - Updated survey taking route for resume token) -----
 import React from 'react';
 import { Routes, Route, useLocation, Navigate, Outlet } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify'; // Import ToastContainer
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
 
@@ -10,11 +11,8 @@ import { useAuth } from './context/AuthContext';
 
 // --- Component Imports ---
 import Navbar from './components/Navbar';
-// ProtectedRoute is already imported and will be used as an element wrapper
 
 // --- Page Imports ---
-// HomePage is no longer the primary landing page, but keep import if used elsewhere (e.g. as a placeholder)
-// import HomePage from './pages/HomePage'; 
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminPage from './pages/AdminPage';
@@ -46,6 +44,18 @@ function App() {
     return (
         <div className="App">
             {showNavbar && <Navbar />}
+            <ToastContainer // Add ToastContainer here
+                position="top-right"
+                autoClose={5000}
+                hideProgressBar={false}
+                newestOnTop={false}
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+                theme="light"
+            />
             <main className={`main-content ${showNavbar ? 'with-navbar' : 'without-navbar'}`}>
                 <Routes>
                     {/* --- Authentication Routes --- */}
@@ -60,13 +70,13 @@ function App() {
 
                     {/* --- Public Survey Taking Flow --- */}
                     <Route path="/s/:accessIdentifier" element={<PublicSurveyHandler />} />
-                    <Route path="/surveys/:surveyId/c/:collectorId" element={<SurveyTakingPage />} />
+                    {/* MODIFIED ROUTE to include optional resumeToken */}
+                    <Route path="/surveys/:surveyId/c/:collectorId/:resumeToken?" element={<SurveyTakingPage />} />
                     <Route path="/surveys/:surveyId/preview" element={<SurveyPreviewPage />} />
                     
-                    {/* ADDED ROUTE FOR SURVEY PREVIEW THANK YOU PAGE */}
                     <Route path="/survey/:surveyId/thankyou-preview" element={<ThankYouPage />} />
                     
-                    <Route path="/thank-you" element={<ThankYouPage />} /> {/* Generic thank you page */}
+                    <Route path="/thank-you" element={<ThankYouPage />} /> 
                     
                     {/* --- Protected Routes Wrapper --- */}
                     <Route element={isAuthenticated ? <Outlet /> : <Navigate to="/login" state={{ from: location }} replace />}>
@@ -102,4 +112,4 @@ function App() {
 }
 
 export default App;
-// ----- END OF COMPLETE MODIFIED FILE (v1.2 - Added route for Survey Thank You Preview) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.3 - Updated survey taking route for resume token) -----

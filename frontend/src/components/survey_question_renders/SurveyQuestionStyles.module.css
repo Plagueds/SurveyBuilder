@@ -1,5 +1,5 @@
 /* frontend/src/components/survey_question_renders/SurveyQuestionStyles.module.css */
-/* ----- START OF COMPLETE MODIFIED FILE (v1.5 - Card Sort Styling Refinement) ----- */
+/* ----- START OF COMPLETE MODIFIED FILE (v1.6 - Heatmap & Q Numbering Styles) ----- */
 .questionContainer {
     margin-bottom: 20px;
     padding: 20px 25px; /* Slightly more padding */
@@ -13,27 +13,41 @@
     opacity: 0.7;
     pointer-events: none; /* Prevent interaction on the whole container */
 }
-/* Ensure child elements within a disabled container also adopt a disabled look if needed */
 .questionContainer.disabled input,
 .questionContainer.disabled textarea,
 .questionContainer.disabled select,
 .questionContainer.disabled button {
     cursor: not-allowed;
-    /* opacity: 0.7; /* Or a more specific disabled style */
 }
 .questionContainer.disabled .rankingSortableItem,
 .questionContainer.disabled .cardSortCard {
-    cursor: not-allowed !important; /* Override grab cursor */
+    cursor: not-allowed !important; 
 }
 
-
-.questionText {
-    font-size: 1.15em; /* Slightly larger */
-    font-weight: 600; /* Bolder */
+/* UPDATED for question numbering alignment */
+.questionHeader {
+    display: flex; /* Use flexbox for alignment */
+    align-items: flex-start; /* Align items to the start of the cross axis */
     margin-bottom: 8px;
+}
+.questionNumber {
+    font-size: 1.15em; 
+    font-weight: 600; 
+    color: var(--text-primary, #212529);
+    margin-right: 8px; /* Space between number and text */
+    white-space: nowrap; /* Prevent number from wrapping if custom prefix is long */
+    line-height: 1.4; /* Match questionText line-height */
+}
+.questionText {
+    font-size: 1.15em; 
+    font-weight: 600; 
+    /* margin-bottom: 8px; Removed as .questionHeader handles bottom margin */
     color: var(--text-primary, #212529);
     line-height: 1.4;
+    flex-grow: 1; /* Allow text to take remaining space */
 }
+/* END UPDATED for question numbering */
+
 .requiredIndicator {
     color: var(--error-text, #dc3545);
     margin-left: 4px;
@@ -48,18 +62,18 @@
 .optionsContainer {
     display: flex;
     flex-direction: column;
-    gap: 10px; /* Space between options */
+    gap: 10px; 
 }
-.optionItem { /* Renamed from .option for clarity */
-    margin-bottom: 0; /* Handled by gap in optionsContainer */
+.optionItem { 
+    margin-bottom: 0; 
     display: flex;
     align-items: center;
-    padding: 5px 0; /* Add some vertical padding */
+    padding: 5px 0; 
 }
 .radioInput, .checkboxInput {
-    margin-right: 10px; /* More space */
+    margin-right: 10px; 
     accent-color: var(--primary-color, #007bff);
-    width: 1.2em; /* Slightly larger */
+    width: 1.2em; 
     height: 1.2em;
     flex-shrink: 0;
 }
@@ -85,12 +99,12 @@
     resize: vertical;
 }
 .otherTextInput {
-    margin-left: 28px; /* Align with option text if radio/checkbox has margin */
-    flex-grow: 1; /* Allow it to take available space */
-    max-width: 400px; /* Optional: prevent it from becoming too wide */
-    margin-top: 0; /* Reset margin-top if it's part of .optionItem */
+    margin-left: 28px; 
+    flex-grow: 1; 
+    max-width: 400px; 
+    margin-top: 0; 
 }
-.optionItem > .otherTextInput { /* Specific for other text input next to a radio/checkbox */
+.optionItem > .otherTextInput { 
     margin-left: 10px;
     margin-top: 0;
 }
@@ -112,7 +126,6 @@
     color: var(--input-text);
 }
 
-/* --- Rating Styles --- */
 .ratingScaleContainer { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 10px; flex-wrap: wrap; }
 .ratingOptions { display: flex; justify-content: center; gap: 5px; }
 .ratingItem { display: inline-block; }
@@ -124,7 +137,6 @@
 .ratingInputHidden:disabled + .ratingLabelButton { background-color: var(--button-disabled-bg, #e9ecef); color: var(--text-muted, #6c757d); cursor: not-allowed; border-color: var(--border-color-light, #ddd); box-shadow: none; }
 .ratingMinMaxLabel { font-size: 0.9em; color: var(--text-secondary, #555); padding: 0 10px; text-align: center; min-width: 80px; }
 
-/* --- NPS Styles --- */
 .npsScaleContainer { margin-top: 10px; padding: 10px 0; }
 .npsOptions { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
 .npsItem { display: inline-block; }
@@ -139,14 +151,12 @@
 .npsInputHidden:disabled + .npsLabelButton { background-color: var(--button-disabled-bg, #e9ecef); color: var(--text-muted, #6c757d); cursor: not-allowed; border-color: var(--border-color-light, #ddd); box-shadow: none; }
 .npsMinMaxLabels { display: flex; justify-content: space-between; font-size: 0.85em; color: var(--text-secondary, #555); margin-top: 8px; padding: 0 5%; }
 
-/* --- Matrix Question Styles --- */
 .matrixTableContainer { overflow-x: auto; }
 .matrixTable { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95em; }
 .matrixTh, .matrixTd { border: 1px solid var(--border-color, #ddd); padding: 10px; text-align: center; vertical-align: middle; }
 .matrixTh { background-color: var(--background-accent, #f8f9fa); font-weight: 600; color: var(--text-secondary); }
 .matrixRowHeader { text-align: left; font-weight: 500; background-color: var(--background-accent-light, #fcfcfc); }
 
-/* --- Slider Question Styles --- */
 .sliderWrapper { display: flex; align-items: center; gap: 15px; margin-top: 15px; padding: 10px 0; }
 .sliderMinLabel, .sliderMaxLabel { font-size: 0.9em; color: var(--text-secondary, #555); min-width: 60px; text-align: center; }
 .sliderInput { flex-grow: 1; cursor: pointer; accent-color: var(--primary-color, #007bff); height: 8px; border-radius: 4px; background: var(--border-color-light, #ddd); }
@@ -156,7 +166,6 @@
 .sliderInput::-moz-range-thumb { width: 20px; height: 20px; background: var(--primary-color, #007bff); border-radius: 50%; border: none; box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.1)); }
 .sliderValueDisplay { font-weight: bold; font-size: 1.1em; color: var(--text-primary); min-width: 40px; text-align: right; }
 
-/* --- Ranking Question DND Styles --- */
 .rankingListContainer { list-style: none; padding: 0; margin-top: 10px; }
 .rankingSortableItem { padding: 10px 12px; border: 1px solid var(--border-color, #ddd); margin-bottom: 8px; border-radius: var(--border-radius-sm, 4px); background-color: var(--background-secondary, #fff); box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.03)); display: flex; align-items: center; justify-content: space-between; cursor: grab; transition: transform 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease; }
 .rankingSortableItemIsDragging { opacity: 0.8; box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)); }
@@ -167,21 +176,41 @@
 .rankingDragHandle:active { cursor: grabbing; }
 
 /* --- Heatmap Question Styles --- */
-.heatmapImageContainer { position: relative; display: inline-block; max-width: 100%; border: 2px dashed var(--border-color-medium, #ccc); cursor: crosshair; margin-top: 10px; overflow: hidden; }
-.heatmapImage { display: block; max-width: 100%; max-height: 500px; user-select: none; }
+.heatmapImageContainer {
+    position: relative;
+    display: flex; /* MODIFIED: Use flex for centering */
+    justify-content: center; /* MODIFIED: Center content horizontally */
+    align-items: center; /* MODIFIED: Center content vertically if needed */
+    width: 100%; /* MODIFIED: Take full width of its parent */
+    max-width: 700px; /* ADDED: Optional max-width for the container itself */
+    margin-left: auto; /* ADDED: Center the container if it's narrower than parent */
+    margin-right: auto; /* ADDED: Center the container */
+    border: 2px dashed var(--border-color-medium, #ccc);
+    cursor: crosshair;
+    margin-top: 10px;
+    overflow: hidden;
+    background-color: var(--background-accent-xlight, #f9f9f9); /* Optional: light bg for empty space */
+}
+.heatmapImage {
+    display: block;
+    max-width: 100%; /* Image will scale down to fit container */
+    max-height: 500px; /* Keep existing max-height */
+    height: auto; /* Maintain aspect ratio */
+    user-select: none;
+}
+/* END Heatmap modifications */
+
 .heatmapClickDot { position: absolute; width: 12px; height: 12px; background-color: rgba(220, 53, 69, 0.75); border: 1px solid rgba(150, 20, 30, 0.9); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
 .heatmapControls { margin-top: 15px; display: flex; align-items: center; gap: 15px; }
 .heatmapButton { padding: 8px 15px; cursor: pointer; border: 1px solid var(--button-secondary-border, #6c757d); border-radius: var(--border-radius-sm, 4px); background-color: var(--button-secondary-bg, #6c757d); color: var(--button-secondary-text-light, white); font-size: 0.9em; transition: background-color 0.15s ease, border-color 0.15s ease; }
 .heatmapButton:hover { background-color: var(--button-secondary-hover-bg, #5a6268); border-color: var(--button-secondary-hover-border, #545b62); }
 .heatmapClickInfo { font-size: 0.9em; color: var(--text-secondary, #555); }
 
-/* --- MaxDiff Question Styles --- */
 .maxDiffTable { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95em; }
 .maxDiffTh, .maxDiffTd { border: 1px solid var(--border-color, #ddd); padding: 10px; text-align: center; vertical-align: middle; }
 .maxDiffTh { background-color: var(--background-accent, #f8f9fa); font-weight: 600; color: var(--text-secondary); }
 .maxDiffOptionCell { text-align: left; font-weight: 500; }
 
-/* --- Conjoint Question Styles (Old Simplified Preview & New CBC) --- */
 .conjointInfoText { font-size: 0.9em; color: var(--text-secondary, #666); margin-bottom: 15px; font-style: italic; }
 .conjointAttributeBlock { margin-bottom: 20px; padding: 15px; border: 1px solid var(--border-color-light, #e0e0e0); border-radius: var(--border-radius-md, 6px); background-color: var(--background-secondary, #fff); }
 .conjointAttributeName { font-weight: 600; margin-bottom: 10px; display: block; font-size: 1.05em; color: var(--text-primary); }
@@ -213,16 +242,14 @@
 .conjointCompletionMessage { padding: 20px; text-align: center; background-color: var(--background-accent-light, #f8f9fa); border: 1px solid var(--border-color-light, #e9ecef); border-radius: var(--border-radius-md, 6px); margin-top: 10px; }
 .conjointCompletionMessage p { font-size: 1.1em; color: var(--text-success, #28a745); margin-bottom: 15px; }
 
-
-/* --- Card Sort Question Styles (DND Version) --- */
 .cardSortLayout { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 15px; align-items: flex-start; }
 .cardSortCategoryColumn { flex: 1; min-width: 200px; max-width: 300px; padding: 10px; border: 1px dashed var(--border-color-medium, #ccc); border-radius: var(--border-radius-md, 6px); background-color: var(--background-accent-light, #fdfdfd); min-height: 120px; transition: background-color 0.2s ease; }
 .cardSortCategoryColumnOver { background-color: var(--primary-color-xlight, #e7f3ff); border-style: solid; border-color: var(--primary-color-light, #7bceff); }
 .cardSortCategoryTitle { font-weight: 600; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color-light, #eee); color: var(--text-primary); font-size: 1.05em; display: flex; justify-content: space-between; align-items: center; }
 .cardSortCardList { min-height: 50px; display: flex; flex-direction: column; gap: 8px; }
-.cardSortCard { padding: 10px 12px; margin: 0; border: 1px solid var(--border-color-medium, #b0b0b0); border-radius: var(--border-radius-sm, 4px); background-color: var(--background-secondary, #fff); box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05)); text-align: center; font-size: 0.95em; color: var(--text-primary); cursor: grab; user-select: none; touch-action: none; /* For better touch interaction */ }
+.cardSortCard { padding: 10px 12px; margin: 0; border: 1px solid var(--border-color-medium, #b0b0b0); border-radius: var(--border-radius-sm, 4px); background-color: var(--background-secondary, #fff); box-shadow: var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05)); text-align: center; font-size: 0.95em; color: var(--text-primary); cursor: grab; user-select: none; touch-action: none; }
 .cardSortCardOverlay { cursor: grabbing !important; box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)); z-index: 1000; }
-.cardSortCardIsDraggingSource { opacity: 0.4 !important; /* Make the original item more transparent when dragging overlay */ }
+.cardSortCardIsDraggingSource { opacity: 0.4 !important; }
 .cardSortEmptyCategoryText { font-size: 0.85em; color: var(--text-muted, #888); text-align: center; padding: 10px 0; font-style: italic; }
 .cardSortUserCategorySection { margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color-light, #eee); }
 .cardSortUserCategoryInputContainer { display: flex; gap: 10px; align-items: center; margin-top: 5px; }
@@ -233,4 +260,4 @@
 .cardSortRemoveCategoryButton { font-size: 0.9em; color: var(--error-text, #dc3545); cursor: pointer; border: none; background: none; padding: 0 5px; font-weight: bold; }
 .cardSortRemoveCategoryButton:hover { color: var(--error-text-dark, #a71d2a); }
 
-/* ----- END OF COMPLETE MODIFIED FILE (v1.5) ----- */
+/* ----- END OF COMPLETE MODIFIED FILE (v1.6) ----- */
