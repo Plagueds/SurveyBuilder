@@ -245,7 +245,7 @@
 .modalContentWrapper .buttonSecondary:hover {
     background-color: var(--button-secondary-hover-bg, #5a6268);
 }
-* ----- NEW STYLES FOR VALIDATION MODAL ----- */
+/* ----- NEW STYLES FOR VALIDATION MODAL ----- */
 .validationModalBackdrop {
     position: fixed;
     top: 0;
