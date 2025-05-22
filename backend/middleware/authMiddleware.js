@@ -5,6 +5,8 @@ const Survey = require('../models/Survey');
 const mongoose = require('mongoose');
 
 const protect = async (req, res, next) => {
+    // NEW LOG HERE
+    console.log(`[Protect Middleware] Path: ${req.path}, Method: ${req.method}, Headers Auth: ${req.headers.authorization ? 'Bearer token present' : 'No Bearer token'}`);
     let token;
 
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
