@@ -1,5 +1,5 @@
 // backend/models/Survey.js
-// ----- START OF COMPLETE UPDATED FILE (v1.10 - Added Auto-save Settings) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.11 - Added Question Display Mode Setting) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -76,7 +76,6 @@ const customVariableSchema = new Schema({
         match: [/^[a-zA-Z0-9_]+$/, 'Key can only contain alphanumeric characters and underscores.']
     },
     label: { type: String, trim: true, default: '' },
-    // +++ NEW: Optional defaultValue for custom variables +++
     defaultValue: { type: String, trim: true, default: ''}
 });
 
@@ -143,7 +142,13 @@ const surveySchema = new Schema({
             surveyPassword: { type: String, default: '' },
         },
         behaviorNavigation: {
-            autoAdvance: { type: Boolean, default: false },
+            // +++ NEW: Question Display Mode +++
+            questionDisplayMode: {
+                type: String,
+                enum: ['onePerPage', 'allOnOnePage', 'sectionsPerPage'], // 'sectionsPerPage' for future
+                default: 'onePerPage'
+            },
+            autoAdvance: { type: Boolean, default: false }, // Note: autoAdvance might behave differently with 'allOnOnePage'
             questionNumberingEnabled: { type: Boolean, default: true },
             questionNumberingFormat: {
                 type: String,
@@ -158,11 +163,10 @@ const surveySchema = new Schema({
                 enum: ['email', 'code', 'both'],
                 default: 'email'
             },
-            // +++ NEW: Auto-save settings +++
             autoSaveEnabled: { type: Boolean, default: false },
-            autoSaveIntervalSeconds: { type: Number, default: 60, min: 15, max: 300 } // e.g., 1 minute default, min 15s, max 5m
+            autoSaveIntervalSeconds: { type: Number, default: 60, min: 15, max: 300 }
         },
-        customVariables: { // Definitions of custom variables
+        customVariables: {
             type: [customVariableSchema],
             default: []
         },
@@ -192,13 +196,11 @@ surveySchema.path('settings.customVariables').validate(function(value) {
     const keys = value.map(cv => cv.key);
     const uniqueKeys = new Set(keys);
     if (uniqueKeys.size !== keys.length) {
-        // Find duplicate keys for a more informative message (optional)
         const counts = keys.reduce((acc, key) => { acc[key] = (acc[key] || 0) + 1; return acc; }, {});
         const duplicates = Object.keys(counts).filter(key => counts[key] > 1);
         this.invalidate('settings.customVariables', `Custom variable keys must be unique. Duplicate(s) found: ${duplicates.join(', ')}`, value);
         return false;
     }
-    // Validate individual keys format
     for (const cv of value) {
         if (!/^[a-zA-Z0-9_]+$/.test(cv.key)) {
             this.invalidate(`settings.customVariables`, `Custom variable key "${cv.key}" is invalid. Keys can only contain alphanumeric characters and underscores.`, cv.key);
@@ -208,6 +210,5 @@ surveySchema.path('settings.customVariables').validate(function(value) {
     return true;
 });
 
-
 module.exports = mongoose.model('Survey', surveySchema);
-// ----- END OF COMPLETE UPDATED FILE (v1.10 - Added Auto-save Settings) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.11 - Added Question Display Mode Setting) -----

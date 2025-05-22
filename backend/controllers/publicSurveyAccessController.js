@@ -1,5 +1,5 @@
 // backend/controllers/publicSurveyAccessController.js
-// ----- START OF COMPLETE UPDATED FILE (v1.6 - Explicit Auto-save Settings in Derived Collector Settings) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.7 - Pass questionDisplayMode) -----
 const mongoose = require('mongoose');
 const Collector = require('../models/Collector');
 const Survey = require('../models/Survey');
@@ -27,28 +27,30 @@ const getCollectorProjection = () => {
            'settings.web_link.questionNumberingEnabled ' +
            'settings.web_link.questionNumberingFormat ' + 
            'settings.web_link.questionNumberingCustomPrefix';
+           // Note: questionDisplayMode is part of survey.settings.behaviorNavigation, not directly on collector settings yet
 };
 
 const deriveCollectorSettingsForFrontend = (collectorWebLinkSettings = {}, surveyBehaviorNavSettings = {}) => {
-    // Ensure surveyBehaviorNavSettings is an object even if undefined
     const sbn = surveyBehaviorNavSettings || {}; 
 
     return {
+        // +++ NEW: Include questionDisplayMode, defaulting to survey settings then platform default +++
+        questionDisplayMode: collectorWebLinkSettings.questionDisplayMode || sbn.questionDisplayMode || 'onePerPage',
+
         allowMultipleResponses: collectorWebLinkSettings.allowMultipleResponses ?? sbn.allowMultipleResponses ?? false,
         anonymousResponses: collectorWebLinkSettings.anonymousResponses ?? sbn.anonymousResponses ?? false,
-        enableRecaptcha: collectorWebLinkSettings.enableRecaptcha ?? false,
+        enableRecaptcha: collectorWebLinkSettings.enableRecaptcha ?? false, // Typically a collector-specific override
         allowResume: typeof collectorWebLinkSettings.saveAndContinueEnabled === 'boolean' 
             ? collectorWebLinkSettings.saveAndContinueEnabled 
             : (sbn.saveAndContinueEnabled || false),
         saveAndContinueMethod: collectorWebLinkSettings.saveAndContinueMethod || sbn.saveAndContinueMethod || 'both',
         
-        // +++ NEW: Explicitly include auto-save settings, defaulting to survey settings then platform defaults +++
-        autoSaveEnabled: typeof collectorWebLinkSettings.autoSaveEnabled === 'boolean' // Collector can't override this yet, but good for future
+        autoSaveEnabled: typeof collectorWebLinkSettings.autoSaveEnabled === 'boolean'
             ? collectorWebLinkSettings.autoSaveEnabled
-            : (sbn.autoSaveEnabled || false), // Default from survey, then false
-        autoSaveIntervalSeconds: typeof collectorWebLinkSettings.autoSaveIntervalSeconds === 'number' // Collector can't override this yet
+            : (sbn.autoSaveEnabled || false), 
+        autoSaveIntervalSeconds: typeof collectorWebLinkSettings.autoSaveIntervalSeconds === 'number'
             ? collectorWebLinkSettings.autoSaveIntervalSeconds
-            : (sbn.autoSaveIntervalSeconds || 60), // Default from survey, then 60
+            : (sbn.autoSaveIntervalSeconds || 60), 
 
         progressBarEnabled: typeof collectorWebLinkSettings.progressBarEnabled === 'boolean' 
             ? collectorWebLinkSettings.progressBarEnabled 
@@ -60,7 +62,7 @@ const deriveCollectorSettingsForFrontend = (collectorWebLinkSettings = {}, surve
             : (sbn.allowBackButton !== undefined ? sbn.allowBackButton : true),
         autoAdvance: typeof collectorWebLinkSettings.autoAdvance === 'boolean' 
             ? collectorWebLinkSettings.autoAdvance 
-            : (sbn.autoAdvance || false),
+            : (sbn.autoAdvance || false), // Auto-advance logic will be conditional on questionDisplayMode in frontend
         questionNumberingEnabled: typeof collectorWebLinkSettings.questionNumberingEnabled === 'boolean' 
             ? collectorWebLinkSettings.questionNumberingEnabled 
             : (sbn.questionNumberingEnabled !== undefined ? sbn.questionNumberingEnabled : true),
@@ -73,7 +75,6 @@ exports.accessSurvey = async (req, res) => {
     const { accessIdentifier } = req.params;
     const { password: enteredPassword } = req.body;
     const queryParams = req.query;
-    console.log(`[PublicAccessCtrl accessSurvey] Identifier: "${accessIdentifier}", Query Params:`, queryParams);
 
     try {
         if (!accessIdentifier || typeof accessIdentifier !== 'string' || accessIdentifier.trim() === '') { return res.status(400).json({ success: false, message: 'Access identifier is missing or invalid.' }); }
@@ -88,53 +89,41 @@ exports.accessSurvey = async (req, res) => {
         if (!collector) return res.status(404).json({ success: false, message: 'Survey link not found or invalid.' });
         
         const survey = await Survey.findById(collector.survey)
-            .select('status title settings.behaviorNavigation settings.customVariables')
+            .select('status title settings.behaviorNavigation settings.customVariables') // behaviorNavigation includes questionDisplayMode
             .lean();
 
-        if (!survey) { console.error(`[PublicAccessCtrl accessSurvey] CRITICAL: Collector ${collector._id} survey ${collector.survey} not found.`); return res.status(404).json({ success: false, message: 'Associated survey data not found.' }); }
+        if (!survey) { return res.status(404).json({ success: false, message: 'Associated survey data not found.' }); }
         
         const webLinkSettings = collector.settings?.web_link || {};
-        const surveyBehaviorNavSettings = survey.settings?.behaviorNavigation || {}; // This will include autoSaveEnabled, autoSaveIntervalSeconds
+        const surveyBehaviorNavSettings = survey.settings?.behaviorNavigation || {}; 
         const surveyCustomVarDefinitions = survey.settings?.customVariables || [];
 
+        // Access validation (status, dates, quota)
         if (collector.status !== 'open') { return res.status(403).json({ success: false, message: `This survey is ${collector.status}.`, collectorStatus: collector.status });}
         const now = new Date();
         if (webLinkSettings.openDate && new Date(webLinkSettings.openDate) > now) { return res.status(403).json({ success: false, message: `Survey opens ${new Date(webLinkSettings.openDate).toLocaleString()}.`, collectorStatus: 'scheduled' });}
         if (webLinkSettings.closeDate && new Date(webLinkSettings.closeDate) < now) { return res.status(403).json({ success: false, message: `Survey closed ${new Date(webLinkSettings.closeDate).toLocaleString()}.`, collectorStatus: 'closed_date' });}
         if (typeof webLinkSettings.maxResponses === 'number' && webLinkSettings.maxResponses > 0 && collector.responseCount >= webLinkSettings.maxResponses) { return res.status(403).json({ success: false, message: 'Survey reached response limit.', collectorStatus: 'completed_quota' });}
 
+        // Password protection
         if (webLinkSettings.passwordProtectionEnabled && webLinkSettings.password) { 
             if (!enteredPassword) {
-                return res.status(401).json({ 
-                    success: false, message: 'This survey is password protected.', 
-                    requiresPassword: true, 
-                    surveyTitle: survey.title || 'this survey',
-                    surveySettings: { behaviorNavigation: surveyBehaviorNavSettings } 
-                });
+                return res.status(401).json({ success: false, message: 'This survey is password protected.', requiresPassword: true, surveyTitle: survey.title || 'this survey', surveySettings: { behaviorNavigation: surveyBehaviorNavSettings } });
             }
             const isMatch = await collector.comparePassword(enteredPassword);
             if (!isMatch) { 
-                return res.status(401).json({ 
-                    success: false, message: 'Incorrect password.', 
-                    requiresPassword: true, 
-                    surveyTitle: survey.title || 'this survey',
-                    surveySettings: { behaviorNavigation: surveyBehaviorNavSettings }
-                }); 
+                return res.status(401).json({ success: false, message: 'Incorrect password.', requiresPassword: true, surveyTitle: survey.title || 'this survey', surveySettings: { behaviorNavigation: surveyBehaviorNavSettings }}); 
             }
         }
         if (survey.status !== 'active') { return res.status(403).json({ success: false, message: `The survey is ${survey.status}.`, surveyStatus: survey.status }); }
         
-        // surveyBehaviorNavSettings is passed to deriveCollectorSettingsForFrontend
         const collectorSettingsForFrontend = deriveCollectorSettingsForFrontend(webLinkSettings, surveyBehaviorNavSettings);
         
         const capturedCustomVariables = {};
         if (surveyCustomVarDefinitions.length > 0 && queryParams) {
             surveyCustomVarDefinitions.forEach(def => {
-                if (queryParams.hasOwnProperty(def.key)) {
-                    capturedCustomVariables[def.key] = queryParams[def.key];
-                } else if (def.defaultValue) {
-                    capturedCustomVariables[def.key] = def.defaultValue;
-                }
+                if (queryParams.hasOwnProperty(def.key)) { capturedCustomVariables[def.key] = queryParams[def.key]; } 
+                else if (def.defaultValue) { capturedCustomVariables[def.key] = def.defaultValue; }
             });
         }
         
@@ -143,11 +132,8 @@ exports.accessSurvey = async (req, res) => {
             data: {
                 surveyId: survey._id.toString(), collectorId: collector._id.toString(),
                 surveyTitle: survey.title,
-                collectorSettings: collectorSettingsForFrontend, // This now explicitly includes auto-save settings
-                surveySettings: { 
-                    behaviorNavigation: surveyBehaviorNavSettings, // Still sending full survey behavior nav for reference
-                    customVariables: surveyCustomVarDefinitions
-                },
+                collectorSettings: collectorSettingsForFrontend, 
+                surveySettings: { behaviorNavigation: surveyBehaviorNavSettings, customVariables: surveyCustomVarDefinitions },
                 initialCustomVariables: capturedCustomVariables 
             },
             message: "Survey access granted."
@@ -159,7 +145,6 @@ exports.resumeSurveyWithCode = async (req, res) => {
     const { accessIdentifier } = req.params;
     const { resumeCode } = req.body;
     const queryParams = req.query;
-    console.log(`[PublicAccessCtrl resumeSurveyWithCode] Identifier: "${accessIdentifier}", Code: "${resumeCode}", Query:`, queryParams);
 
     if (!accessIdentifier || !resumeCode) { return res.status(400).json({ success: false, message: 'Access identifier and resume code are required.' }); }
     try {
@@ -201,21 +186,12 @@ exports.resumeSurveyWithCode = async (req, res) => {
         let mergedCustomVariables = { ...(partialResponseDoc.customVariables || {}) };
         if (surveyCustomVarDefinitions.length > 0 && queryParams) {
             surveyCustomVarDefinitions.forEach(def => {
-                if (queryParams.hasOwnProperty(def.key)) {
-                    mergedCustomVariables[def.key] = queryParams[def.key];
-                } else if (!mergedCustomVariables.hasOwnProperty(def.key) && def.defaultValue) {
-                    mergedCustomVariables[def.key] = def.defaultValue;
-                }
+                if (queryParams.hasOwnProperty(def.key)) { mergedCustomVariables[def.key] = queryParams[def.key]; } 
+                else if (!mergedCustomVariables.hasOwnProperty(def.key) && def.defaultValue) { mergedCustomVariables[def.key] = def.defaultValue; }
             });
         }
 
-        const partialResponseForFrontend = { 
-            ...partialResponseDoc, 
-            answers: answersMap, 
-            otherInputValues: otherInputValuesMap,
-            customVariables: mergedCustomVariables
-        };
-        // surveyBehaviorNavSettings is passed to deriveCollectorSettingsForFrontend
+        const partialResponseForFrontend = { ...partialResponseDoc, answers: answersMap, otherInputValues: otherInputValuesMap, customVariables: mergedCustomVariables };
         const collectorSettingsForFrontend = deriveCollectorSettingsForFrontend(collectorWebLinkSettings, surveyBehaviorNavSettings);
         
         res.status(200).json({
@@ -223,15 +199,12 @@ exports.resumeSurveyWithCode = async (req, res) => {
             data: {
                 surveyId: survey._id.toString(), collectorId: collector._id.toString(),
                 surveyTitle: survey.title, 
-                collectorSettings: collectorSettingsForFrontend, // This now explicitly includes auto-save settings
-                surveySettings: { 
-                    behaviorNavigation: surveyBehaviorNavSettings,
-                    customVariables: surveyCustomVarDefinitions
-                },
+                collectorSettings: collectorSettingsForFrontend, 
+                surveySettings: { behaviorNavigation: surveyBehaviorNavSettings, customVariables: surveyCustomVarDefinitions },
                 partialResponse: partialResponseForFrontend
             },
             message: "Survey resumed successfully."
         });
     } catch (error) { console.error('[PublicAccessCtrl resumeSurveyWithCode] CRITICAL Error:', error); res.status(500).json({ success: false, message: 'Server error while resuming survey.' }); }
 };
-// ----- END OF COMPLETE UPDATED FILE (v1.6 - Explicit Auto-save Settings in Derived Collector Settings) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.7 - Pass questionDisplayMode) -----

@@ -1,37 +1,69 @@
 // frontend/src/components/survey_question_renders/HeatmapQuestion.js
-// ----- START OF UPDATED FILE (v1.3 - More Accurate Heatmap Dot Placement) -----
+// ----- START OF UPDATED FILE (v1.4 - Support definedHeatmapAreas and report areaId in clicks) -----
 import React, { useState, useEffect, useRef } from 'react';
 import styles from './SurveyQuestionStyles.module.css';
 
-const HeatmapQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMode }) => {
-    const { _id: questionId, text, imageUrl, heatmapMaxClicks, description } = question;
+// Helper function to check if a point is inside a rectangle
+const isPointInRect = (point, rect) => {
+    return (
+        point.x >= rect.x &&
+        point.x <= rect.x + rect.width &&
+        point.y >= rect.y &&
+        point.y <= rect.y + rect.height
+    );
+};
+
+const HeatmapQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMode, disabled }) => { // Added disabled prop
+    const { 
+        _id: questionId, 
+        text, 
+        imageUrl, 
+        heatmapMaxClicks, 
+        description,
+        definedHeatmapAreas = [] // Expect this prop
+    } = question;
     
-    // Store clicks as normalized coordinates { x: 0-1, y: 0-1 }
-    const [clicks, setClicks] = useState(Array.isArray(currentAnswer) ? currentAnswer : []);
-    
+    // currentAnswer structure: { clicks: Array<{x,y,timestamp,areaId?}>, totalClicks: number, clickedAreaIds: Array<string> }
+    const [clicks, setClicks] = useState([]);
+    const [clickedAreaIdsSet, setClickedAreaIdsSet] = useState(new Set()); // Using a Set for unique area IDs
+
     const imageRef = useRef(null);
     const containerRef = useRef(null);
-
-    // State to store the image's rendered dimensions and offset within the container
-    // This is crucial for accurately placing dots later.
     const [imageRenderInfo, setImageRenderInfo] = useState({
-        width: 0, height: 0, // Rendered width/height of the image
-        offsetX: 0, offsetY: 0 // Offset of the image within the container
+        width: 0, height: 0, offsetX: 0, offsetY: 0
     });
 
     useEffect(() => {
-        setClicks(Array.isArray(currentAnswer) ? currentAnswer : []);
-    }, [currentAnswer]);
+        if (currentAnswer && typeof currentAnswer === 'object') {
+            setClicks(Array.isArray(currentAnswer.clicks) ? currentAnswer.clicks : []);
+            setClickedAreaIdsSet(new Set(Array.isArray(currentAnswer.clickedAreaIds) ? currentAnswer.clickedAreaIds : []));
+        } else if (Array.isArray(currentAnswer)) { // Handle old array-only format for backward compatibility if needed
+            setClicks(currentAnswer);
+            // Attempt to derive clickedAreaIds if old format and definedHeatmapAreas are present
+            // This is complex and might be better handled by a one-time migration or by just starting fresh
+            const derivedAreaIds = new Set();
+            if (definedHeatmapAreas.length > 0 && currentAnswer.length > 0) {
+                currentAnswer.forEach(click => {
+                    definedHeatmapAreas.forEach(area => {
+                        if (isPointInRect({ x: click.x, y: click.y }, area)) {
+                            derivedAreaIds.add(area.id);
+                        }
+                    });
+                });
+            }
+            setClickedAreaIdsSet(derivedAreaIds);
+        } else {
+            setClicks([]);
+            setClickedAreaIdsSet(new Set());
+        }
+    }, [currentAnswer, definedHeatmapAreas]); // Re-evaluate if definedHeatmapAreas changes too
 
-    // Function to update image render info
     const updateImageRenderInfo = () => {
         if (imageRef.current && containerRef.current && imageRef.current.complete && imageRef.current.naturalWidth > 0) {
             const imageElement = imageRef.current;
             const containerElement = containerRef.current;
-
             const imageRect = imageElement.getBoundingClientRect();
             const containerRect = containerElement.getBoundingClientRect();
-
             setImageRenderInfo({
                 width: imageRect.width,
                 height: imageRect.height,
@@ -43,82 +75,79 @@ const HeatmapQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMod
         }
     };
 
-    // Update image info when image loads or container resizes (simplified to image load for now)
     useEffect(() => {
         const imgElement = imageRef.current;
         if (imgElement) {
-            imgElement.addEventListener('load', updateImageRenderInfo);
-            // Also call if already loaded
-            if (imgElement.complete && imgElement.naturalWidth > 0) {
-                updateImageRenderInfo();
-            }
+            const handleLoad = () => updateImageRenderInfo();
+            imgElement.addEventListener('load', handleLoad);
+            if (imgElement.complete && imgElement.naturalWidth > 0) updateImageRenderInfo();
+            return () => imgElement.removeEventListener('load', handleLoad);
         }
-        // Consider ResizeObserver on containerRef for more dynamic updates if needed
-        return () => {
-            if (imgElement) {
-                imgElement.removeEventListener('load', updateImageRenderInfo);
-            }
-        };
-    }, [imageUrl]); // Re-run if imageUrl changes
+    }, [imageUrl]);
 
-    // Also update on window resize as a fallback, as flex centering can change offsets
      useEffect(() => {
         window.addEventListener('resize', updateImageRenderInfo);
-        return () => {
-            window.removeEventListener('resize', updateImageRenderInfo);
-        };
+        return () => window.removeEventListener('resize', updateImageRenderInfo);
     }, []);
 
-
     const handleImageClick = (event) => {
-        if (!imageRef.current || !containerRef.current || imageRenderInfo.width === 0 || imageRenderInfo.height === 0) {
-            console.warn("Image or container not ready for click.");
+        if (disabled || !imageRef.current || !containerRef.current || imageRenderInfo.width === 0 || imageRenderInfo.height === 0) {
             return;
         }
-
         if (heatmapMaxClicks && clicks.length >= parseInt(heatmapMaxClicks)) {
             alert(`You have reached the maximum of ${heatmapMaxClicks} clicks.`);
             return;
         }
-
         const containerRect = containerRef.current.getBoundingClientRect();
-
-        // Click position relative to the container
         const clickXInContainer = event.clientX - containerRect.left;
         const clickYInContainer = event.clientY - containerRect.top;
-
-        // Click position relative to the actual image's top-left corner
-        // Uses the stored imageRenderInfo for image's offset and dimensions
         const xOnImage = clickXInContainer - imageRenderInfo.offsetX;
         const yOnImage = clickYInContainer - imageRenderInfo.offsetY;
 
-        // Check if the click was within the bounds of the actual image
-        if (xOnImage >= 0 && xOnImage <= imageRenderInfo.width &&
-            yOnImage >= 0 && yOnImage <= imageRenderInfo.height) {
-            
+        if (xOnImage >= 0 && xOnImage <= imageRenderInfo.width && yOnImage >= 0 && yOnImage <= imageRenderInfo.height) {
             const relativeX = xOnImage / imageRenderInfo.width;
             const relativeY = yOnImage / imageRenderInfo.height;
-
             const finalX = Math.max(0, Math.min(1, relativeX));
             const finalY = Math.max(0, Math.min(1, relativeY));
 
-            const newClick = { x: finalX, y: finalY, timestamp: Date.now() };
-            const newClicks = [...clicks, newClick];
-            setClicks(newClicks);
-            onAnswerChange(questionId, newClicks);
-        } else {
-            console.log("Click was outside the image bounds within the container.");
+            let clickAreaId = null;
+            // Check if click is within any defined area
+            for (const area of definedHeatmapAreas) {
+                // area coords (x,y,width,height) are also normalized (0-1)
+                if (isPointInRect({ x: finalX, y: finalY }, area)) {
+                    clickAreaId = area.id; // Assuming areas don't overlap or first one found is fine
+                    break; 
+                }
+            }
+
+            const newClick = { x: finalX, y: finalY, timestamp: Date.now(), areaId: clickAreaId };
+            const newClicksArray = [...clicks, newClick];
+            setClicks(newClicksArray);
+
+            const newClickedAreaIds = new Set(clickedAreaIdsSet);
+            if (clickAreaId) {
+                newClickedAreaIds.add(clickAreaId);
+            }
+            setClickedAreaIdsSet(newClickedAreaIds);
+
+            onAnswerChange(questionId, {
+                clicks: newClicksArray,
+                totalClicks: newClicksArray.length,
+                clickedAreaIds: Array.from(newClickedAreaIds) // Convert Set to Array for storing in JSON/DB
+            });
         }
     };
 
     const clearClicks = () => {
+        if (disabled) return;
         setClicks([]);
-        onAnswerChange(questionId, []);
+        setClickedAreaIdsSet(new Set());
+        onAnswerChange(questionId, { clicks: [], totalClicks: 0, clickedAreaIds: [] });
     };
 
     if (!imageUrl) {
         return (
-            <div className={styles.questionContainer}>
+            <div className={`${styles.questionContainer} ${disabled ? styles.disabled : ''}`}>
                 <h4 className={styles.questionText}>
                     {text}
                     {question.requiredSetting === 'required' && !isPreviewMode && <span className={styles.requiredIndicator}>*</span>}
@@ -130,45 +159,56 @@ const HeatmapQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMod
     }
 
     return (
-        <div className={styles.questionContainer}>
+        <div className={`${styles.questionContainer} ${disabled ? styles.disabled : ''}`}>
             <h4 className={styles.questionText}>
                 {text}
                 {question.requiredSetting === 'required' && !isPreviewMode && <span className={styles.requiredIndicator}>*</span>}
             </h4>
             {description && <p className={styles.questionDescription}>{description}</p>}
             <div ref={containerRef} className={styles.heatmapImageContainer} onClick={handleImageClick}>
-                {/* Image must be loaded for imageRenderInfo to be accurate */}
-                <img 
-                    ref={imageRef} 
-                    src={imageUrl} 
-                    alt="Heatmap base" 
-                    className={styles.heatmapImage}
-                    // onLoad event is handled by useEffect now to set imageRenderInfo
-                />
+                <img ref={imageRef} src={imageUrl} alt="Heatmap base" className={styles.heatmapImage} />
+                {imageRenderInfo.width > 0 && definedHeatmapAreas && definedHeatmapAreas.map(area => (
+                     <div key={`defined-area-${area.id}`}
+                          style={{
+                              position: 'absolute',
+                              left: `${imageRenderInfo.offsetX + (area.x * imageRenderInfo.width)}px`,
+                              top: `${imageRenderInfo.offsetY + (area.y * imageRenderInfo.height)}px`,
+                              width: `${area.width * imageRenderInfo.width}px`,
+                              height: `${area.height * imageRenderInfo.height}px`,
+                              border: '1px dashed rgba(255, 255, 0, 0.7)', // Yellow dashed line for defined areas
+                              pointerEvents: 'none',
+                              boxSizing: 'border-box',
+                              zIndex: 1, // Below click dots
+                          }}
+                          title={area.name}
+                     >
+                        <span style={{
+                            position: 'absolute', 
+                            top: '2px', 
+                            left: '2px', 
+                            color: 'yellow', 
+                            fontSize: '10px', 
+                            backgroundColor: 'rgba(0,0,0,0.3)', 
+                            padding: '1px 3px',
+                            borderRadius: '2px'
+                        }}>{area.name}</span>
+                     </div>
+                ))}
                 {imageRenderInfo.width > 0 && clicks.map((click, index) => {
-                    // Calculate dot position in pixels relative to the container's top-left
                     const dotLeft = imageRenderInfo.offsetX + (click.x * imageRenderInfo.width);
                     const dotTop = imageRenderInfo.offsetY + (click.y * imageRenderInfo.height);
-
                     return (
                         <div
-                            key={`${questionId}-click-${index}`}
-                            style={{
-                                left: `${dotLeft}px`, // Use pixel values
-                                top: `${dotTop}px`,   // Use pixel values
-                            }}
+                            key={`${questionId}-click-${index}-${click.timestamp}`} // More unique key
+                            style={{ left: `${dotLeft}px`, top: `${dotTop}px` }}
                             className={styles.heatmapClickDot}
-                            title={`Click ${index + 1} at (${click.x.toFixed(3)}, ${click.y.toFixed(3)})`}
+                            title={`Click ${index + 1} ${click.areaId ? `(in area ${definedHeatmapAreas.find(a=>a.id===click.areaId)?.name || click.areaId})` : ''}`}
                         />
                     );
                 })}
             </div>
             <div className={styles.heatmapControls}>
-                <button
-                    type="button"
-                    onClick={clearClicks}
-                    className={styles.heatmapButton}
-                >
+                <button type="button" onClick={clearClicks} className={styles.heatmapButton} disabled={disabled}>
                     Clear Clicks
                 </button>
                 <p className={styles.heatmapClickInfo}>
@@ -181,4 +221,4 @@ const HeatmapQuestion = ({ question, currentAnswer, onAnswerChange, isPreviewMod
 };
 
 export default HeatmapQuestion;
-// ----- END OF UPDATED FILE (v1.3 - More Accurate Heatmap Dot Placement) -----
+// ----- END OF UPDATED FILE (v1.4 - Support definedHeatmapAreas and report areaId in clicks) -----
