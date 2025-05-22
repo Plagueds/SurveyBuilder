@@ -1,5 +1,5 @@
 // backend/models/PartialResponse.js
-// ----- START OF COMPLETE NEW FILE -----
+// ----- START OF COMPLETE UPDATED FILE (v1.1 - Added customVariables) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -30,31 +30,33 @@ const partialResponseSchema = new Schema({
         type: String,
         trim: true,
         lowercase: true,
-        // Basic email validation, consider more robust if needed
         match: [/\S+@\S+\.\S+/, 'Please enter a valid email address.'] 
     },
     answers: { // Stores the current answers at the time of saving
         type: Map,
         of: Schema.Types.Mixed, // Allows various answer formats
-        default: {}
+        default: () => new Map() // Ensure default is a new Map instance
     },
     otherInputValues: { // Stores text for "Other" options
         type: Map,
         of: String,
-        default: {}
+        default: () => new Map() // Ensure default is a new Map instance
     },
     currentVisibleIndex: { // Index of the question in visibleQuestionIndices where user left off
         type: Number,
         required: true,
         default: 0,
     },
-    visitedPath: { // Array of original question indices visited
-        type: [String], // Storing original question IDs (or indices if preferred)
+    visitedPath: { // Array of original question IDs visited
+        type: [String], 
         default: []
     },
-    // Potentially store hiddenQuestionIds if they can change during a session
-    // hiddenQuestionIds: { type: [String], default: [] },
-    
+    // +++ NEW: For storing captured custom variable values +++
+    customVariables: { 
+        type: Map,
+        of: Schema.Types.Mixed, // Can be string, number, boolean depending on source
+        default: () => new Map() // Ensure default is a new Map instance
+    },
     expiresAt: { // When this partial response save link should expire
         type: Date,
         required: true,
@@ -66,15 +68,19 @@ const partialResponseSchema = new Schema({
     completedAt: { // Timestamp if the survey was eventually completed via this partial save
         type: Date,
         default: null
+    },
+    // +++ NEW: Field to link to the final Response document if completed +++
+    finalResponse: { // Link to the final Response document if this partial session was completed
+        type: Schema.Types.ObjectId,
+        ref: 'Response',
+        default: null
     }
 }, {
     timestamps: true // Adds createdAt and updatedAt
 });
 
-// TTL index for automatic cleanup of expired partial responses (optional, but good for hygiene)
+// Optional TTL index for automatic cleanup (consider implications)
 // partialResponseSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); 
-// Note: MongoDB's TTL index might not be suitable if you need more complex cleanup logic or notifications.
-// Manual cleanup via a cron job might be more flexible. For now, we'll rely on checking expiresAt in logic.
 
 module.exports = mongoose.model('PartialResponse', partialResponseSchema);
-// ----- END OF COMPLETE NEW FILE -----
+// ----- END OF COMPLETE UPDATED FILE (v1.1 - Added customVariables) -----
