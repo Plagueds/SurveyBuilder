@@ -1,21 +1,26 @@
 /* frontend/src/pages/SurveyTakingPage.module.css */
-/* ----- START OF UPDATED FILE ----- */
+/* ----- START OF COMPLETE MODIFIED FILE (v1.1 - Added Progress Bar Positioning) ----- */
 
-/* Container for the whole survey page */
-.surveyContainer {
-    max-width: 800px;
+/* Main wrapper for the survey taking experience */
+.surveyTakingPageWrapper {
+    max-width: 800px; /* Or your preferred max-width */
     margin: 20px auto;
-    padding: 30px 40px;
-    background-color: var(--background-secondary, #fff);
-    border: 1px solid var(--border-color, #ddd);
-    border-radius: var(--border-radius, 8px);
-    font-family: inherit;
+    padding: 20px;
+    background-color: var(--background-primary, #f9f9f9); /* A slightly off-white for the page background */
+    border: 1px solid var(--border-color-light, #e0e0e0);
+    border-radius: var(--border-radius-lg, 12px);
+    box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.08));
+    font-family: inherit; /* Ensure consistent font */
+    display: flex; /* Added for flex ordering of progress bar */
+    flex-direction: column; /* Stack children vertically */
 }
+
 
 .surveyHeader {
     margin-bottom: 25px;
     padding-bottom: 15px;
     border-bottom: 1px solid var(--border-color-light, #eee);
+    order: 1; /* Flex order for header */
 }
 .surveyHeader h1 {
     text-align: center;
@@ -24,7 +29,7 @@
     font-size: 1.8em;
     font-weight: 600;
 }
-.surveyHeader .description { /* Ensure this class is used in JSX if not already */
+.surveyHeader .description {
     text-align: center;
     color: var(--text-secondary, #666);
     margin-bottom: 20px;
@@ -36,32 +41,56 @@
 /* --- Progress Bar Styles --- */
 .progressBarContainer {
   width: 100%;
-  margin: 20px 0; /* More distinct margin */
+  margin: 15px 0; 
   box-sizing: border-box;
 }
 
-.progressBarTrack { /* Added this class for the visual track */
+/* Default to top if no specific class, or if class is .progressBarTop */
+.progressBarContainer.progressBarTop {
+  order: 0; /* Display before the header */
+  margin-bottom: 20px; /* Space below if at top */
+}
+
+.progressBarContainer.progressBarBottom {
+  order: 10; /* Display after the navigation footer */
+  margin-top: 20px; /* Space above if at bottom */
+}
+
+/* Example for other potential positions if you add them in JS */
+.progressBarContainer.progressBarMiddle { 
+  order: 2; /* Example: After header, before questions */
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+.progressBarContainer.progressBarBottomOfQuestions {
+  order: 4; /* Example: After questions, before navigation */
+  margin-top: 20px;
+  margin-bottom: 15px;
+}
+
+
+.progressBarTrack { 
   background-color: var(--progressbar-track-bg, #e9ecef); 
-  border-radius: var(--border-radius-md, 6px); /* Consistent border radius */
+  border-radius: var(--border-radius-md, 6px); 
   height: 12px; 
   overflow: hidden; 
   width: 100%;
-  padding: 2px; /* Small padding to make the fill look inset */
+  padding: 2px; 
   border: 1px solid var(--border-color-light, #dee2e6);
 }
 
 .progressBarFill {
-  background-color: var(--progressbar-fill-bg, #007bff); /* Primary color */
-  height: 100%; /* Fill the track's inner height */
-  border-radius: var(--border-radius-sm, 4px); /* Slightly smaller radius for inset look */
+  background-color: var(--progressbar-fill-bg, #007bff); 
+  height: 100%; 
+  border-radius: var(--border-radius-sm, 4px); 
   transition: width 0.3s ease-in-out; 
-  display: flex; /* For potentially centering text inside fill, if desired */
+  display: flex; 
   align-items: center;
   justify-content: center;
 }
 
-.progressBarContainer span { /* Styling for the percentage text */
-  display: block; /* Make it a block to center it or position it */
+.progressBarContainer span { 
+  display: block; 
   text-align: center;
   font-size: 0.85em;
   color: var(--progressbar-text-color, #555555); 
@@ -70,17 +99,19 @@
 /* --- END Progress Bar Styles --- */
 
 
-.questionArea {
-    padding: 15px 0; /* Adjust padding as needed */
+.questionContainer { /* Renamed from questionArea for clarity if used for the main question block */
+    padding: 15px 0;
     margin-bottom: 20px;
+    order: 3; /* Flex order for question area */
 }
-.questionArea h2 { /* Styling for question text if rendered directly here */
-    font-size: 1.2em;
-    font-weight: 600;
-    margin-bottom: 15px;
-    color: var(--text-primary);
+/* Styles for question text wrapper if needed, assuming question components handle their own titles */
+.questionContentWrapper {
+    /* Styles for the direct wrapper of a question component if any */
 }
-.questionNumber { /* Style for question numbers */
+.questionHeader { /* Wrapper for question number and potentially other header elements */
+    margin-bottom: 10px; /* Space between question number and question body */
+}
+.questionNumber { 
     font-weight: bold;
     margin-right: 8px;
     color: var(--text-secondary);
@@ -94,7 +125,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 10px; /* Add gap between buttons */
+    gap: 10px; 
+    order: 5; /* Flex order for navigation */
 }
 
 .navButton,
@@ -111,7 +143,7 @@
     border: 1px solid transparent;
 }
 
-.navButton { /* Standard Next/Previous */
+.navButton { 
     background-color: var(--button-secondary-bg, #6c757d);
     color: var(--button-secondary-text-light, white);
     border-color: var(--button-secondary-border, #6c757d);
@@ -121,7 +153,7 @@
     border-color: var(--button-secondary-hover-border, #545b62);
 }
 
-.navButtonPrimary { /* Submit button */
+.navButtonPrimary { 
     background-color: var(--primary-color, #007bff);
     color: var(--primary-text-light, white);
     border-color: var(--primary-color, #007bff);
@@ -131,7 +163,7 @@
     border-color: var(--primary-color-dark, #0056b3);
 }
 
-.navButtonSecondary { /* Save and Continue */
+.navButtonSecondary { 
     background-color: var(--background-accent, #f8f9fa);
     color: var(--text-primary, #212529);
     border-color: var(--border-color-medium, #ced4da);
@@ -156,6 +188,7 @@
     padding: 40px 20px;
     font-size: 1.1em;
     color: var(--text-secondary, #555);
+    order: 3; /* Same order as question container if replacing it */
 }
 .errorContainer {
     background-color: var(--error-bg-light, #f8d7da);
@@ -163,6 +196,26 @@
     color: var(--error-text-dark, #721c24);
     border-radius: var(--border-radius-md);
 }
+.submissionErrorBanner { /* Added this for specific submission errors */
+    background-color: var(--warning-bg-light, #fff3cd);
+    color: var(--warning-text-dark, #856404);
+    padding: 10px 15px;
+    margin-bottom: 15px;
+    border: 1px solid var(--warning-border, #ffeeba);
+    border-radius: var(--border-radius-sm);
+    text-align: center;
+    order: 0; /* Display it early, e.g., after header or progress bar */
+}
+.closeErrorButton { /* Simple styling for a close button on the banner */
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 1.2em;
+    float: right;
+    cursor: pointer;
+    line-height: 1;
+}
+
 .surveyMessage {
     margin-bottom: 10px;
 }
@@ -201,18 +254,42 @@
     line-height: 1.5;
     color: var(--text-secondary);
 }
-.resumeCodeDisplay {
-    display: block;
-    font-size: 1.3em;
-    font-weight: bold;
-    color: var(--primary-color, #007bff);
-    background-color: var(--background-accent-light, #f0f8ff);
-    padding: 10px 15px;
-    border-radius: var(--border-radius-sm);
-    margin: 15px 0;
-    text-align: center;
-    word-break: break-all;
+
+.resumeCodeDisplayContainer { /* Container for code and copy button */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  background-color: var(--background-accent-light, #f0f0f0); /* Light background for the code area */
+  border-radius: var(--border-radius-sm, 4px);
+  margin-top: 5px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-color-light, #e0e0e0);
 }
+
+.resumeCodeDisplay { /* Just the code text */
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.1em; /* Slightly smaller than previous to fit with button */
+  font-weight: bold;
+  color: var(--text-primary, #333); /* Darker for better readability */
+  word-break: break-all;
+  margin-right: 10px; /* Space before copy button */
+}
+
+.copyCodeButton {
+  padding: 6px 10px;
+  background-color: var(--button-secondary-bg, #6c757d);
+  color: var(--button-secondary-text-light, white);
+  border: none;
+  border-radius: var(--border-radius-sm, 4px);
+  cursor: pointer;
+  font-size: 0.9em;
+  white-space: nowrap; /* Prevent button text from wrapping */
+}
+.copyCodeButton:hover {
+  background-color: var(--button-secondary-hover-bg, #5a6268);
+}
+
 .emailInputForReminder {
     width: 100%;
     padding: 10px;
@@ -220,16 +297,24 @@
     border: 1px solid var(--input-border, #ccc);
     border-radius: var(--border-radius-sm);
     font-size: 1em;
+    box-sizing: border-box; /* Ensure padding doesn't expand width */
 }
-.modalContentWrapper .button, .modalContentWrapper .buttonSecondary { /* General button styling within modal */
+.modalActions { /* Container for modal action buttons */
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end; /* Align buttons to the right */
+  gap: 10px; /* Space between buttons */
+}
+
+.modalContentWrapper .button, .modalContentWrapper .buttonSecondary { 
     padding: 10px 15px;
     border-radius: var(--border-radius-sm);
     cursor: pointer;
     font-size: 1em;
-    margin-right: 10px;
+    /* margin-right: 10px; Removed, using gap in .modalActions now */
     border: 1px solid transparent;
 }
-.modalContentWrapper .button { /* Primary button in modal */
+.modalContentWrapper .button { 
     background-color: var(--primary-color, #007bff);
     color: white;
     border-color: var(--primary-color);
@@ -237,7 +322,7 @@
 .modalContentWrapper .button:hover {
     background-color: var(--primary-color-dark, #0056b3);
 }
-.modalContentWrapper .buttonSecondary { /* Secondary/Close button in modal */
+.modalContentWrapper .buttonSecondary { 
     background-color: var(--button-secondary-bg, #6c757d);
     color: white;
     border-color: var(--button-secondary-border, #6c757d);
@@ -245,18 +330,19 @@
 .modalContentWrapper .buttonSecondary:hover {
     background-color: var(--button-secondary-hover-bg, #5a6268);
 }
-/* ----- NEW STYLES FOR VALIDATION MODAL ----- */
+
+/* ----- STYLES FOR VALIDATION MODAL ----- */
 .validationModalBackdrop {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5); /* Slightly less dark than resume modal for differentiation if needed */
+    background-color: rgba(0, 0, 0, 0.5); 
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1060; /* Higher than resume modal if they can overlap, or same if not */
+    z-index: 1060; 
 }
 
 .validationModalContent {
@@ -265,7 +351,7 @@
     border-radius: var(--border-radius-md, 6px);
     box-shadow: var(--shadow-lg, 0 5px 15px rgba(0,0,0,0.2));
     width: 90%;
-    max-width: 450px; /* Slightly smaller for simple messages */
+    max-width: 450px; 
     text-align: left;
 }
 
@@ -285,11 +371,11 @@
 }
 
 .validationModalButton {
-    display: block; /* Make button take full width or align as needed */
+    display: block; 
     width: auto;
     min-width: 80px;
     padding: 10px 20px;
-    margin-left: auto; /* Align to the right */
+    margin-left: auto; 
     background-color: var(--primary-color, #007bff);
     color: var(--primary-text-light, white);
     border: none;
@@ -303,54 +389,39 @@
 .validationModalButton:hover {
     background-color: var(--primary-color-dark, #0056b3);
 }
-.modalActions {
-  margin-top: 20px;
-  display: flex;
-  justify-content: flex-end;
+
+/* Recaptcha container styling */
+.recaptchaContainer {
+    display: flex;
+    justify-content: center; /* Center reCAPTCHA if its div is narrower */
+    margin-top: 15px;
+    margin-bottom: 15px;
+    order: 4; /* Example: After questions, before navigation */
 }
 
-.resumeCodeDisplayContainer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between; /* Puts code on left, button on right */
-  padding: 10px;
-  background-color: #f0f0f0;
-  border-radius: 4px;
-  margin-top: 5px;
-  margin-bottom: 10px;
+
+/* Responsive adjustments if needed */
+@media (max-width: 600px) {
+    .surveyTakingPageWrapper {
+        padding: 15px;
+        margin: 10px;
+    }
+    .surveyHeader h1 {
+        font-size: 1.5em;
+    }
+    .surveyHeader .description {
+        font-size: 1em;
+    }
+    .navButton, .navButtonPrimary, .navButtonSecondary {
+        font-size: 0.9em;
+        padding: 8px 12px;
+    }
+    .modalContentWrapper {
+        padding: 20px;
+    }
+    .modalContentWrapper h3 {
+        font-size: 1.2em;
+    }
 }
 
-.resumeCodeDisplay {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 1.1em;
-  word-break: break-all; /* If code is very long */
-}
-
-.copyCodeButton {
-  padding: 6px 10px;
-  margin-left: 10px;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9em;
-}
-
-.copyCodeButton:hover {
-  background-color: #0056b3;
-}
-
-.emailInputForReminder {
-    width: 100%;
-    padding: 8px;
-    box-sizing: border-box;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    margin-top: 5px;
-}
-
-/* ----- END OF NEW STYLES FOR VALIDATION MODAL ----- */
-/* Removed .debugInfo styles */
-
-/* ----- END OF UPDATED FILE ----- */
+/* ----- END OF COMPLETE MODIFIED FILE (v1.1 - Added Progress Bar Positioning) ----- */
