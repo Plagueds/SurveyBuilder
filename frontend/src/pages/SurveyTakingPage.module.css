@@ -1,99 +1,100 @@
 /* frontend/src/pages/SurveyTakingPage.module.css */
-/* ----- START OF COMPLETE MODIFIED FILE (v1.2 - CSS for Refined Positioning) ----- */
+/* ----- START OF COMPLETE MODIFIED FILE (v1.3 - Sticky Footer & BackToTop) ----- */
 
 .surveyTakingPageWrapper {
     max-width: 800px;
     margin: 20px auto;
-    padding: 20px 30px; /* Adjusted padding */
-    background-color: var(--background-primary, #fff); /* Changed to white for a common base */
+    padding: 20px 30px; 
+    background-color: var(--background-primary, #fff); 
     border: 1px solid var(--border-color-light, #e0e0e0);
-    border-radius: var(--border-radius-lg, 8px); /* Slightly smaller radius */
-    box-shadow: var(--shadow-md, 0 2px 10px rgba(0,0,0,0.07)); /* Softer shadow */
+    border-radius: var(--border-radius-lg, 8px); 
+    box-shadow: var(--shadow-md, 0 2px 10px rgba(0,0,0,0.07)); 
     font-family: inherit;
+    /* Add padding-bottom to prevent content from being hidden by sticky footer */
+    padding-bottom: 100px; /* Adjust this value based on the actual height of your sticky footer */
 }
 
-.surveyPageHeader { /* Renamed from surveyHeaderContent for clarity */
-    margin-bottom: 20px; /* Space below header */
+.surveyPageHeader { 
+    margin-bottom: 20px; 
     padding-bottom: 15px;
     border-bottom: 1px solid var(--border-color-light, #eee);
     text-align: center; 
 }
 .surveyPageHeader h1 {
-    color: var(--text-primary, #2c3e50); /* Darker, more modern blue/grey */
-    margin-top: 0; /* Remove default top margin */
-    margin-bottom: 8px; /* Tighter spacing */
-    font-size: 2em; /* Larger title */
+    color: var(--text-primary, #2c3e50); 
+    margin-top: 0; 
+    margin-bottom: 8px; 
+    font-size: 2em; 
     font-weight: 600;
 }
-.surveyPageHeader .surveyDescription { /* Renamed from .description */
-    color: var(--text-secondary, #555); /* Slightly darker secondary text */
+.surveyPageHeader .surveyDescription { 
+    color: var(--text-secondary, #555); 
     margin-bottom: 0; 
-    font-size: 1.05em; /* Slightly larger description */
+    font-size: 1.05em; 
     line-height: 1.6;
 }
 
 /* --- Progress Bar Styles --- */
 .progressBarContainer {
   width: 100%;
-  margin: 25px 0; /* Consistent margin for all positions */
+  margin: 25px 0; 
   box-sizing: border-box;
 }
 
 .progressBarTrack { 
   background-color: var(--progressbar-track-bg, #e9ecef); 
   border-radius: var(--border-radius-md, 6px); 
-  height: 10px; /* Slightly slimmer */
+  height: 10px; 
   overflow: hidden; 
   width: 100%;
-  /* Removed padding and border from track for a cleaner look */
 }
 .progressBarFill {
   background-color: var(--progressbar-fill-bg, #007bff); 
   height: 100%; 
-  border-radius: var(--border-radius-md, 6px); /* Match track radius */
+  border-radius: var(--border-radius-md, 6px); 
   transition: width 0.3s ease-in-out; 
 }
 .progressBarContainer span { 
   display: block; 
-  text-align: right; /* Align text to the right, common for progress */
-  font-size: 0.9em; /* Slightly larger text */
-  color: var(--progressbar-text-color, #333); /* Darker text */
+  text-align: right; 
+  font-size: 0.9em; 
+  color: var(--progressbar-text-color, #333); 
   margin-top: 5px;
 }
 /* --- END Progress Bar Styles --- */
 
-.surveyQuestionArea { /* Renamed from questionContainer */
-    padding: 10px 0; /* Reduced padding */
-    margin-bottom: 25px; /* Consistent margin */
+.surveyQuestionArea { 
+    padding: 10px 0; 
+    margin-bottom: 25px; 
 }
 
 .questionLayoutWrapper { 
     display: flex; 
     align-items: flex-start; 
-    margin-bottom: 25px; /* Increased space below each question block */
-    padding: 15px; /* Add padding around the question block */
-    background-color: var(--background-secondary, #fdfdfd); /* Very light grey for question block */
-    border: 1px solid var(--border-color-extralight, #f0f0f0); /* Softer border */
+    margin-bottom: 25px; 
+    padding: 15px; 
+    background-color: var(--background-secondary, #fdfdfd); 
+    border: 1px solid var(--border-color-extralight, #f0f0f0); 
     border-radius: var(--border-radius-md, 6px);
 }
 
 .questionNumberArea { 
-    font-weight: 600; /* Slightly bolder */
-    color: var(--text-tertiary, #777); /* Different color for number */
+    font-weight: 600; 
+    color: var(--text-tertiary, #777); 
     margin-right: 15px; 
-    padding-top: 2px; /* Fine-tune vertical alignment with question text */
+    padding-top: 2px; 
     flex-shrink: 0; 
-    font-size: 1.1em; /* Make number slightly larger */
-    line-height: 1.5; /* Ensure consistent line height with question components */
-    min-width: 25px; /* Give it a bit of min-width for alignment */
-    text-align: right; /* Align number to its right edge if it has varying width */
+    font-size: 1.1em; 
+    line-height: 1.5; 
+    min-width: 25px; 
+    text-align: right; 
 }
 
 .questionComponentArea { 
     flex-grow: 1; 
 }
 
-.questionContainerPlaceholder { /* For when question data is missing */
+.questionContainerPlaceholder { 
     text-align: center;
     padding: 20px;
     color: var(--text-secondary);
@@ -102,17 +103,40 @@
     border-radius: 6px;
 }
 
+/* +++ Sticky Footer Styles +++ */
 .surveyNavigation {
-    margin-top: 25px; /* Adjusted margin */
-    padding-top: 20px; /* Adjusted padding */
-    border-top: 1px solid var(--border-color-light, #eee); /* Lighter border */
+    /* margin-top: 25px; Remove margin-top as it's now sticky */
+    padding: 15px 30px; /* Adjust padding as needed */
+    border-top: 1px solid var(--border-color-light, #eee); 
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px; /* Slightly increased gap */
+    gap: 12px; 
+
+    position: fixed; /* Make it sticky */
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: var(--background-primary, #fff); /* Ensure it has a background */
+    z-index: 1000; /* Ensure it's above other content */
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1); /* Optional: add shadow for better separation */
+
+    /* To keep it within the bounds of the main content area, 
+       we can use the same max-width and auto margins, but this requires careful structuring
+       or JavaScript to match the .surveyTakingPageWrapper's effective width.
+       A simpler approach for now is full-width sticky.
+       If you want it constrained:
+    */
+    /* max-width: 800px; */ /* Same as .surveyTakingPageWrapper */
+    /* margin-left: auto; */
+    /* margin-right: auto; */
+    /* Note: For the constrained width to work well, .surveyTakingPageWrapper should not have horizontal padding,
+       or this footer needs to be a direct child of body or another full-width container.
+       For simplicity, we'll start with full-width sticky.
+    */
 }
 
-/* Nav button styles remain largely the same, ensure they are consistent with your theme */
+
 .navButton,
 .navButtonPrimary,
 .navButtonSecondary {
@@ -147,7 +171,6 @@
 .closeErrorButton { background: none; border: none; color: inherit; font-size: 1.2em; float: right; cursor: pointer; line-height: 1; }
 .surveyMessage { margin-bottom: 10px; }
 
-/* Modal Styles (Resume Code Modal & Validation Modal) */
 .modalBackdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 1050; }
 .modalContentWrapper { background-color: #fff; padding: 25px 30px; border-radius: var(--border-radius-lg, 8px); box-shadow: var(--shadow-xl, 0 10px 25px rgba(0,0,0,0.15)); width: 90%; max-width: 500px; text-align: left; }
 .modalContentWrapper h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.4em; color: var(--text-primary); }
@@ -173,18 +196,25 @@
 .recaptchaContainer { display: flex; justify-content: center; margin-top: 15px; margin-bottom: 15px; }
 
 @media (max-width: 600px) {
-    .surveyTakingPageWrapper { padding: 15px; margin: 10px; }
+    .surveyTakingPageWrapper { 
+        padding: 15px; 
+        margin: 10px; 
+        padding-bottom: 80px; /* Ensure space for sticky footer on mobile */
+    }
     .surveyPageHeader h1 { font-size: 1.5em; } 
     .surveyPageHeader .surveyDescription { font-size: 1em; } 
     .navButton, .navButtonPrimary, .navButtonSecondary { font-size: 0.9em; padding: 8px 12px; }
     .modalContentWrapper { padding: 20px; }
     .modalContentWrapper h3 { font-size: 1.2em; }
-    .questionNumberArea { margin-right: 10px; padding-top: 1px; font-size: 1em; } /* Adjust for mobile */
-    .questionLayoutWrapper { padding: 10px; } /* Reduce padding on mobile */
+    .questionNumberArea { margin-right: 10px; padding-top: 1px; font-size: 1em; } 
+    .questionLayoutWrapper { padding: 10px; } 
+    .surveyNavigation { padding: 10px 15px; /* Adjust padding for mobile */ }
 }
 .autoSaveIndicator {
   position: fixed;
-  bottom: 10px;
+  bottom: 10px; /* Will be above the sticky nav if nav height is more */
+  /* Adjust bottom if sticky nav is present and tall */
+  /* e.g., bottom: calc(var(--sticky-nav-height, 60px) + 10px); */
   left: 50%;
   transform: translateX(-50%);
   background-color: rgba(0, 0, 0, 0.7);
@@ -192,7 +222,7 @@
   padding: 5px 10px;
   border-radius: 4px;
   font-size: 0.85em;
-  z-index: 1005; /* Ensure it's above most content */
+  z-index: 1005; 
   opacity: 0;
   animation: fadeInOut 3s ease-in-out forwards;
 }
@@ -204,9 +234,9 @@
   100% { opacity: 0; }
 }
 .questionWrapperOnPage {
-  margin-bottom: 30px; /* Or your desired spacing between questions */
+  margin-bottom: 30px; 
   padding-bottom: 20px;
-  border-bottom: 1px dashed #e0e0e0; /* Optional separator */
+  border-bottom: 1px dashed #e0e0e0; 
 }
 
 .questionWrapperOnPage:last-child {
@@ -214,4 +244,42 @@
   padding-bottom: 0;
   border-bottom: none;
 }
-/* ----- END OF COMPLETE MODIFIED FILE (v1.2 - CSS for Refined Positioning) ----- */
+
+/* +++ Back to Top Button Styles +++ */
+.backToTopButton {
+    position: fixed;
+    bottom: 80px; /* Adjust to be above the sticky navigation footer */
+    right: 20px;
+    background-color: var(--primary-color, #007bff);
+    color: white;
+    border: none;
+    border-radius: 50%; /* Circular button */
+    width: 50px;
+    height: 50px;
+    font-size: 24px; /* Arrow size */
+    line-height: 50px; /* Center arrow vertically */
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    cursor: pointer;
+    z-index: 999; /* Below nav but above most content */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out, transform 0.3s ease-in-out;
+    transform: translateY(20px);
+}
+
+.backToTopButton.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.backToTopButton:hover {
+    background-color: var(--primary-color-dark, #0056b3);
+}
+
+/* Adjust backToTopButton position if sticky nav is very tall */
+/* Example: If sticky nav is 70px tall, bottom could be 70px + 15px = 85px */
+/* .backToTopButton { bottom: calc(var(--sticky-nav-height, 60px) + 20px); } */
+
+/* ----- END OF COMPLETE MODIFIED FILE (v1.3 - Sticky Footer & BackToTop) ----- */

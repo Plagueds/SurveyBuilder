@@ -1,5 +1,5 @@
 // frontend/src/pages/SurveyTakingPage.js
-// ----- START OF COMPLETE MODIFIED FILE (v1.15 - Full "Other Text" & Refined Conjoint Logic) -----
+// ----- START OF COMPLETE MODIFIED FILE (v1.16 - Sticky Footer & BackToTop UI) -----
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
@@ -25,33 +25,35 @@ import SliderQuestion from '../components/survey_question_renders/SliderQuestion
 import TextAreaQuestion from '../components/survey_question_renders/TextAreaQuestion';
 
 // --- Client-Side Skip Logic Evaluation (Helper Functions) ---
+// evaluateCondition, evaluateLogicGroup, evaluateRuleConditions, getDynamicallyVisibleQuestionIds
+// remain the same as v1.15
 function evaluateCondition(condition, currentAnswers, questionsById, otherInputValues = {}) {
     const sourceQuestionIdStr = condition.sourceQuestionId?.toString();
     const sourceQuestion = questionsById[sourceQuestionIdStr];
 
-    if (!sourceQuestion) { return false; }
+    if (!sourceQuestion) { 
+        console.warn(`[evaluateCondition] Source question ID "${condition.sourceQuestionId}" not found in questionsById.`);
+        return false; 
+    }
 
     const answerValue = currentAnswers[sourceQuestionIdStr];
     const UNASSIGNED_CARD_SORT_CATEGORY_ID = '__UNASSIGNED_CARDS__';
     const OTHER_TEXT_INPUT_VALUE = (otherInputValues[`${sourceQuestionIdStr}_other`] || '').trim();
-    const NA_VALUE_INTERNAL = '__NA__'; // As defined in MC and Checkbox questions
-    const OTHER_VALUE_INTERNAL = '__OTHER__'; // As defined in MC and Checkbox questions
 
 
-    const isAnswerEmpty = (ans, questionType) => { // Added questionType for context
+    const isAnswerEmpty = (ans, questionTypeFromSchema) => {
         if (Array.isArray(ans)) return ans.length === 0;
         if (typeof ans === 'object' && ans !== null) {
-            if (questionType === 'heatmap') return !ans.clicks || ans.clicks.length === 0;
-            if (questionType === 'cardsort') return !ans.assignments || Object.keys(ans.assignments).length === 0;
-            if (questionType === 'conjoint') return !ans || Object.keys(ans).length === 0;
-            if (questionType === 'maxdiff') return !ans || (ans.best === null && ans.worst === null);
-            // For matrix, it's empty if no rows have values or checked boxes
-            if (questionType === 'matrix') {
-                if (sourceQuestion.matrixType === 'checkbox') {
+            if (questionTypeFromSchema === 'heatmap') return !ans.clicks || ans.clicks.length === 0;
+            if (questionTypeFromSchema === 'cardsort') return !ans.assignments || Object.keys(ans.assignments).length === 0;
+            if (questionTypeFromSchema === 'conjoint') return !ans || Object.keys(ans).length === 0;
+            if (questionTypeFromSchema === 'maxdiff') return !ans || (ans.best === null && ans.worst === null);
+            if (questionTypeFromSchema === 'matrix') {
+                if (sourceQuestion.matrixType === 'checkbox') { 
                     return !Object.values(ans).some(rowSelections => 
                         typeof rowSelections === 'object' && rowSelections !== null && Object.values(rowSelections).some(isSelected => isSelected === true)
                     );
-                } else { // radio
+                } else { 
                     return !Object.values(ans).some(val => val !== undefined && val !== null && String(val).trim() !== '');
                 }
             }
@@ -59,20 +61,21 @@ function evaluateCondition(condition, currentAnswers, questionsById, otherInputV
         return ans === undefined || ans === null || String(ans).trim() === '';
     };
     
-    // --- Handle "Other Text" specific operators first if applicable ---
     if (sourceQuestion.addOtherOption && condition.conditionOperator?.startsWith('otherText')) {
+        const valForOtherTextCondition = String(condition.conditionValue || '').trim(); 
         switch (condition.conditionOperator) {
-            case 'otherTextEq': return OTHER_TEXT_INPUT_VALUE === condition.conditionValue;
-            case 'otherTextNe': return OTHER_TEXT_INPUT_VALUE !== condition.conditionValue;
-            case 'otherTextContains': return OTHER_TEXT_INPUT_VALUE.includes(condition.conditionValue);
-            case 'otherTextNotContains': return !OTHER_TEXT_INPUT_VALUE.includes(condition.conditionValue);
+            case 'otherTextEq': return OTHER_TEXT_INPUT_VALUE === valForOtherTextCondition;
+            case 'otherTextNe': return OTHER_TEXT_INPUT_VALUE !== valForOtherTextCondition;
+            case 'otherTextContains': return OTHER_TEXT_INPUT_VALUE.includes(valForOtherTextCondition);
+            case 'otherTextNotContains': return !OTHER_TEXT_INPUT_VALUE.includes(valForOtherTextCondition);
             case 'otherTextIsEmpty': return OTHER_TEXT_INPUT_VALUE === '';
             case 'otherTextIsNotEmpty': return OTHER_TEXT_INPUT_VALUE !== '';
-            default: return false; // Unknown "other text" operator
+            default: 
+                console.warn(`[evaluateCondition] Unknown "otherText" operator: ${condition.conditionOperator}`);
+                return false;
         }
     }
 
-    // --- Standard operators ---
     if (condition.conditionOperator === 'isEmpty') {
         return isAnswerEmpty(answerValue, sourceQuestion.type);
     }
@@ -80,12 +83,12 @@ function evaluateCondition(condition, currentAnswers, questionsById, otherInputV
         return !isAnswerEmpty(answerValue, sourceQuestion.type);
     }
     
-    const operatorRequiresNonEmptyForStandardValue = !['ne', 'notContains'].includes(condition.conditionOperator);
-    if (operatorRequiresNonEmptyForStandardValue && isAnswerEmpty(answerValue, sourceQuestion.type)) {
+    const operatorUsuallyRequiresNonEmptyAnswer = !['ne', 'notContains'].includes(condition.conditionOperator);
+    if (operatorUsuallyRequiresNonEmptyAnswer && isAnswerEmpty(answerValue, sourceQuestion.type)) {
         return false;
     }
     
-    const conditionValStr = String(condition.conditionValue);
+    const conditionValStr = String(condition.conditionValue); 
 
     switch (sourceQuestion.type) {
         case 'text':
@@ -101,8 +104,6 @@ function evaluateCondition(condition, currentAnswers, questionsById, otherInputV
 
         case 'multiple-choice':
         case 'dropdown':
-            // For these types, if an "Other Text" operator was not matched above,
-            // it means the condition is about the main selected value (e.g., __OTHER__ itself).
             const ansStrMc = String(answerValue || '');
             switch (condition.conditionOperator) {
                 case 'eq': return ansStrMc === conditionValStr; 
@@ -111,7 +112,6 @@ function evaluateCondition(condition, currentAnswers, questionsById, otherInputV
             }
 
         case 'checkbox':
-            // Similar to MC, "Other Text" ops handled above. This is for selected values.
             const ansArrCb = Array.isArray(answerValue) ? answerValue.map(String) : [];
             switch (condition.conditionOperator) {
                 case 'contains': return ansArrCb.includes(conditionValStr); 
@@ -147,20 +147,22 @@ function evaluateCondition(condition, currentAnswers, questionsById, otherInputV
                     }
                     return String(answerValue[rv_row]) === rv_val; 
                 case 'rowIsAnswered': 
+                    const rowIdForIsAnswered = conditionValStr; 
                     if (sourceQuestion.matrixType === 'checkbox') {
-                        const rowSelections = answerValue[conditionValStr];
+                        const rowSelections = answerValue[rowIdForIsAnswered];
                         if (typeof rowSelections !== 'object' || rowSelections === null) return false;
                         return Object.values(rowSelections).some(isSelected => isSelected === true);
                     }
-                    const radioRowAns = answerValue[conditionValStr];
+                    const radioRowAns = answerValue[rowIdForIsAnswered];
                     return radioRowAns !== undefined && radioRowAns !== null && String(radioRowAns).trim() !== '';
                 case 'rowIsNotAnswered': 
+                    const rowIdForNotAnswered = conditionValStr; 
                      if (sourceQuestion.matrixType === 'checkbox') {
-                        const rowSelections = answerValue[conditionValStr];
+                        const rowSelections = answerValue[rowIdForNotAnswered];
                         if (typeof rowSelections !== 'object' || rowSelections === null) return true; 
                         return !Object.values(rowSelections).some(isSelected => isSelected === true);
                     }
-                    const radioRowAnsEmpty = answerValue[conditionValStr];
+                    const radioRowAnsEmpty = answerValue[rowIdForNotAnswered];
                     return radioRowAnsEmpty === undefined || radioRowAnsEmpty === null || String(radioRowAnsEmpty).trim() === '';
                 default: return false;
             }
@@ -239,35 +241,38 @@ function evaluateCondition(condition, currentAnswers, questionsById, otherInputV
         case 'conjoint':
             if (typeof answerValue !== 'object' || answerValue === null) return false;
             switch (condition.conditionOperator) {
-                case 'choiceForTaskIsNone': // condition.conditionValue is the taskId (e.g., "task_0")
-                    const taskIdForNoneCheck = conditionValStr;
+                case 'choiceForTaskIsNone': 
+                    const taskIdForNoneCheck = conditionValStr; 
+                    if (!answerValue.hasOwnProperty(taskIdForNoneCheck)) return false; 
                     return answerValue[taskIdForNoneCheck] === 'none';
                 
-                case 'choiceForTaskAttributeIsLevel': // condition.conditionValue is "taskId;Attribute Name;Level Name"
+                case 'choiceForTaskAttributeIsLevel': 
                     const parts = conditionValStr.split(';');
-                    if (parts.length !== 3) return false; // Malformed condition value
+                    if (parts.length !== 3) {
+                        console.warn(`[evaluateCondition] Malformed conditionValue for conjoint.choiceForTaskAttributeIsLevel: ${conditionValStr}`);
+                        return false;
+                    }
                     const cjt_taskId = parts[0];
                     const cjt_attrName = parts[1];
                     const cjt_levelName = parts[2];
                     
                     const choiceForThisTask = answerValue[cjt_taskId];
-                    if (typeof choiceForThisTask !== 'object' || choiceForThisTask === null) return false; // Not a profile object, or task not answered
-                    
+                    if (typeof choiceForThisTask !== 'object' || choiceForThisTask === null) {
+                        return false; 
+                    }
                     return String(choiceForThisTask[cjt_attrName]) === cjt_levelName;
 
                 default:
-                    console.warn(`Skip logic: Operator ${condition.conditionOperator} not implemented for Conjoint or is a common operator handled elsewhere.`);
-                    return false; // Or true if a common operator like isEmpty/isNotEmpty was already handled
+                    console.warn(`[evaluateCondition] Unknown specific operator for Conjoint: ${condition.conditionOperator}`);
+                    return false;
             }
 
         default:
-            console.warn(`Skip logic: Evaluation not implemented for question type: ${sourceQuestion.type}`);
+            console.warn(`[evaluateCondition] Evaluation not implemented for question type: ${sourceQuestion.type}`);
             return false;
     }
 }
 
-// --- evaluateLogicGroup, evaluateRuleConditions, getDynamicallyVisibleQuestionIds ---
-// (These remain largely the same as v1.14, but ensure 'condition' object passed to evaluateCondition is complete if needed by specific operators)
 function evaluateLogicGroup(group, currentAnswers, questionsById, otherInputValues) {
     if (!group.conditions || group.conditions.length === 0) return true; 
     if (group.groupOperator === 'AND') {
@@ -298,7 +303,6 @@ function getDynamicallyVisibleQuestionIds(allOriginalQuestions, globalSkipLogicR
     let jumpToEndTriggeredByQuestionIndex = -1; 
 
     for (const rule of globalSkipLogicRules) {
-        // No need to add conjointTaskId here anymore if conditionValue itself is structured for conjoint
         if (evaluateRuleConditions(rule, currentAnswers, questionsById, otherInputValues)) {
             const action = rule.action;
             if (action.type === 'hideQuestion' && action.targetQuestionId) {
@@ -354,7 +358,6 @@ function getDynamicallyVisibleQuestionIds(allOriginalQuestions, globalSkipLogicR
 }
 // --- End Client-Side Skip Logic Evaluation ---
 
-// ... (Rest of SurveyTakingPage.js - state, useEffects, handlers, render - remains the same as v1.14)
 const ensureArray = (value) => (Array.isArray(value) ? value : (value !== undefined && value !== null ? [value] : []));
 const formatQuestionNumber = (index, format, customPrefix, isAllOnOnePage = false, questionOriginalIndex = 0) => { 
     const number = isAllOnOnePage ? questionOriginalIndex + 1 : index + 1;
@@ -409,6 +412,9 @@ function SurveyTakingPage() {
     const lastActivityTimestampRef = useRef(Date.now()); 
     const OTHER_VALUE_INTERNAL = '__OTHER__';
     const [capturedCustomVariables, setCapturedCustomVariables] = useState({});
+
+    // +++ NEW State for Back to Top Button +++
+    const [showBackToTop, setShowBackToTop] = useState(false);
 
     const questionDisplayMode = useMemo(() => collectorSettings?.questionDisplayMode || 'onePerPage', [collectorSettings]);
     const questionsById = useMemo(() => { if (!originalQuestions || originalQuestions.length === 0) return {}; return originalQuestions.reduce((acc, q) => { acc[q._id.toString()] = q; return acc; }, {}); }, [originalQuestions]);
@@ -467,6 +473,28 @@ function SurveyTakingPage() {
     useEffect(() => { return () => { if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current); if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); }; }, []);
     const recordUserActivity = useCallback(() => { lastActivityTimestampRef.current = Date.now(); }, []);
     useEffect(() => { const activityEvents = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart']; activityEvents.forEach(event => window.addEventListener(event, recordUserActivity, { passive: true })); return () => { activityEvents.forEach(event => window.removeEventListener(event, recordUserActivity)); }; }, [recordUserActivity]);
+    
+    // +++ NEW Effect for Back to Top Button Visibility +++
+    useEffect(() => {
+        const checkScrollTop = () => {
+            // Show button if page is scrolled more than 300px
+            if (!showBackToTop && window.pageYOffset > 300) {
+                setShowBackToTop(true);
+            } else if (showBackToTop && window.pageYOffset <= 300) {
+                setShowBackToTop(false);
+            }
+        };
+        // Only add scroll listener if it's "allOnOnePage" mode or potentially very long "onePerPage" if needed
+        if (questionDisplayMode === 'allOnOnePage') {
+            window.addEventListener('scroll', checkScrollTop);
+            return () => window.removeEventListener('scroll', checkScrollTop);
+        } else {
+            // Ensure button is hidden if not in allOnOnePage mode or if it was visible and mode changed
+            if (showBackToTop) setShowBackToTop(false);
+        }
+    }, [showBackToTop, questionDisplayMode]);
+
+
     const performSaveAndContinue = useCallback(async (emailForSave = null, isAuto = false) => { if (!surveyId || !collectorId || !clientSessionId) { if (!isAuto) toast.error("Cannot save: IDs missing or session not initialized."); else console.warn("[AutoSave] Cannot save: IDs missing or session not initialized."); return;  } if (isAuto && (isSavingAndContinueLater || isSubmitting)) { console.log("[AutoSave] Skipped: Manual save or submission in progress."); return; } if (isAuto) setIsAutoSaving(true); else setIsSavingAndContinueLater(true); try { const payload = { collectorId, answers: currentAnswers, otherInputValues, currentVisibleIndex, resumeToken: currentResumeToken, sessionId: clientSessionId, customVariables: capturedCustomVariables }; if (emailForSave && !isAuto) payload.respondentEmail = emailForSave; const result = await surveyApi.savePartialResponse(surveyId, payload); if (result.success && result.resumeToken) { if (currentResumeToken !== result.resumeToken) setCurrentResumeToken(result.resumeToken); if (!isAuto) { setGeneratedResumeCode(result.resumeToken); setShowResumeCodeModal(true); setPromptForEmailOnSave(false);  if (emailForSave && result.emailSent === true) toast.success(`Progress saved! A resume link has been sent to ${emailForSave}.`); else if (emailForSave && result.emailSent === false) toast.warn("Progress saved, but the resume email could not be sent. Use the code if available."); else toast.info("Progress saved!");  } else { console.log("[AutoSave] Progress auto-saved successfully. New token (if any):", result.resumeToken); } } else { if (!isAuto) toast.error(result.message || "Failed to save progress."); else console.error("[AutoSave] Failed:", result.message || "Unknown error"); } } catch (err) { if (!isAuto) toast.error(err.message || "Error saving progress."); else console.error("[AutoSave] Error:", err.message || "Unknown error"); } finally { if (isAuto) setIsAutoSaving(false); else setIsSavingAndContinueLater(false); } }, [surveyId, collectorId, currentAnswers, otherInputValues, currentVisibleIndex, currentResumeToken, clientSessionId, capturedCustomVariables, isSavingAndContinueLater, isSubmitting]);
     useEffect(() => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); const autoSaveEnabled = collectorSettings?.autoSaveEnabled ?? false; const manualSaveEnabled = collectorSettings?.allowResume ?? false; if (autoSaveEnabled && manualSaveEnabled && !isSubmitting && !isLoadingSurvey && surveyId && collectorId && clientSessionId) { const intervalSeconds = collectorSettings?.autoSaveIntervalSeconds || 60; const checkAndAutoSave = () => { const now = Date.now(); const timeSinceLastActivity = now - lastActivityTimestampRef.current; if (timeSinceLastActivity >= intervalSeconds * 1000) { if (Object.keys(currentAnswers).length > 0 || Object.keys(otherInputValues).length > 0 || currentResumeToken === null) { performSaveAndContinue(null, true); } lastActivityTimestampRef.current = Date.now(); } autoSaveTimerRef.current = setTimeout(checkAndAutoSave, intervalSeconds * 1000 / 2); }; autoSaveTimerRef.current = setTimeout(checkAndAutoSave, intervalSeconds * 1000); } else { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); } return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); }; }, [collectorSettings, isLoadingSurvey, isSubmitting, surveyId, collectorId, clientSessionId, performSaveAndContinue, currentAnswers, otherInputValues, currentResumeToken]);
 
@@ -557,6 +585,11 @@ function SurveyTakingPage() {
     const renderProgressBar = useCallback(() => { const isEnabled = collectorSettings?.progressBarEnabled ?? false; if (!survey || !isEnabled || originalQuestions.length === 0) return null; let progress = 0; let barText = ''; const style = collectorSettings?.progressBarStyle || 'percentage'; if (questionDisplayMode === 'onePerPage') { const totalVisible = orderedVisibleForOnePerPage.length; const safeIdx = Math.min(currentVisibleIndex, totalVisible > 0 ? totalVisible - 1 : 0); progress = totalVisible > 0 ? ((safeIdx + 1) / totalVisible) * 100 : 0; if (style === 'percentage') barText = `${Math.round(progress)}% Complete`; else if (style === 'fraction' && totalVisible > 0) barText = `${safeIdx + 1} / ${totalVisible}`; else if (totalVisible === 0) barText = "0 / 0"; } else if (questionDisplayMode === 'allOnOnePage') { const totalVisible = allVisibleQuestionsToRender.length; const answeredCount = allVisibleQuestionsToRender.filter(q => { const ans = currentAnswers[q._id.toString()]; return ans !== undefined && ans !== null && String(ans).trim() !== '' && !(typeof ans === 'object' && Object.keys(ans).length === 0) && !(Array.isArray(ans) && ans.length === 0); }).length; progress = totalVisible > 0 ? (answeredCount / totalVisible) * 100 : 0; if (style === 'percentage') barText = `${Math.round(progress)}% Answered`; else if (style === 'fraction') barText = `${answeredCount} / ${totalVisible} Answered`; } return ( <div className={styles.progressBarContainer}> <div className={styles.progressBarTrack}><div className={styles.progressBarFill} style={{ width: `${progress.toFixed(2)}%` }}></div></div> {barText && <span>{barText}</span>} </div> ); }, [survey, originalQuestions, currentVisibleIndex, collectorSettings, questionDisplayMode, allVisibleQuestionsToRender, currentAnswers, dynamicallyVisibleQuestionIds, orderedVisibleForOnePerPage]);
     const renderSingleQuestionInputs = (question, indexForNumbering) => { if (!question) return <div className={styles.questionContainerPlaceholder} key={`placeholder-${indexForNumbering}`}><p>Error: Question data is missing.</p></div>; const showQuestionNumber = collectorSettings?.questionNumberingEnabled ?? true; let qNumDisplay = ""; if (showQuestionNumber) { const format = collectorSettings?.questionNumberingFormat || '123'; const prefix = collectorSettings?.questionNumberingCustomPrefix || ''; qNumDisplay = formatQuestionNumber(indexForNumbering, format, prefix, questionDisplayMode === 'allOnOnePage', question.originalIndex ); } const commonProps = { question, currentAnswer: currentAnswers[question._id.toString()], disabled: isSubmitting || isSavingAndContinueLater || isAutoSaving, isPreviewMode: false, key: question._id.toString() }; const choiceProps = { ...commonProps, otherValue: otherInputValues[`${question._id.toString()}_other`], onOtherTextChange: handleOtherInputChange }; let qComponent; switch (question.type) { case 'text': qComponent = <ShortTextQuestion {...commonProps} onAnswerChange={handleInputChange} />; break; case 'textarea': qComponent = <TextAreaQuestion {...commonProps} onAnswerChange={handleInputChange} />; break; case 'multiple-choice': qComponent = <MultipleChoiceQuestion {...choiceProps} onAnswerChange={handleInputChange} />; break; case 'checkbox': qComponent = <CheckboxQuestion {...choiceProps} onCheckboxChange={handleCheckboxChange} />; break; case 'dropdown': qComponent = <DropdownQuestion {...choiceProps} onAnswerChange={handleInputChange} />; break; case 'nps': qComponent = <NpsQuestion {...commonProps} onAnswerChange={handleInputChange} />; break; case 'rating': qComponent = <RatingQuestion {...commonProps} onAnswerChange={handleInputChange} />; break; case 'slider': qComponent = <SliderQuestion {...commonProps} onAnswerChange={handleInputChange} />; break; case 'ranking': qComponent = <RankingQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break; case 'matrix': qComponent = <MatrixQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break; case 'heatmap': qComponent = <HeatmapQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break; case 'cardsort': qComponent = <CardSortQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break; case 'conjoint': qComponent = <ConjointQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break; case 'maxdiff': qComponent = <MaxDiffQuestion {...commonProps} onAnswerChange={handleComplexAnswerChange} />; break; default: qComponent = <p key={`unsupported-${question._id.toString()}`}>Unsupported: {question.type}</p>; } return <div id={`question-${question._id.toString()}`} className={styles.questionWrapperOnPage}>{renderQuestionWithNumberLayout(qNumDisplay, qComponent, question._id.toString())}</div>; };
     const handleCopyResumeCode = () => { if (generatedResumeCode) { navigator.clipboard.writeText(generatedResumeCode).then(() => toast.success("Resume code copied!")).catch(() => toast.error("Failed to copy code.")); } };
+    
+    // +++ NEW: Scroll to Top Function +++
+    const scrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
     if (isLoadingSurvey) return <div className={styles.loadingContainer}>Loading survey questions...</div>;
     if (surveyError) return <div className={styles.errorContainer}>Error loading survey: {surveyError}</div>;
@@ -569,7 +602,7 @@ function SurveyTakingPage() {
     const isRecaptchaVerified = !!recaptchaToken;
     
     const showPreviousButton = questionDisplayMode === 'onePerPage' && (collectorSettings?.allowBackButton ?? true) && currentVisibleIndex > 0 && orderedVisibleForOnePerPage.length > 0;
-    const showNextButton = questionDisplayMode === 'onePerPage' && !isSubmitState && orderedVisibleForOnePerPage.length > 0 && currentVisibleIndex < orderedVisibleForOnePerPage.length -1; // Ensure not on last visible question
+    const showNextButton = questionDisplayMode === 'onePerPage' && !isSubmitState && orderedVisibleForOnePerPage.length > 0 && currentVisibleIndex < orderedVisibleForOnePerPage.length -1; 
     const showSubmitButtonLogic = isSubmitState && ( (questionDisplayMode === 'onePerPage' && currentQuestionToRenderOnePerPage && currentVisibleIndex >= orderedVisibleForOnePerPage.length -1 ) || (questionDisplayMode === 'allOnOnePage' && allVisibleQuestionsToRender.length > 0) || (Object.keys(currentAnswers).length > 0 && dynamicallyVisibleQuestionIds.size === 0 && originalQuestions.length > 0) );
 
     const progressBarPosition = collectorSettings?.progressBarPosition || 'top';
@@ -592,8 +625,8 @@ function SurveyTakingPage() {
                 { !isLoadingSurvey && !isSubmitting &&
                     ( (questionDisplayMode === 'onePerPage' && !currentQuestionToRenderOnePerPage && orderedVisibleForOnePerPage.length > 0 && currentVisibleIndex >= orderedVisibleForOnePerPage.length) || 
                       (questionDisplayMode === 'allOnOnePage' && allVisibleQuestionsToRender.length === 0 && originalQuestions.length > 0 && dynamicallyVisibleQuestionIds.size === 0 ) || 
-                      (dynamicallyVisibleQuestionIds.size === 0 && originalQuestions.length > 0 && !Object.keys(currentAnswers).some(k => currentAnswers[k] !== undefined && currentAnswers[k] !== null && String(currentAnswers[k]).trim() !== '')) // All questions hidden AND no answers
-                    ) && !(originalQuestions.length === 0) && // Don't show "Thank you" if there were never any questions
+                      (dynamicallyVisibleQuestionIds.size === 0 && originalQuestions.length > 0 && !Object.keys(currentAnswers).some(k => currentAnswers[k] !== undefined && currentAnswers[k] !== null && String(currentAnswers[k]).trim() !== '')) 
+                    ) && !(originalQuestions.length === 0) && 
                     <div className={styles.surveyMessageContainer}> 
                         <p className={styles.surveyMessage}>Thank you for your responses!</p> 
                         {(originalQuestions.length > 0 && Object.keys(currentAnswers).length > 0) && <p className={styles.surveyMessage}>Click "Submit" to finalize your survey.</p>} 
@@ -607,7 +640,8 @@ function SurveyTakingPage() {
             {progressBarPosition === 'bottom_of_questions' && progressBarElement} 
             {showSubmitButtonLogic && isRecaptchaEnabled && ( <div className={styles.recaptchaContainer}> <ReCAPTCHA ref={recaptchaRef} sitekey={process.env.REACT_APP_RECAPTCHA_SITE_KEY || "YOUR_FALLBACK_RECAPTCHA_V2_SITE_KEY"} onChange={(token) => { setRecaptchaToken(token); setSubmissionError(null); }} onExpired={() => { setRecaptchaToken(null); setSubmissionError("reCAPTCHA has expired."); }} onErrored={() => { setRecaptchaToken(null); setSubmissionError("reCAPTCHA challenge failed."); }} /> </div> )} 
             
-            <footer className={styles.surveyNavigation}> 
+            {/* Footer is now sticky via CSS if questionDisplayMode is 'allOnOnePage' or potentially always if desired */}
+            <footer className={`${styles.surveyNavigation} ${questionDisplayMode === 'allOnOnePage' ? styles.stickyFooter : ''}`}> 
                 {showPreviousButton && (<button type="button" onClick={handlePrevious} disabled={isSubmitting || isSavingAndContinueLater || isAutoSaving} className={styles.navButton}>Previous</button>)} 
                 {(!showPreviousButton && questionDisplayMode === 'onePerPage') && <div style={{flexGrow: 1}}></div>} 
                 {(questionDisplayMode === 'allOnOnePage' && !manualSaveEnabled && !showSubmitButtonLogic) && <div style={{flexGrow:1}}></div>}
@@ -621,9 +655,22 @@ function SurveyTakingPage() {
             </footer> 
             
             {progressBarPosition === 'bottom' && progressBarElement} 
+
+            {/* +++ NEW Back to Top Button +++ */}
+            {questionDisplayMode === 'allOnOnePage' && (
+                <button 
+                    onClick={scrollToTop} 
+                    className={`${styles.backToTopButton} ${showBackToTop ? styles.show : ''}`}
+                    title="Back to Top"
+                    aria-label="Scroll to top of page"
+                >
+                    ↑
+                </button>
+            )}
+
             {showResumeCodeModal && ( <div className={styles.modalBackdrop}> <div className={styles.modalContentWrapper} onClick={e => e.stopPropagation()}> <h3>{promptForEmailOnSave ? "Save & Continue: Enter Email" : "Resume Later"}</h3> {(promptForEmailOnSave || (generatedResumeCode && (collectorSettings?.saveAndContinueMethod === 'email' || collectorSettings?.saveAndContinueMethod === 'both' || survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'email' || survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'both'))) && ( <div style={{marginBottom: '15px'}}> <p>{promptForEmailOnSave ? "Please enter your email address..." : "Optionally, enter your email..."}</p> <input type="email" value={emailForReminder} onChange={(e) => setEmailForReminder(e.target.value)} placeholder="your.email@example.com" className={styles.emailInputForReminder} /> </div> )} {generatedResumeCode && (collectorSettings?.saveAndContinueMethod === 'code' || collectorSettings?.saveAndContinueMethod === 'both' || survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'code' || survey?.settings?.behaviorNavigation?.saveAndContinueMethod === 'both') && ( <div style={{marginBottom: '15px'}}> <p>Your progress has been saved...</p> <div className={styles.resumeCodeDisplayContainer}> <strong className={styles.resumeCodeDisplay}>{generatedResumeCode}</strong> <button onClick={handleCopyResumeCode} className={styles.copyCodeButton} title="Copy Code"> Copy </button> </div> <hr style={{margin: '15px 0'}} /> </div> )} {!generatedResumeCode && !promptForEmailOnSave && <p>Saving your progress...</p>} <div className={styles.modalActions}> {promptForEmailOnSave ? ( <button onClick={handleModalEmailSubmitAndSave} className={styles.button} disabled={isSavingAndContinueLater || isAutoSaving}> {isSavingAndContinueLater ? "Saving..." : "Save and Send Email"} </button> ) : null } <button onClick={() => { setShowResumeCodeModal(false); setPromptForEmailOnSave(false); setEmailForReminder('');}} className={styles.buttonSecondary} style={{marginLeft: promptForEmailOnSave ? '10px' : '0'}} > Close </button> </div> </div> </div> )} 
         </div>
     );
 }
 export default SurveyTakingPage;
-// ----- END OF COMPLETE MODIFIED FILE (v1.14 - Full Operator Implementation for Conjoint & Refinements) -----
+// ----- END OF COMPLETE MODIFIED FILE (v1.16 - Sticky Footer & BackToTop UI) -----
