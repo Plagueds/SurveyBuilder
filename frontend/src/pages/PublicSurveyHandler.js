@@ -1,5 +1,5 @@
 // frontend/src/pages/PublicSurveyHandler.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext4.2 - Conditional Resume Options from API) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext4.3 - Revised "Email Only" UI Logic) -----
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -26,6 +26,23 @@ const PublicSurveyHandler = () => {
     const [initialCheckRequiresPassword, setInitialCheckRequiresPassword] = useState(false);
 
     useEffect(() => {
+        // Extract resumeToken from query params if present
+        const queryParams = new URLSearchParams(window.location.search);
+        const resumeTokenFromQuery = queryParams.get('resumeToken');
+
+        if (resumeTokenFromQuery && accessIdentifier) {
+            // If there's a resumeToken in the URL, attempt to navigate directly to SurveyTakingPage
+            // This assumes the accessIdentifier is the collector's slug/linkId
+            // We need the surveyId and actual collectorId.
+            // This direct navigation might be tricky without first getting surveyId/collectorId.
+            // For now, let's log it. The main resume logic is handled by getSurveyById in SurveyTakingPage.
+            console.log(`[PublicSurveyHandler] Detected resumeToken in query: ${resumeTokenFromQuery} for ${accessIdentifier}. SurveyTakingPage will handle it.`);
+            // If we had surveyId and collectorId here, we could navigate:
+            // navigate(`/surveys/THE_SURVEY_ID/c/THE_COLLECTOR_ID/${resumeTokenFromQuery}`, { replace: true });
+            // return; // Potentially skip initial check if direct resume is intended and possible.
+        }
+
+
         if (!accessIdentifier) {
             setError('No access identifier provided in the link.');
             setViewMode('error_page');
@@ -53,8 +70,7 @@ const PublicSurveyHandler = () => {
                         setInitialCheckRequiresPassword(false);
                     } else if (response.requiresPassword) {
                         setInitialCheckRequiresPassword(true);
-                        // Ensure settings are captured even if password is required (API should send them)
-                         if (response.data.surveySettings && response.data.surveySettings.behaviorNavigation && !surveySettings) {
+                         if (response.data.surveySettings && response.data.surveySettings.behaviorNavigation && !surveySettings) { // Check !surveySettings to avoid overwrite
                             setSurveySettings(response.data.surveySettings.behaviorNavigation);
                         }
                     } else { 
@@ -66,16 +82,14 @@ const PublicSurveyHandler = () => {
                 }
             } catch (err) {
                 const errData = err.response?.data || err;
-                setSurveyTitle(errData?.surveyTitle || ''); // Attempt to set title even on error
+                setSurveyTitle(errData?.surveyTitle || ''); 
                 if (errData?.requiresPassword) {
                     setInitialCheckRequiresPassword(true);
                 } else {
                     setError(errData?.message || "Error during initial survey check.");
                 }
-                // Set survey settings from error data if available
                 if (errData?.surveySettings?.behaviorNavigation) {
                     setSurveySettings(errData.surveySettings.behaviorNavigation);
-                    console.log("[PublicSurveyHandler] Initial check (catch) - survey settings:", errData.surveySettings.behaviorNavigation);
                 } else {
                     setSurveySettings({ saveAndContinueEnabled: true, saveAndContinueMethod: 'both' });
                 }
@@ -86,7 +100,7 @@ const PublicSurveyHandler = () => {
         };
         performInitialCheck();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [accessIdentifier]);
+    }, [accessIdentifier]); // surveySettings removed from deps to avoid loop
 
     const handleAttemptSurveyStart = async (currentPassword = null) => { /* ... same as before ... */ setViewMode('loading_action'); setError(null); setPasswordError(''); try { const response = await surveyApiFunctions.accessPublicSurvey(accessIdentifier, currentPassword); if (response && response.success && response.data && response.data.surveyId && response.data.collectorId) { const { surveyId, collectorId, surveyTitle: titleFromNav, collectorSettings } = response.data; if (typeof surveyId !== 'string' || surveyId.length < 5) { throw new Error(`Invalid survey data.`); } if (typeof collectorId !== 'string' || collectorId.length < 5) { throw new Error(`Invalid collector data.`); } navigate(`/surveys/${surveyId}/c/${collectorId}`, { replace: true, state: { surveyTitle: titleFromNav || surveyTitle, collectorSettings: collectorSettings || {} } }); } else { const message = response?.message || 'Failed to start survey.'; if (response?.requiresPassword) { setSurveyTitle(response.data?.surveyTitle || surveyTitle); setPasswordError(currentPassword ? message : ''); setViewMode('password_prompt'); } else { setError(message); setViewMode('choice'); } } } catch (err) { const errData = err.response?.data || err; const errorMessage = errData?.message || err.message || 'An unexpected error occurred.'; console.error(`[PublicSurveyHandler] CATCH BLOCK (attemptSurveyStart) for ${accessIdentifier}:`, err.response || err); if (errData?.requiresPassword) { setSurveyTitle(errData?.surveyTitle || surveyTitle); setPasswordError(currentPassword ? errorMessage : ''); setViewMode('password_prompt'); } else { setError(errorMessage); setViewMode('choice'); } } };
     const handleResumeWithCode = async (e) => { /* ... same as before ... */ if (e) e.preventDefault(); if (!resumeCode.trim()) { setResumeError('Resume code cannot be empty.'); return; } setViewMode('loading_action'); setResumeError(''); setError(null); try { const response = await surveyApiFunctions.resumeSurveyWithCode(accessIdentifier, resumeCode.trim()); if (response && response.success && response.data) { const { surveyId, collectorId, surveyTitle: titleFromNav, collectorSettings, partialResponse } = response.data; if (!surveyId || !collectorId || !partialResponse) { throw new Error('Could not resume. Data missing.'); } navigate(`/surveys/${surveyId}/c/${collectorId}/${partialResponse.resumeToken}`, { replace: true, state: { surveyTitle: titleFromNav || surveyTitle, collectorSettings: collectorSettings || {}, partialResponse: partialResponse, isResumingWithCode: true } }); } else { const message = response?.message || 'Failed to resume survey with code.'; setResumeError(message); setViewMode('resume_prompt'); } } catch (err) { const errData = err.response?.data || err; const errorMessage = errData?.message || err.message || 'Error resuming survey.'; console.error(`[PublicSurveyHandler Resume] CATCH BLOCK:`, err.response || err); setResumeError(errorMessage); setViewMode('resume_prompt'); } };
@@ -96,9 +110,11 @@ const PublicSurveyHandler = () => {
     if (viewMode === 'loading_action') { return ( <div className="public-survey-handler-container"> <div className="spinner"></div> <p>Please wait...</p> </div> ); }
 
     const saveAndContinueEnabledBySurvey = surveySettings?.saveAndContinueEnabled ?? false;
-    const saveMethod = surveySettings?.saveAndContinueMethod || 'both'; // Default if not specified
+    const saveMethod = surveySettings?.saveAndContinueMethod || 'both';
 
-    const showStartOption = !saveAndContinueEnabledBySurvey || saveMethod === 'code' || saveMethod === 'both';
+    // Revised Logic: "Start New Survey" is generally available.
+    const showStartOption = true; // Assume users can always attempt to start a new session.
+                                 // Specific collector settings (like max responses, closed status) will prevent it if needed.
     const showResumeCodeOption = saveAndContinueEnabledBySurvey && (saveMethod === 'code' || saveMethod === 'both');
 
     if (viewMode === 'choice') {
@@ -126,14 +142,12 @@ const PublicSurveyHandler = () => {
                         </button>
                     )}
                 </div>
-                {saveAndContinueEnabledBySurvey && saveMethod === 'email' && (
+                {saveAndContinueEnabledBySurvey && (saveMethod === 'email' || saveMethod === 'both') && (
                      <p style={{marginTop: '15px', textAlign: 'center'}}>
-                        To resume a previous session, please use the link sent to your email.
-                        {/* Optionally, allow starting new if survey design permits, even if primary resume is email */}
-                        {/* For now, if only email resume, this is the main guidance. */}
+                        If you have a previous session, you can also resume using the link sent to your email.
                     </p>
                 )}
-                 {(!initialCheckRequiresPassword && error && showStartOption) && (
+                 {(!initialCheckRequiresPassword && error && showStartOption) && ( // Only show if start option is available
                     <button onClick={() => setViewMode('password_prompt')} className="button-link" style={{marginTop: '15px'}}>
                         Try entering a password?
                     </button>
@@ -151,7 +165,7 @@ const PublicSurveyHandler = () => {
                 <form onSubmit={handlePasswordSubmitForm} className="password-form">
                      <div className="form-group"> <label htmlFor="surveyPassword">Password:</label> <input type="password" id="surveyPassword" value={password} onChange={(e) => { setPassword(e.target.value); if (passwordError) setPasswordError(''); }} className={passwordError ? 'input-error' : ''} autoFocus /> {passwordError && <p className="error-message">{passwordError}</p>} </div> <button type="submit" className="button-primary"> Submit Password </button>
                 </form>
-                {showResumeCodeOption && ( // Use the derived boolean
+                {showResumeCodeOption && ( 
                     <button onClick={() => setViewMode('resume_prompt')} className="button-link" style={{marginTop: '15px'}}>
                         Or, resume with a code?
                     </button>
@@ -170,4 +184,4 @@ const PublicSurveyHandler = () => {
 };
 
 export default PublicSurveyHandler;
-// ----- END OF COMPLETE MODIFIED FILE (vNext4.2 - Official Conditional Resume Options) -----
+// ----- END OF COMPLETE MODIFIED FILE (vNext4.3 - Revised "Email Only" UI Logic) -----
