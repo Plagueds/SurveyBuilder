@@ -1,5 +1,5 @@
 // backend/models/Survey.js
-// ----- START OF COMPLETE UPDATED FILE (v1.9 - Added saveAndContinueMethod Setting) -----
+// ----- START OF COMPLETE UPDATED FILE (v1.10 - Added Auto-save Settings) -----
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -76,6 +76,8 @@ const customVariableSchema = new Schema({
         match: [/^[a-zA-Z0-9_]+$/, 'Key can only contain alphanumeric characters and underscores.']
     },
     label: { type: String, trim: true, default: '' },
+    // +++ NEW: Optional defaultValue for custom variables +++
+    defaultValue: { type: String, trim: true, default: ''}
 });
 
 
@@ -151,14 +153,16 @@ const surveySchema = new Schema({
             questionNumberingCustomPrefix: { type: String, default: '' },
             saveAndContinueEnabled: { type: Boolean, default: false },
             saveAndContinueEmailLinkExpiryDays: { type: Number, default: 7, min: 1, max: 90 },
-            // +++ NEW: Save and Continue Method +++
             saveAndContinueMethod: {
                 type: String,
                 enum: ['email', 'code', 'both'],
-                default: 'email' // Default method if saveAndContinueEnabled is true
+                default: 'email'
             },
+            // +++ NEW: Auto-save settings +++
+            autoSaveEnabled: { type: Boolean, default: false },
+            autoSaveIntervalSeconds: { type: Number, default: 60, min: 15, max: 300 } // e.g., 1 minute default, min 15s, max 5m
         },
-        customVariables: {
+        customVariables: { // Definitions of custom variables
             type: [customVariableSchema],
             default: []
         },
@@ -186,9 +190,24 @@ surveySchema.index({ createdAt: -1 });
 surveySchema.path('settings.customVariables').validate(function(value) {
     if (!value || value.length === 0) return true;
     const keys = value.map(cv => cv.key);
-    return new Set(keys).size === keys.length;
-}, 'Custom variable keys must be unique within the survey.');
+    const uniqueKeys = new Set(keys);
+    if (uniqueKeys.size !== keys.length) {
+        // Find duplicate keys for a more informative message (optional)
+        const counts = keys.reduce((acc, key) => { acc[key] = (acc[key] || 0) + 1; return acc; }, {});
+        const duplicates = Object.keys(counts).filter(key => counts[key] > 1);
+        this.invalidate('settings.customVariables', `Custom variable keys must be unique. Duplicate(s) found: ${duplicates.join(', ')}`, value);
+        return false;
+    }
+    // Validate individual keys format
+    for (const cv of value) {
+        if (!/^[a-zA-Z0-9_]+$/.test(cv.key)) {
+            this.invalidate(`settings.customVariables`, `Custom variable key "${cv.key}" is invalid. Keys can only contain alphanumeric characters and underscores.`, cv.key);
+            return false;
+        }
+    }
+    return true;
+});
 
 
 module.exports = mongoose.model('Survey', surveySchema);
-// ----- END OF COMPLETE UPDATED FILE (v1.9 - Added saveAndContinueMethod Setting) -----
+// ----- END OF COMPLETE UPDATED FILE (v1.10 - Added Auto-save Settings) -----
