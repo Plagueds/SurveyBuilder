@@ -1,5 +1,5 @@
 // frontend/src/pages/PublicSurveyHandler.js
-// ----- START OF COMPLETE MODIFIED FILE (vNext4.2 - Official Conditional Resume Options) -----
+// ----- START OF COMPLETE MODIFIED FILE (vNext4.2 - Conditional Resume Options from API) -----
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -14,7 +14,6 @@ const PublicSurveyHandler = () => {
     const [error, setError] = useState(null); 
     
     const [surveyTitle, setSurveyTitle] = useState('');
-    // surveySettings will now store the behaviorNavigation object from the survey
     const [surveySettings, setSurveySettings] = useState(null); 
     const [viewMode, setViewMode] = useState('initial_check'); 
 
@@ -40,55 +39,47 @@ const PublicSurveyHandler = () => {
                 console.log(`[PublicSurveyHandler] Performing initial check for: ${accessIdentifier}`);
                 const response = await surveyApiFunctions.accessPublicSurvey(accessIdentifier, null);
                 
-                // Assuming response.data might contain surveyTitle and surveySettings (with behaviorNavigation)
                 if (response && response.data) {
                     setSurveyTitle(response.data.surveyTitle || '');
-                    
-                    // Check for surveySettings and specifically behaviorNavigation
                     if (response.data.surveySettings && response.data.surveySettings.behaviorNavigation) {
                         setSurveySettings(response.data.surveySettings.behaviorNavigation);
-                        console.log("[PublicSurveyHandler] Initial check received survey settings:", response.data.surveySettings.behaviorNavigation);
+                        console.log("[PublicSurveyHandler] Initial check - survey settings:", response.data.surveySettings.behaviorNavigation);
                     } else {
-                        // Fallback if settings are not provided by this preliminary check
-                        // This might happen if accessPublicSurvey only returns full settings after password, for example.
-                        // For now, assume 'both' if not specified, to show all options initially.
-                        // This might need refinement based on API behavior.
-                        console.warn("[PublicSurveyHandler] Initial check did not return surveySettings.behaviorNavigation. Defaulting visibility.");
-                        setSurveySettings({ saveAndContinueMethod: 'both' }); // Default to allow both if not specified
+                        console.warn("[PublicSurveyHandler] Initial check - surveySettings.behaviorNavigation not found. Defaulting.");
+                        setSurveySettings({ saveAndContinueEnabled: true, saveAndContinueMethod: 'both' }); 
                     }
 
                     if (response.success) { 
                         setInitialCheckRequiresPassword(false);
                     } else if (response.requiresPassword) {
                         setInitialCheckRequiresPassword(true);
-                        // If password is required, the API might still send surveySettings in the error response.data
-                        if (response.data.surveySettings && response.data.surveySettings.behaviorNavigation) {
-                           // Already set above if response.data was present, but good to ensure
-                           if (!surveySettings) setSurveySettings(response.data.surveySettings.behaviorNavigation);
+                        // Ensure settings are captured even if password is required (API should send them)
+                         if (response.data.surveySettings && response.data.surveySettings.behaviorNavigation && !surveySettings) {
+                            setSurveySettings(response.data.surveySettings.behaviorNavigation);
                         }
                     } else { 
                         setError(response.message || "Could not retrieve initial survey information.");
                     }
                 } else {
                      setError(response?.message || "Failed to get survey information during initial check.");
-                     setSurveySettings({ saveAndContinueMethod: 'both' }); // Default on missing response data
+                     setSurveySettings({ saveAndContinueEnabled: true, saveAndContinueMethod: 'both' });
                 }
             } catch (err) {
                 const errData = err.response?.data || err;
+                setSurveyTitle(errData?.surveyTitle || ''); // Attempt to set title even on error
                 if (errData?.requiresPassword) {
-                    setSurveyTitle(errData?.surveyTitle || '');
                     setInitialCheckRequiresPassword(true);
-                    if (errData.surveySettings && errData.surveySettings.behaviorNavigation) {
-                        setSurveySettings(errData.surveySettings.behaviorNavigation);
-                         console.log("[PublicSurveyHandler] Initial check (catch) received survey settings:", errData.surveySettings.behaviorNavigation);
-                    } else {
-                         setSurveySettings({ saveAndContinueMethod: 'both' }); // Default
-                    }
                 } else {
                     setError(errData?.message || "Error during initial survey check.");
-                    console.error("[PublicSurveyHandler InitialCheck Catch]", err);
-                    setSurveySettings({ saveAndContinueMethod: 'both' }); 
                 }
+                // Set survey settings from error data if available
+                if (errData?.surveySettings?.behaviorNavigation) {
+                    setSurveySettings(errData.surveySettings.behaviorNavigation);
+                    console.log("[PublicSurveyHandler] Initial check (catch) - survey settings:", errData.surveySettings.behaviorNavigation);
+                } else {
+                    setSurveySettings({ saveAndContinueEnabled: true, saveAndContinueMethod: 'both' });
+                }
+                console.error("[PublicSurveyHandler InitialCheck Catch]", err);
             } finally {
                 setViewMode('choice'); 
             }
@@ -97,21 +88,18 @@ const PublicSurveyHandler = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [accessIdentifier]);
 
-    const handleAttemptSurveyStart = async (currentPassword = null) => { setViewMode('loading_action'); setError(null); setPasswordError(''); try { const response = await surveyApiFunctions.accessPublicSurvey(accessIdentifier, currentPassword); if (response && response.success && response.data && response.data.surveyId && response.data.collectorId) { const { surveyId, collectorId, surveyTitle: titleFromNav, collectorSettings } = response.data; if (typeof surveyId !== 'string' || surveyId.length < 5) { throw new Error(`Invalid survey data.`); } if (typeof collectorId !== 'string' || collectorId.length < 5) { throw new Error(`Invalid collector data.`); } navigate(`/surveys/${surveyId}/c/${collectorId}`, { replace: true, state: { surveyTitle: titleFromNav || surveyTitle, collectorSettings: collectorSettings || {} } }); } else { const message = response?.message || 'Failed to start survey.'; if (response?.requiresPassword) { setSurveyTitle(response.data?.surveyTitle || surveyTitle); setPasswordError(currentPassword ? message : ''); setViewMode('password_prompt'); } else { setError(message); setViewMode('choice'); } } } catch (err) { const errData = err.response?.data || err; const errorMessage = errData?.message || err.message || 'An unexpected error occurred.'; console.error(`[PublicSurveyHandler] CATCH BLOCK (attemptSurveyStart) for ${accessIdentifier}:`, err.response || err); if (errData?.requiresPassword) { setSurveyTitle(errData?.surveyTitle || surveyTitle); setPasswordError(currentPassword ? errorMessage : ''); setViewMode('password_prompt'); } else { setError(errorMessage); setViewMode('choice'); } } };
-    const handleResumeWithCode = async (e) => { if (e) e.preventDefault(); if (!resumeCode.trim()) { setResumeError('Resume code cannot be empty.'); return; } setViewMode('loading_action'); setResumeError(''); setError(null); try { const response = await surveyApiFunctions.resumeSurveyWithCode(accessIdentifier, resumeCode.trim()); if (response && response.success && response.data) { const { surveyId, collectorId, surveyTitle: titleFromNav, collectorSettings, partialResponse } = response.data; if (!surveyId || !collectorId || !partialResponse) { throw new Error('Could not resume. Data missing.'); } navigate(`/surveys/${surveyId}/c/${collectorId}/${partialResponse.resumeToken}`, { replace: true, state: { surveyTitle: titleFromNav || surveyTitle, collectorSettings: collectorSettings || {}, partialResponse: partialResponse, isResumingWithCode: true } }); } else { const message = response?.message || 'Failed to resume survey with code.'; setResumeError(message); setViewMode('resume_prompt'); } } catch (err) { const errData = err.response?.data || err; const errorMessage = errData?.message || err.message || 'Error resuming survey.'; console.error(`[PublicSurveyHandler Resume] CATCH BLOCK:`, err.response || err); setResumeError(errorMessage); setViewMode('resume_prompt'); } };
-    const handlePasswordSubmitForm = (e) => { e.preventDefault(); if (!password.trim()) { setPasswordError('Password cannot be empty.'); return; } handleAttemptSurveyStart(password.trim()); };
+    const handleAttemptSurveyStart = async (currentPassword = null) => { /* ... same as before ... */ setViewMode('loading_action'); setError(null); setPasswordError(''); try { const response = await surveyApiFunctions.accessPublicSurvey(accessIdentifier, currentPassword); if (response && response.success && response.data && response.data.surveyId && response.data.collectorId) { const { surveyId, collectorId, surveyTitle: titleFromNav, collectorSettings } = response.data; if (typeof surveyId !== 'string' || surveyId.length < 5) { throw new Error(`Invalid survey data.`); } if (typeof collectorId !== 'string' || collectorId.length < 5) { throw new Error(`Invalid collector data.`); } navigate(`/surveys/${surveyId}/c/${collectorId}`, { replace: true, state: { surveyTitle: titleFromNav || surveyTitle, collectorSettings: collectorSettings || {} } }); } else { const message = response?.message || 'Failed to start survey.'; if (response?.requiresPassword) { setSurveyTitle(response.data?.surveyTitle || surveyTitle); setPasswordError(currentPassword ? message : ''); setViewMode('password_prompt'); } else { setError(message); setViewMode('choice'); } } } catch (err) { const errData = err.response?.data || err; const errorMessage = errData?.message || err.message || 'An unexpected error occurred.'; console.error(`[PublicSurveyHandler] CATCH BLOCK (attemptSurveyStart) for ${accessIdentifier}:`, err.response || err); if (errData?.requiresPassword) { setSurveyTitle(errData?.surveyTitle || surveyTitle); setPasswordError(currentPassword ? errorMessage : ''); setViewMode('password_prompt'); } else { setError(errorMessage); setViewMode('choice'); } } };
+    const handleResumeWithCode = async (e) => { /* ... same as before ... */ if (e) e.preventDefault(); if (!resumeCode.trim()) { setResumeError('Resume code cannot be empty.'); return; } setViewMode('loading_action'); setResumeError(''); setError(null); try { const response = await surveyApiFunctions.resumeSurveyWithCode(accessIdentifier, resumeCode.trim()); if (response && response.success && response.data) { const { surveyId, collectorId, surveyTitle: titleFromNav, collectorSettings, partialResponse } = response.data; if (!surveyId || !collectorId || !partialResponse) { throw new Error('Could not resume. Data missing.'); } navigate(`/surveys/${surveyId}/c/${collectorId}/${partialResponse.resumeToken}`, { replace: true, state: { surveyTitle: titleFromNav || surveyTitle, collectorSettings: collectorSettings || {}, partialResponse: partialResponse, isResumingWithCode: true } }); } else { const message = response?.message || 'Failed to resume survey with code.'; setResumeError(message); setViewMode('resume_prompt'); } } catch (err) { const errData = err.response?.data || err; const errorMessage = errData?.message || err.message || 'Error resuming survey.'; console.error(`[PublicSurveyHandler Resume] CATCH BLOCK:`, err.response || err); setResumeError(errorMessage); setViewMode('resume_prompt'); } };
+    const handlePasswordSubmitForm = (e) => { /* ... same as before ... */ e.preventDefault(); if (!password.trim()) { setPasswordError('Password cannot be empty.'); return; } handleAttemptSurveyStart(password.trim()); };
 
-    if (viewMode === 'initial_check') { return ( <div className="public-survey-handler-container"> <div className="spinner"></div> <p>Loading survey information...</p> </div> ); }
+    if (viewMode === 'initial_check' || !surveySettings) { return ( <div className="public-survey-handler-container"> <div className="spinner"></div> <p>Loading survey information...</p> </div> ); }
     if (viewMode === 'loading_action') { return ( <div className="public-survey-handler-container"> <div className="spinner"></div> <p>Please wait...</p> </div> ); }
 
-    const effectiveSaveMethod = surveySettings?.saveAndContinueMethod || 'both'; // Default to 'both' if settings not loaded
-    const allowResumeWithCodeOption = effectiveSaveMethod === 'code' || effectiveSaveMethod === 'both';
-    // Start survey option is generally always available unless it's a resume-only scenario not covered here.
-    // If save method is 'email' only, user gets email, they don't "start" via this page without a token.
-    // If save method is 'code' only, they can start new or resume with code.
-    // If 'both', they can start new or resume with code.
-    // If saveAndContinue is disabled, they can only start new.
-    const surveyAllowsSaveAndContinue = surveySettings?.saveAndContinueEnabled ?? true; // Assume true if not loaded
+    const saveAndContinueEnabledBySurvey = surveySettings?.saveAndContinueEnabled ?? false;
+    const saveMethod = surveySettings?.saveAndContinueMethod || 'both'; // Default if not specified
+
+    const showStartOption = !saveAndContinueEnabledBySurvey || saveMethod === 'code' || saveMethod === 'both';
+    const showResumeCodeOption = saveAndContinueEnabledBySurvey && (saveMethod === 'code' || saveMethod === 'both');
 
     if (viewMode === 'choice') {
         return (
@@ -121,35 +109,31 @@ const PublicSurveyHandler = () => {
                 
                 <p style={{marginBottom: '20px'}}>How would you like to proceed?</p>
                 <div className="choice-actions">
-                    {/* "Start Survey" button is always an option unless save is enabled AND method is 'email' only */}
-                    {!(surveyAllowsSaveAndContinue && effectiveSaveMethod === 'email') && (
+                    {showStartOption && (
                         <button 
                             onClick={() => {
-                                if (initialCheckRequiresPassword) { 
-                                    setViewMode('password_prompt');
-                                } else {
-                                    handleAttemptSurveyStart(); 
-                                }
+                                if (initialCheckRequiresPassword) setViewMode('password_prompt');
+                                else handleAttemptSurveyStart(); 
                             }} 
                             className="button-primary"
                         >
                             {initialCheckRequiresPassword ? "Enter Password to Start" : "Start New Survey"}
                         </button>
                     )}
-
-                    {surveyAllowsSaveAndContinue && allowResumeWithCodeOption && (
+                    {showResumeCodeOption && (
                         <button onClick={() => setViewMode('resume_prompt')} className="button-secondary">
                             Resume with Code
                         </button>
                     )}
                 </div>
-                {surveyAllowsSaveAndContinue && effectiveSaveMethod === 'email' && (
+                {saveAndContinueEnabledBySurvey && saveMethod === 'email' && (
                      <p style={{marginTop: '15px', textAlign: 'center'}}>
-                        To resume a previous session, please use the link sent to your email. <br/>
-                        You can also start a new survey if allowed by the settings.
+                        To resume a previous session, please use the link sent to your email.
+                        {/* Optionally, allow starting new if survey design permits, even if primary resume is email */}
+                        {/* For now, if only email resume, this is the main guidance. */}
                     </p>
                 )}
-                 {(!initialCheckRequiresPassword && error && !(surveyAllowsSaveAndContinue && effectiveSaveMethod === 'email')) && (
+                 {(!initialCheckRequiresPassword && error && showStartOption) && (
                     <button onClick={() => setViewMode('password_prompt')} className="button-link" style={{marginTop: '15px'}}>
                         Try entering a password?
                     </button>
@@ -167,7 +151,7 @@ const PublicSurveyHandler = () => {
                 <form onSubmit={handlePasswordSubmitForm} className="password-form">
                      <div className="form-group"> <label htmlFor="surveyPassword">Password:</label> <input type="password" id="surveyPassword" value={password} onChange={(e) => { setPassword(e.target.value); if (passwordError) setPasswordError(''); }} className={passwordError ? 'input-error' : ''} autoFocus /> {passwordError && <p className="error-message">{passwordError}</p>} </div> <button type="submit" className="button-primary"> Submit Password </button>
                 </form>
-                {surveyAllowsSaveAndContinue && allowResumeWithCodeOption && (
+                {showResumeCodeOption && ( // Use the derived boolean
                     <button onClick={() => setViewMode('resume_prompt')} className="button-link" style={{marginTop: '15px'}}>
                         Or, resume with a code?
                     </button>
@@ -179,23 +163,8 @@ const PublicSurveyHandler = () => {
         );
     }
 
-    if (viewMode === 'resume_prompt') {
-        return (
-            <div className="public-survey-handler-container resume-code-container">
-                <h2>Resume Survey</h2>
-                {surveyTitle && <p className="survey-title-prompt">Survey: {surveyTitle || 'your survey'}</p>}
-                <p>Enter your resume code to continue where you left off.</p>
-                <form onSubmit={handleResumeWithCode} className="resume-form">
-                    <div className="form-group"> <label htmlFor="resumeCodeInput">Resume Code:</label> <input type="text" id="resumeCodeInput" value={resumeCode} onChange={(e) => { setResumeCode(e.target.value); if (resumeError) setResumeError(''); }} className={resumeError ? 'input-error' : ''} autoFocus /> {resumeError && <p className="error-message">{resumeError}</p>} </div> <button type="submit" className="button-primary"> Resume Survey </button>
-                </form>
-                <button onClick={() => { setError(null); setResumeError(''); setViewMode('choice');}} className="button-link" style={{marginTop: '15px'}}>
-                    Back to options
-                </button>
-            </div>
-        );
-    }
-
-    if (viewMode === 'error_page') { return ( <div className="public-survey-handler-container error-container"> <h2>Access Error</h2> <p>{error || 'An critical error occurred.'}</p> <button onClick={() => navigate('/')} className="button-primary">Go to Homepage</button> </div> ); }
+    if (viewMode === 'resume_prompt') { /* ... same as before ... */ return ( <div className="public-survey-handler-container resume-code-container"> <h2>Resume Survey</h2> {surveyTitle && <p className="survey-title-prompt">Survey: {surveyTitle || 'your survey'}</p>} <p>Enter your resume code to continue where you left off.</p> <form onSubmit={handleResumeWithCode} className="resume-form"> <div className="form-group"> <label htmlFor="resumeCodeInput">Resume Code:</label> <input type="text" id="resumeCodeInput" value={resumeCode} onChange={(e) => { setResumeCode(e.target.value); if (resumeError) setResumeError(''); }} className={resumeError ? 'input-error' : ''} autoFocus /> {resumeError && <p className="error-message">{resumeError}</p>} </div> <button type="submit" className="button-primary"> Resume Survey </button> </form> <button onClick={() => { setError(null); setResumeError(''); setViewMode('choice');}} className="button-link" style={{marginTop: '15px'}}> Back to options </button> </div> ); }
+    if (viewMode === 'error_page') { /* ... same as before ... */ return ( <div className="public-survey-handler-container error-container"> <h2>Access Error</h2> <p>{error || 'An critical error occurred.'}</p> <button onClick={() => navigate('/')} className="button-primary">Go to Homepage</button> </div> ); }
     
     return ( <div className="public-survey-handler-container"> <div className="spinner"></div> <p>Processing...</p> </div> );
 };
